@@ -1,0 +1,30 @@
+services:
+  blackbox:
+    image: quay.io/prometheus/blackbox-exporter:latest
+    container_name: local-blackbox
+    command:
+      - --config.file=/etc/blackbox_exporter/blackbox.yml
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./prometheus/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    restart: unless-stopped
+
+  prometheus:
+    image: quay.io/prometheus/prometheus:latest
+    container_name: local-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - blackbox
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:

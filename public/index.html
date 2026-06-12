@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>本地服务器监控台</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <h1 id="appName">本地服务器监控台</h1>
+          <p id="prometheusUrl" class="muted"></p>
+        </div>
+        <div class="toolbar">
+          <label class="token-field" for="tokenInput">
+            <span>操作口令</span>
+            <input id="tokenInput" type="password" autocomplete="off" placeholder="Token">
+          </label>
+          <button id="refreshButton" class="icon-button" type="button" title="刷新">
+            <span aria-hidden="true">R</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="summary-grid" aria-label="状态汇总">
+          <article class="summary-card">
+            <span class="summary-label">服务器</span>
+            <strong id="totalCount">0</strong>
+          </article>
+          <article class="summary-card good">
+            <span class="summary-label">在线</span>
+            <strong id="onlineCount">0</strong>
+          </article>
+          <article class="summary-card bad">
+            <span class="summary-label">离线</span>
+            <strong id="offlineCount">0</strong>
+          </article>
+          <article class="summary-card warn">
+            <span class="summary-label">未知</span>
+            <strong id="unknownCount">0</strong>
+          </article>
+          <article class="summary-card">
+            <span class="summary-label">网站</span>
+            <strong id="websiteTotalCount">0</strong>
+          </article>
+          <article class="summary-card good">
+            <span class="summary-label">网站正常</span>
+            <strong id="websiteOnlineCount">0</strong>
+          </article>
+          <article class="summary-card bad">
+            <span class="summary-label">网站异常</span>
+            <strong id="websiteOfflineCount">0</strong>
+          </article>
+          <article class="summary-card warn">
+            <span class="summary-label">网站未知</span>
+            <strong id="websiteUnknownCount">0</strong>
+          </article>
+        </section>
+
+        <section class="workspace">
+          <aside class="sidebar" aria-label="服务器分组">
+            <div class="sidebar-head">
+              <span>分组</span>
+              <span id="lastUpdated" class="muted">--</span>
+            </div>
+            <div id="groupList" class="group-list"></div>
+          </aside>
+
+          <section class="server-panel" aria-label="服务器列表">
+            <h2 class="section-title">服务器</h2>
+            <div id="emptyState" class="empty-state hidden">
+              <h2>还没有服务器</h2>
+              <p>编辑 config/servers.json 后刷新。</p>
+            </div>
+            <div id="serverGrid" class="server-grid"></div>
+
+            <h2 class="section-title section-gap">网站</h2>
+            <div id="websiteEmptyState" class="empty-state hidden">
+              <h2>还没有网站</h2>
+              <p>编辑 config/servers.json 的 websites 后刷新。</p>
+            </div>
+            <div id="websiteGrid" class="website-grid"></div>
+
+            <h2 class="section-title section-gap">恢复日志</h2>
+            <div id="recoveryLogEmptyState" class="empty-state hidden">
+              <h2>还没有恢复日志</h2>
+              <p>自动恢复或手动操作发生后会显示在这里。</p>
+            </div>
+            <div id="recoveryLogList" class="log-list"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="actionDialog" class="action-dialog">
+      <form method="dialog" id="actionForm">
+        <div class="dialog-head">
+          <h2 id="dialogTitle">执行操作</h2>
+          <button class="icon-button ghost" value="cancel" type="submit" title="关闭">
+            <span aria-hidden="true">X</span>
+          </button>
+        </div>
+        <p id="dialogMeta" class="muted"></p>
+        <label id="confirmWrap" class="input-row hidden" for="confirmInput">
+          <span>确认文本</span>
+          <input id="confirmInput" autocomplete="off">
+        </label>
+        <menu class="dialog-actions">
+          <button value="cancel" type="submit">取消</button>
+          <button id="runActionButton" class="danger" value="run" type="submit">执行</button>
+        </menu>
+        <pre id="actionOutput" class="action-output hidden"></pre>
+      </form>
+    </dialog>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

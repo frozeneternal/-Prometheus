@@ -1,0 +1,169 @@
+{
+  "appName": "本地服务器监控台",
+  "listenHost": "127.0.0.1",
+  "listenPort": 8787,
+  "prometheusUrl": "http://127.0.0.1:9090",
+  "actionToken": "replace-with-a-long-random-token",
+  "monitoring": {
+    "pollIntervalSeconds": 30,
+    "recoveryLogLimit": 200
+  },
+  "servers": [
+    {
+      "id": "web-01",
+      "name": "Web 01",
+      "type": "physical",
+      "group": "生产",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.0.11:9100"
+      },
+      "diskMountpoint": "/",
+      "autoRecovery": {
+        "enabled": false
+      },
+      "autoBackup": {
+        "enabled": false,
+        "actionServerId": "web-01",
+        "actionId": "backup_web_root",
+        "intervalSeconds": 86400
+      },
+      "actions": [
+        {
+          "id": "restart_nginx",
+          "name": "重启 Nginx",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": true,
+          "confirm": "restart nginx",
+          "timeoutSeconds": 30,
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "root@10.0.0.11",
+            "sudo",
+            "systemctl",
+            "restart",
+            "nginx"
+          ]
+        },
+        {
+          "id": "backup_web_root",
+          "name": "备份网站目录",
+          "danger": "medium",
+          "enabled": true,
+          "allowAuto": true,
+          "timeoutSeconds": 600,
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "root@10.0.0.11",
+            "bash",
+            "-lc",
+            "mkdir -p /var/backups/web-01 && tar -czf /var/backups/web-01/site-$(date +%F-%H%M%S).tar.gz /var/www/html"
+          ]
+        },
+        {
+          "id": "renew_certbot_homepage",
+          "name": "续期首页证书",
+          "danger": "medium",
+          "enabled": true,
+          "allowAuto": true,
+          "timeoutSeconds": 180,
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "root@10.0.0.11",
+            "sudo",
+            "certbot",
+            "renew",
+            "--quiet"
+          ]
+        },
+        {
+          "id": "reboot",
+          "name": "重启服务器",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": false,
+          "confirm": "reboot web-01",
+          "timeoutSeconds": 10,
+          "successReturnCodes": [
+            0,
+            255
+          ],
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "root@10.0.0.11",
+            "sudo",
+            "systemctl",
+            "reboot"
+          ]
+        }
+      ]
+    }
+  ],
+  "_virtualMachineExample": [
+    {
+      "id": "vm-web-01",
+      "name": "Web 01 上的业务虚拟机",
+      "type": "virtual",
+      "hostServerId": "web-01",
+      "group": "虚拟机",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.0.21:9100"
+      },
+      "diskMountpoint": "/",
+      "actions": []
+    }
+  ],
+  "websites": [
+    {
+      "id": "web-01-homepage",
+      "name": "Web 01 首页",
+      "group": "生产",
+      "serverId": "web-01",
+      "url": "https://example.com",
+      "autoRecovery": {
+        "enabled": true,
+        "actionServerId": "web-01",
+        "actionId": "restart_nginx",
+        "minimumConsecutiveFailures": 2,
+        "cooldownSeconds": 300,
+        "triggerHealth": [
+          "down"
+        ]
+      },
+      "certRenewal": {
+        "enabled": true,
+          "actionServerId": "web-01",
+          "actionId": "renew_certbot_homepage",
+          "renewBeforeDays": 14,
+          "cooldownSeconds": 86400
+        },
+        "manualCertRenewal": {
+          "actionServerId": "web-01",
+          "actionId": "renew_certbot_homepage",
+          "label": "手动续期"
+        },
+        "thresholds": {
+          "duration": 3,
+          "certDays": 14
+        }
+    }
+  ]
+}

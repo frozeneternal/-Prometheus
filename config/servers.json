@@ -1,0 +1,301 @@
+{
+  "appName": "Local Server Monitor",
+  "listenHost": "127.0.0.1",
+  "listenPort": 8787,
+  "prometheusUrl": "http://127.0.0.1:9090",
+  "actionToken": "replace-with-a-strong-token",
+  "monitoring": {
+    "pollIntervalSeconds": 30,
+    "recoveryLogLimit": 200
+  },
+  "servers": [
+    {
+      "id": "physical-host-a",
+      "name": "Physical Host A",
+      "type": "physical",
+      "group": "Physical Hosts",
+      "description": "SSH: ops@example-host-a",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.0.10:9100"
+      },
+      "diskMountpoint": "/",
+      "thresholds": {
+        "cpu": 85,
+        "memory": 90,
+        "disk": 90
+      },
+      "autoRecovery": {
+        "enabled": false
+      },
+      "manualRecovery": {
+        "actionServerId": "physical-host-a",
+        "actionId": "reboot_host_a",
+        "label": "Manual Reboot"
+      },
+      "actions": [
+        {
+          "id": "reboot_host_a",
+          "name": "Reboot Physical Host A",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": false,
+          "confirm": "reboot host a",
+          "timeoutSeconds": 20,
+          "successReturnCodes": [
+            0,
+            255
+          ],
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "ops@example-host-a",
+            "sudo",
+            "systemctl",
+            "reboot"
+          ]
+        }
+      ],
+      "autoBackup": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "physical-host-b",
+      "name": "Physical Host B",
+      "type": "physical",
+      "group": "Physical Hosts",
+      "description": "SSH: ops@example-host-b",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.0.11:9100"
+      },
+      "diskMountpoint": "/",
+      "thresholds": {
+        "cpu": 85,
+        "memory": 90,
+        "disk": 90
+      },
+      "autoRecovery": {
+        "enabled": false
+      },
+      "manualRecovery": {
+        "actionServerId": "physical-host-b",
+        "actionId": "reboot_host_b",
+        "label": "Manual Reboot"
+      },
+      "actions": [
+        {
+          "id": "reboot_host_b",
+          "name": "Reboot Physical Host B",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": false,
+          "confirm": "reboot host b",
+          "timeoutSeconds": 20,
+          "successReturnCodes": [
+            0,
+            255
+          ],
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "ops@example-host-b",
+            "sudo",
+            "systemctl",
+            "reboot"
+          ]
+        },
+        {
+          "id": "restart_vm_example",
+          "name": "Restart VM Example",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": true,
+          "timeoutSeconds": 90,
+          "command": [
+            "python",
+            "scripts/restart_vm_by_ip.py",
+            "--host",
+            "10.0.0.11",
+            "--user",
+            "ops",
+            "--guest-ip",
+            "10.0.1.20"
+          ]
+        }
+      ],
+      "autoBackup": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "vm-app-01",
+      "name": "VM App 01",
+      "type": "virtual",
+      "hostServerId": "physical-host-b",
+      "group": "Virtual Machines",
+      "description": "SSH: ops@vm-app-01",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.1.20:9100"
+      },
+      "diskMountpoint": "/",
+      "thresholds": {
+        "cpu": 85,
+        "memory": 90,
+        "disk": 90
+      },
+      "autoRecovery": {
+        "enabled": true,
+        "actionServerId": "physical-host-b",
+        "actionId": "restart_vm_example",
+        "minimumConsecutiveFailures": 2,
+        "cooldownSeconds": 300,
+        "triggerHealth": [
+          "down"
+        ]
+      },
+      "manualRecovery": {
+        "actionServerId": "vm-app-01",
+        "actionId": "reboot_vm_app_01",
+        "label": "Manual Reboot"
+      },
+      "actions": [
+        {
+          "id": "reboot_vm_app_01",
+          "name": "Reboot VM App 01",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": false,
+          "confirm": "reboot vm app 01",
+          "timeoutSeconds": 20,
+          "successReturnCodes": [
+            0,
+            255
+          ],
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "ops@vm-app-01",
+            "sudo",
+            "systemctl",
+            "reboot"
+          ]
+        },
+        {
+          "id": "restart_web_stack",
+          "name": "Restart Web Stack",
+          "danger": "high",
+          "enabled": false,
+          "allowAuto": true,
+          "timeoutSeconds": 60,
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "ops@vm-app-01",
+            "bash",
+            "-lc",
+            "sudo systemctl restart nginx || sudo systemctl restart apache2 || sudo systemctl restart httpd"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vm-app-02",
+      "name": "VM App 02",
+      "type": "virtual",
+      "hostServerId": "",
+      "group": "Virtual Machines",
+      "description": "SSH: ops@vm-app-02",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.1.21:9100"
+      },
+      "diskMountpoint": "/",
+      "thresholds": {
+        "cpu": 85,
+        "memory": 90,
+        "disk": 90
+      },
+      "autoRecovery": {
+        "enabled": false
+      },
+      "manualRecovery": {
+        "actionServerId": "vm-app-02",
+        "actionId": "reboot_vm_app_02",
+        "label": "Manual Reboot"
+      },
+      "actions": [
+        {
+          "id": "reboot_vm_app_02",
+          "name": "Reboot VM App 02",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": false,
+          "confirm": "reboot vm app 02",
+          "timeoutSeconds": 20,
+          "successReturnCodes": [
+            0,
+            255
+          ],
+          "command": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "ops@vm-app-02",
+            "sudo",
+            "systemctl",
+            "reboot"
+          ]
+        }
+      ]
+    }
+  ],
+  "websites": [
+    {
+      "id": "external-site-a",
+      "name": "Public Site A",
+      "group": "External Sites",
+      "serverId": "",
+      "url": "http://public.example.com:6002/",
+      "description": "Public endpoint -> origin 10.0.2.50:7001",
+      "thresholds": {
+        "duration": 3,
+        "certDays": 14
+      },
+      "autoRecovery": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "external-site-b",
+      "name": "Public Site B",
+      "group": "External Sites",
+      "serverId": "",
+      "url": "http://public.example.com:6003/",
+      "description": "Public endpoint -> origin 10.0.2.50:7002",
+      "thresholds": {
+        "duration": 3,
+        "certDays": 14
+      },
+      "autoRecovery": {
+        "enabled": false
+      }
+    }
+  ]
+}
