@@ -439,6 +439,30 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("auto-backup-interval-invalid:bad-backup", issue_ids)
         self.assertIn("auto-backup-interval-too-low:low-backup", issue_ids)
 
+    def test_config_validation_reports_monitoring_option_risks(self) -> None:
+        config = {
+            "monitoring": {
+                "pollIntervalSeconds": "fast",
+                "recoveryLogLimit": 5,
+                "incidentLogLimit": "many",
+                "resourceExpiryWarningDays": 0,
+                "resourceExpiryCriticalDays": 20,
+            },
+            "servers": [],
+            "websites": [],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("monitoring-poll-interval-invalid", issue_ids)
+        self.assertIn("monitoring-recovery-log-limit-too-low", issue_ids)
+        self.assertIn("monitoring-incident-log-limit-invalid", issue_ids)
+        self.assertIn("monitoring-resource-warning-days-invalid", issue_ids)
+        self.assertIn("monitoring-resource-critical-days-too-high", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

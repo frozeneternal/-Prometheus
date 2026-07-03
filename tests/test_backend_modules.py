@@ -72,6 +72,27 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(options["resourceExpiryWarningDays"], 2)
         self.assertEqual(options["resourceExpiryCriticalDays"], 2)
 
+    def test_config_module_tolerates_invalid_monitoring_options(self) -> None:
+        from backend import config as backend_config
+
+        options = backend_config.monitoring_options(
+            {
+                "monitoring": {
+                    "pollIntervalSeconds": "fast",
+                    "recoveryLogLimit": "many",
+                    "incidentLogLimit": "some",
+                    "resourceExpiryWarningDays": "soon",
+                    "resourceExpiryCriticalDays": "urgent",
+                }
+            }
+        )
+
+        self.assertEqual(options["pollIntervalSeconds"], 30)
+        self.assertEqual(options["recoveryLogLimit"], 200)
+        self.assertEqual(options["incidentLogLimit"], 200)
+        self.assertEqual(options["resourceExpiryWarningDays"], 30)
+        self.assertEqual(options["resourceExpiryCriticalDays"], 7)
+
     def test_prometheus_module_owns_query_builders_and_series_payload(self) -> None:
         from backend import prometheus
 

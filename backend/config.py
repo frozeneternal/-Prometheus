@@ -32,11 +32,11 @@ DEFAULT_CONFIG = {
 
 def monitoring_options(config: dict) -> dict:
     raw = config.get("monitoring") or {}
-    poll_interval = max(10, int(raw.get("pollIntervalSeconds", 30)))
-    recovery_log_limit = max(20, min(1000, int(raw.get("recoveryLogLimit", 200))))
-    incident_log_limit = max(20, min(1000, int(raw.get("incidentLogLimit", recovery_log_limit))))
-    resource_expiry_warning_days = max(1, int(raw.get("resourceExpiryWarningDays", 30)))
-    resource_expiry_critical_days = max(0, int(raw.get("resourceExpiryCriticalDays", 7)))
+    poll_interval = max(10, safe_int(raw.get("pollIntervalSeconds"), 30))
+    recovery_log_limit = max(20, min(1000, safe_int(raw.get("recoveryLogLimit"), 200)))
+    incident_log_limit = max(20, min(1000, safe_int(raw.get("incidentLogLimit"), recovery_log_limit)))
+    resource_expiry_warning_days = max(1, safe_int(raw.get("resourceExpiryWarningDays"), 30))
+    resource_expiry_critical_days = max(0, safe_int(raw.get("resourceExpiryCriticalDays"), 7))
     if resource_expiry_critical_days > resource_expiry_warning_days:
         resource_expiry_critical_days = resource_expiry_warning_days
     return {
@@ -46,6 +46,13 @@ def monitoring_options(config: dict) -> dict:
         "resourceExpiryWarningDays": resource_expiry_warning_days,
         "resourceExpiryCriticalDays": resource_expiry_critical_days,
     }
+
+
+def safe_int(value: object, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def active_config_path(

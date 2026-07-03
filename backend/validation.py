@@ -269,6 +269,111 @@ def positive_int_value(value: object) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def int_value(value: object) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def monitoring_option_issues(config: dict) -> list[dict]:
+    monitoring = config.get("monitoring") or {}
+    issues = []
+
+    poll_interval = int_value(monitoring.get("pollIntervalSeconds", 30))
+    if poll_interval is None:
+        issues.append(
+            make_issue(
+                "monitoring-poll-interval-invalid",
+                "error",
+                "监控轮询间隔 pollIntervalSeconds 必须是整数。",
+                "monitoring",
+            )
+        )
+    elif poll_interval < 10:
+        issues.append(
+            make_issue(
+                "monitoring-poll-interval-too-low",
+                "warning",
+                "监控轮询间隔 pollIntervalSeconds 低于 10 秒，会被提升到 10 秒。",
+                "monitoring",
+            )
+        )
+
+    recovery_limit = int_value(monitoring.get("recoveryLogLimit", 200))
+    if recovery_limit is None:
+        issues.append(
+            make_issue(
+                "monitoring-recovery-log-limit-invalid",
+                "error",
+                "恢复日志上限 recoveryLogLimit 必须是整数。",
+                "monitoring",
+            )
+        )
+    elif recovery_limit < 20:
+        issues.append(
+            make_issue(
+                "monitoring-recovery-log-limit-too-low",
+                "error",
+                "恢复日志上限 recoveryLogLimit 不能低于 20。",
+                "monitoring",
+            )
+        )
+
+    incident_limit = int_value(monitoring.get("incidentLogLimit", recovery_limit or 200))
+    if incident_limit is None:
+        issues.append(
+            make_issue(
+                "monitoring-incident-log-limit-invalid",
+                "error",
+                "中断日志上限 incidentLogLimit 必须是整数。",
+                "monitoring",
+            )
+        )
+    elif incident_limit < 20:
+        issues.append(
+            make_issue(
+                "monitoring-incident-log-limit-too-low",
+                "error",
+                "中断日志上限 incidentLogLimit 不能低于 20。",
+                "monitoring",
+            )
+        )
+
+    warning_days = int_value(monitoring.get("resourceExpiryWarningDays", 30))
+    if warning_days is None or warning_days <= 0:
+        issues.append(
+            make_issue(
+                "monitoring-resource-warning-days-invalid",
+                "error",
+                "资源到期预警天数 resourceExpiryWarningDays 必须是大于 0 的整数。",
+                "monitoring",
+            )
+        )
+
+    critical_days = int_value(monitoring.get("resourceExpiryCriticalDays", 7))
+    if critical_days is None or critical_days < 0:
+        issues.append(
+            make_issue(
+                "monitoring-resource-critical-days-invalid",
+                "error",
+                "资源到期临界天数 resourceExpiryCriticalDays 必须是大于等于 0 的整数。",
+                "monitoring",
+            )
+        )
+    elif warning_days is not None and critical_days > warning_days:
+        issues.append(
+            make_issue(
+                "monitoring-resource-critical-days-too-high",
+                "error",
+                "资源到期临界天数 resourceExpiryCriticalDays 不能大于预警天数。",
+                "monitoring",
+            )
+        )
+
+    return issues
+
+
 def auto_recovery_policy_issues(owner: dict, owner_type: str) -> list[dict]:
     owner_id = str(owner.get("id") or "")
     recovery = owner.get("autoRecovery") or {}
@@ -496,6 +601,7 @@ def config_validation_summary(config: dict) -> dict:
     issues.extend(duplicate_id_issues(servers, "server", "服务器"))
     issues.extend(duplicate_id_issues(websites, "website", "网站"))
     issues.extend(duplicate_id_issues(resources, "resource", "资源"))
+    issues.extend(monitoring_option_issues(config))
     issues.extend(account_configuration_issues(config))
 
     for server in servers:
