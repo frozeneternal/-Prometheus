@@ -139,6 +139,8 @@ class ConfigValidationTests(unittest.TestCase):
                         {"id": "", "command": ["echo", "missing-id"]},
                         {"id": "restart", "command": [], "allowAuto": True, "timeoutSeconds": 30},
                         {"id": "restart", "command": ["echo", 1]},
+                        {"id": "manual-bad-timeout", "command": ["echo", "manual"], "timeoutSeconds": "soon"},
+                        {"id": "auto-missing-timeout", "command": ["echo", "auto"], "allowAuto": True},
                         {"id": "renew-cert", "command": ["certbot", "renew"], "allowAuto": True, "timeoutSeconds": 0},
                     ],
                 }
@@ -155,6 +157,8 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("duplicate-action-id:ops-host/restart", issue_ids)
         self.assertIn("action-command-empty:ops-host/restart", issue_ids)
         self.assertIn("action-command-invalid:ops-host/restart", issue_ids)
+        self.assertIn("action-timeout-invalid:ops-host/manual-bad-timeout", issue_ids)
+        self.assertIn("action-timeout-invalid:ops-host/auto-missing-timeout", issue_ids)
         self.assertIn("action-timeout-invalid:ops-host/renew-cert", issue_ids)
 
     def test_config_validation_reports_invalid_resource_expiry_dates(self) -> None:

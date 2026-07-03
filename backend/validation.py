@@ -241,21 +241,23 @@ def action_definition_issues(server: dict) -> list[dict]:
                 )
             )
 
-        if action.get("allowAuto", False):
-            try:
-                timeout_seconds = int(action.get("timeoutSeconds", 0))
-            except (TypeError, ValueError):
-                timeout_seconds = 0
-            if timeout_seconds <= 0:
-                issues.append(
-                    make_issue(
-                        f"action-timeout-invalid:{server_id}/{action_id}",
-                        "error",
-                        f"自动动作必须配置大于 0 的 timeoutSeconds：{server_id}/{action_id}。",
-                        "action",
-                        target_id,
-                    )
+        has_timeout = "timeoutSeconds" in action
+        try:
+            timeout_seconds = int(action.get("timeoutSeconds", 30))
+        except (TypeError, ValueError):
+            timeout_seconds = 0
+        if action.get("allowAuto", False) and not has_timeout:
+            timeout_seconds = 0
+        if timeout_seconds <= 0:
+            issues.append(
+                make_issue(
+                    f"action-timeout-invalid:{server_id}/{action_id}",
+                    "error",
+                    f"动作必须配置大于 0 的 timeoutSeconds：{server_id}/{action_id}。",
+                    "action",
+                    target_id,
                 )
+            )
     return issues
 
 

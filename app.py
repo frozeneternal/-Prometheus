@@ -1546,7 +1546,54 @@ def execute_server_action(
         payload["logId"] = log_event["id"]
         return 400, payload
 
-    timeout_seconds = int(action.get("timeoutSeconds", 30))
+    try:
+        timeout_seconds = int(action.get("timeoutSeconds", 30))
+    except (TypeError, ValueError):
+        payload = {
+            "ok": False,
+            "message": "动作 timeoutSeconds 必须是大于 0 的整数。",
+            "stdout": "",
+            "stderr": "",
+        }
+        log_event = build_log_event(
+            invocation=invocation,
+            target_type=target_type,
+            target_id=target_id,
+            target_name=target_name,
+            action_server=action_server,
+            action=action,
+            reason=reason,
+            consecutive_failures=consecutive_failures,
+            payload=payload,
+            actor=actor,
+        )
+        append_recovery_log(config, log_event)
+        payload["logId"] = log_event["id"]
+        return 400, payload
+
+    if timeout_seconds <= 0:
+        payload = {
+            "ok": False,
+            "message": "动作 timeoutSeconds 必须是大于 0 的整数。",
+            "stdout": "",
+            "stderr": "",
+        }
+        log_event = build_log_event(
+            invocation=invocation,
+            target_type=target_type,
+            target_id=target_id,
+            target_name=target_name,
+            action_server=action_server,
+            action=action,
+            reason=reason,
+            consecutive_failures=consecutive_failures,
+            payload=payload,
+            actor=actor,
+        )
+        append_recovery_log(config, log_event)
+        payload["logId"] = log_event["id"]
+        return 400, payload
+
     timeout_seconds = max(1, min(timeout_seconds, 300))
     success_codes = normalize_success_codes(action)
     started = time.time()
