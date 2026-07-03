@@ -218,6 +218,29 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(renewal["renewBeforeDays"], 14)
         self.assertEqual(renewal["cooldownSeconds"], 86400)
 
+    def test_public_view_tolerates_invalid_auto_backup_policy_values(self) -> None:
+        from backend import public_view
+
+        view = public_view.public_config(
+            {
+                "monitoring": {},
+                "servers": [
+                    {
+                        "id": "srv1",
+                        "autoBackup": {
+                            "enabled": True,
+                            "intervalSeconds": "often",
+                        },
+                    }
+                ],
+                "websites": [],
+                "resources": [],
+            }
+        )
+
+        backup = view["servers"][0]["autoBackup"]
+        self.assertEqual(backup["intervalSeconds"], 86400)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 

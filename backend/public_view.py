@@ -55,7 +55,7 @@ def public_auto_backup(server: dict, default_action_server_id: str = "") -> dict
         "enabled": bool(raw.get("enabled")),
         "actionId": raw.get("actionId", ""),
         "actionServerId": raw.get("actionServerId", default_action_server_id),
-        "intervalSeconds": int(raw.get("intervalSeconds", 86400)),
+        "intervalSeconds": safe_positive_int(raw.get("intervalSeconds", 86400), 86400, 300),
     }
 
 

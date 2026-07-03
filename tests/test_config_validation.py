@@ -391,6 +391,50 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("cert-renewal-renew-before-invalid:zero-site", issue_ids)
         self.assertIn("cert-renewal-cooldown-invalid:zero-site", issue_ids)
 
+    def test_config_validation_reports_auto_backup_policy_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "backup",
+                            "command": ["echo", "backup"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        },
+                    ],
+                },
+                {
+                    "id": "bad-backup",
+                    "autoBackup": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "backup",
+                        "intervalSeconds": "often",
+                    },
+                },
+                {
+                    "id": "low-backup",
+                    "autoBackup": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "backup",
+                        "intervalSeconds": 120,
+                    },
+                },
+            ],
+            "websites": [],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("auto-backup-interval-invalid:bad-backup", issue_ids)
+        self.assertIn("auto-backup-interval-too-low:low-backup", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

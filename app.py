@@ -1128,16 +1128,30 @@ def can_trigger_backup(server: dict, snapshot: dict, state: dict) -> tuple[bool,
     if not backup.get("enabled"):
         return False, "自动备份未启用。"
 
+    policy_message = backup_policy_error(backup)
+    if policy_message:
+        return False, policy_message
+
     if snapshot.get("status") != "online":
         return False, "服务器当前不在线，跳过自动备份。"
 
-    interval = max(300, int(backup.get("intervalSeconds", 86400)))
+    interval = int(backup.get("intervalSeconds", 86400))
     last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
     if last_completed and time.time() - last_completed < interval:
         remain = int(interval - (time.time() - last_completed))
         return False, f"距离下次自动备份还有约 {max(0, remain)} 秒。"
 
     return True, ""
+
+
+def backup_policy_error(backup: dict) -> str:
+    try:
+        interval = int(backup.get("intervalSeconds", 86400))
+    except (TypeError, ValueError):
+        return "自动备份 intervalSeconds 必须是整数。"
+    if interval < 300:
+        return "自动备份 intervalSeconds 不能低于 300 秒。"
+    return ""
 
 
 def resolve_backup_action(config: dict, server: dict) -> tuple[dict | None, dict | None, str]:
@@ -1178,7 +1192,7 @@ def maybe_trigger_backup(config: dict, server: dict, snapshot: dict) -> dict:
         "enabled": enabled,
         "status": "idle",
         "message": "",
-        "intervalSeconds": max(300, int(backup_config.get("intervalSeconds", 86400))),
+        "intervalSeconds": safe_positive_int(backup_config.get("intervalSeconds", 86400), 86400, 300),
         "lastAttemptAt": state.get("lastAttemptAt", 0.0),
         "lastCompletedAt": state.get("lastCompletedAt", 0.0),
         "lastResult": state.get("lastResult", ""),
@@ -1194,6 +1208,13 @@ def maybe_trigger_backup(config: dict, server: dict, snapshot: dict) -> dict:
     if resolve_message:
         backup_view["status"] = "blocked"
         backup_view["message"] = resolve_message
+        set_runtime_entity_state("server-backup", target_id, state)
+        return backup_view
+
+    policy_message = backup_policy_error(backup_config)
+    if policy_message:
+        backup_view["status"] = "blocked"
+        backup_view["message"] = policy_message
         set_runtime_entity_state("server-backup", target_id, state)
         return backup_view
 

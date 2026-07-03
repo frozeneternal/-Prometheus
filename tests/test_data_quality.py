@@ -179,6 +179,46 @@ class DataQualityTests(unittest.TestCase):
         self.assertIn("renewBeforeDays", result["message"])
         execute_server_action.assert_not_called()
 
+    def test_auto_backup_blocks_invalid_policy_without_executing_action(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "autoBackup": {
+                        "enabled": True,
+                        "actionServerId": "srv1",
+                        "actionId": "backup",
+                        "intervalSeconds": "often",
+                    },
+                    "actions": [
+                        {
+                            "id": "backup",
+                            "command": ["echo", "backup"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ]
+        }
+        server = config["servers"][0]
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "online",
+            "health": "healthy",
+            "issues": [],
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with patch.object(app, "execute_server_action") as execute_server_action:
+            result = app.maybe_trigger_backup(config, server, snapshot)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("intervalSeconds", result["message"])
+        execute_server_action.assert_not_called()
+
     def test_series_payload_returns_empty_values_when_collector_is_unavailable(self) -> None:
         config = {
             "servers": [

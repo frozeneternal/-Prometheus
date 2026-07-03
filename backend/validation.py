@@ -7,6 +7,7 @@ from .expiry import parse_expiry_datetime
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
 AUTO_RECOVERY_MIN_COOLDOWN_SECONDS = 30
 CERT_RENEWAL_MIN_COOLDOWN_SECONDS = 300
+AUTO_BACKUP_MIN_INTERVAL_SECONDS = 300
 
 
 def make_issue(
@@ -369,6 +370,33 @@ def cert_renewal_policy_issues(website: dict) -> list[dict]:
     return issues
 
 
+def auto_backup_policy_issues(server: dict) -> list[dict]:
+    server_id = str(server.get("id") or "")
+    backup = server.get("autoBackup") or {}
+    interval = positive_int_value(backup.get("intervalSeconds", 86400))
+    if interval is None:
+        return [
+            make_issue(
+                f"auto-backup-interval-invalid:{server_id}",
+                "error",
+                "自动备份 intervalSeconds 必须是大于 0 的整数。",
+                "server",
+                server_id,
+            )
+        ]
+    if interval < AUTO_BACKUP_MIN_INTERVAL_SECONDS:
+        return [
+            make_issue(
+                f"auto-backup-interval-too-low:{server_id}",
+                "error",
+                f"自动备份 intervalSeconds 不能低于 {AUTO_BACKUP_MIN_INTERVAL_SECONDS} 秒，避免重复执行备份命令。",
+                "server",
+                server_id,
+            )
+        ]
+    return []
+
+
 def validate_action_reference(
     config: dict,
     actions: dict[tuple[str, str], dict],
@@ -501,6 +529,7 @@ def config_validation_summary(config: dict) -> dict:
 
         backup = server.get("autoBackup") or {}
         if backup.get("enabled"):
+            issues.extend(auto_backup_policy_issues(server))
             issues.extend(
                 validate_action_reference(
                     config,
