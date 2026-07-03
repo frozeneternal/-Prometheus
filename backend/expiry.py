@@ -32,10 +32,9 @@ def parse_expiry_timestamp(value: object) -> float | None:
 
 
 def _safe_int(value: object, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
+    if not isinstance(value, int) or isinstance(value, bool):
         return default
+    return value
 
 
 def resource_expiry_thresholds(config: dict, resource: dict) -> tuple[int, int]:

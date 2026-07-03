@@ -100,8 +100,8 @@ class ResourceExpiryTests(unittest.TestCase):
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {
             "monitoring": {
-                "resourceExpiryWarningDays": "",
-                "resourceExpiryCriticalDays": "bad",
+                "resourceExpiryWarningDays": 10.5,
+                "resourceExpiryCriticalDays": True,
             },
             "resources": [
                 {
@@ -113,8 +113,8 @@ class ResourceExpiryTests(unittest.TestCase):
                     "id": "bad-resource-thresholds",
                     "name": "Bad Resource Thresholds",
                     "expiresAt": "2026-07-20",
-                    "warningDays": "x",
-                    "criticalDays": "",
+                    "warningDays": 20.5,
+                    "criticalDays": False,
                 },
                 {
                     "id": "negative-thresholds",
