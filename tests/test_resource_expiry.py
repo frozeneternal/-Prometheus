@@ -96,6 +96,46 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(summary["unknown"], 1)
         self.assertEqual(summary["actionRequired"], 4)
 
+    def test_resource_expiry_thresholds_tolerate_invalid_values(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "monitoring": {
+                "resourceExpiryWarningDays": "",
+                "resourceExpiryCriticalDays": "bad",
+            },
+            "resources": [
+                {
+                    "id": "bad-global-thresholds",
+                    "name": "Bad Global Thresholds",
+                    "expiresAt": "2026-07-20",
+                },
+                {
+                    "id": "bad-resource-thresholds",
+                    "name": "Bad Resource Thresholds",
+                    "expiresAt": "2026-07-20",
+                    "warningDays": "x",
+                    "criticalDays": "",
+                },
+                {
+                    "id": "negative-thresholds",
+                    "name": "Negative Thresholds",
+                    "expiresAt": "2026-07-20",
+                    "warningDays": -10,
+                    "criticalDays": -5,
+                },
+            ],
+        }
+
+        items = app.resource_expiry_items(config, now=now)
+        by_id = {item["id"]: item for item in items}
+
+        self.assertEqual(by_id["bad-global-thresholds"]["warningDays"], 30)
+        self.assertEqual(by_id["bad-global-thresholds"]["criticalDays"], 7)
+        self.assertEqual(by_id["bad-resource-thresholds"]["warningDays"], 30)
+        self.assertEqual(by_id["bad-resource-thresholds"]["criticalDays"], 7)
+        self.assertEqual(by_id["negative-thresholds"]["warningDays"], 1)
+        self.assertEqual(by_id["negative-thresholds"]["criticalDays"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,10 +31,23 @@ def parse_expiry_timestamp(value: object) -> float | None:
     return None if parsed is None else parsed.timestamp()
 
 
+def _safe_int(value: object, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def resource_expiry_thresholds(config: dict, resource: dict) -> tuple[int, int]:
     monitoring = config.get("monitoring") or {}
-    warning_days = max(1, int(resource.get("warningDays", monitoring.get("resourceExpiryWarningDays", 30))))
-    critical_days = max(0, int(resource.get("criticalDays", monitoring.get("resourceExpiryCriticalDays", 7))))
+    warning_days = max(
+        1,
+        _safe_int(resource.get("warningDays", monitoring.get("resourceExpiryWarningDays", 30)), 30),
+    )
+    critical_days = max(
+        0,
+        _safe_int(resource.get("criticalDays", monitoring.get("resourceExpiryCriticalDays", 7)), 7),
+    )
     if critical_days > warning_days:
         critical_days = warning_days
     return warning_days, critical_days
