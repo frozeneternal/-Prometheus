@@ -92,6 +92,25 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('$("#configValidationPanel").innerHTML = "";', render_error)
         self.assertIn('$("#configValidationPanel").classList.add("hidden");', render_error)
 
+    def test_metric_formatters_reject_non_finite_values(self) -> None:
+        format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
+
+        self.assertIn("function isFiniteNumber(value)", format_js)
+        for function_name in (
+            "formatPercent",
+            "formatBytesPerSecond",
+            "formatDuration",
+            "formatElapsed",
+            "formatSeconds",
+            "formatStatusCode",
+            "formatCert",
+            "metricValue",
+        ):
+            start = format_js.index(f"export function {function_name}")
+            end = format_js.find("\nexport function ", start + 1)
+            function_body = format_js[start:] if end == -1 else format_js[start:end]
+            self.assertIn("isFiniteNumber", function_body, function_name)
+
 
 if __name__ == "__main__":
     unittest.main()

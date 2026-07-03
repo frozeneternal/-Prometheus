@@ -62,13 +62,17 @@ export const resourceExpiryLabels = {
   unknown: "待核实",
 };
 
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function formatPercent(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (!isFiniteNumber(value)) return "--";
   return `${Math.max(0, value).toFixed(1)}%`;
 }
 
 export function formatBytesPerSecond(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (!isFiniteNumber(value)) return "--";
   const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
   let size = Math.max(0, value);
   let index = 0;
@@ -80,7 +84,7 @@ export function formatBytesPerSecond(value) {
 }
 
 export function formatDuration(seconds) {
-  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "--";
+  if (!isFiniteNumber(seconds)) return "--";
   const day = 86400;
   const hour = 3600;
   if (seconds >= day) return `${Math.floor(seconds / day)} 天`;
@@ -89,7 +93,7 @@ export function formatDuration(seconds) {
 }
 
 export function formatElapsed(seconds) {
-  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "--";
+  if (!isFiniteNumber(seconds)) return "--";
   const value = Math.max(0, Math.floor(seconds));
   const day = 86400;
   const hour = 3600;
@@ -101,17 +105,17 @@ export function formatElapsed(seconds) {
 }
 
 export function formatSeconds(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (!isFiniteNumber(value)) return "--";
   return `${value.toFixed(value >= 10 ? 1 : 2)}s`;
 }
 
 export function formatStatusCode(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (!isFiniteNumber(value)) return "--";
   return String(Math.trunc(value));
 }
 
 export function formatCert(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (!isFiniteNumber(value)) return "--";
   if (value <= 0) return "已过期";
   return `${Math.floor(value / 86400)} 天`;
 }
@@ -131,7 +135,7 @@ export function formatDate(value) {
 export function metricValue(metric, value) {
   if (["cpu", "memory", "disk"].includes(metric)) return formatPercent(value);
   if (["rx", "tx"].includes(metric)) return formatBytesPerSecond(value);
-  if (metric === "load") return value === null || value === undefined ? "--" : value.toFixed(2);
+  if (metric === "load") return isFiniteNumber(value) ? value.toFixed(2) : "--";
   if (metric === "uptime") return formatDuration(value);
   return value ?? "--";
 }
