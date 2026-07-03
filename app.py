@@ -19,31 +19,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
-CONFIG_PATH = BASE_DIR / "config" / "servers.json"
-LOCAL_CONFIG_PATH = BASE_DIR / "config" / "servers.local.json"
 DATA_DIR = BASE_DIR / "data"
 RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
 INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
-
-DEFAULT_CONFIG = {
-    "appName": "本地服务器监控台",
-    "listenHost": "127.0.0.1",
-    "listenPort": 8787,
-    "prometheusUrl": "http://127.0.0.1:9090",
-    "actionToken": "",
-    "sessionSecret": "",
-    "monitoring": {
-        "pollIntervalSeconds": 30,
-        "recoveryLogLimit": 200,
-        "incidentLogLimit": 200,
-        "resourceExpiryWarningDays": 30,
-        "resourceExpiryCriticalDays": 7,
-    },
-    "servers": [],
-    "websites": [],
-    "resources": [],
-    "users": [],
-}
 
 MAX_OUTPUT_CHARS = 20000
 SERVER_METRICS = ("up", "cpu", "memory", "disk", "rx", "tx", "load", "uptime")
@@ -59,24 +37,6 @@ RUNTIME_STATE = {
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def monitoring_options(config: dict) -> dict:
-    raw = config.get("monitoring") or {}
-    poll_interval = max(10, int(raw.get("pollIntervalSeconds", 30)))
-    recovery_log_limit = max(20, min(1000, int(raw.get("recoveryLogLimit", 200))))
-    incident_log_limit = max(20, min(1000, int(raw.get("incidentLogLimit", recovery_log_limit))))
-    resource_expiry_warning_days = max(1, int(raw.get("resourceExpiryWarningDays", 30)))
-    resource_expiry_critical_days = max(0, int(raw.get("resourceExpiryCriticalDays", 7)))
-    if resource_expiry_critical_days > resource_expiry_warning_days:
-        resource_expiry_critical_days = resource_expiry_warning_days
-    return {
-        "pollIntervalSeconds": poll_interval,
-        "recoveryLogLimit": recovery_log_limit,
-        "incidentLogLimit": incident_log_limit,
-        "resourceExpiryWarningDays": resource_expiry_warning_days,
-        "resourceExpiryCriticalDays": resource_expiry_critical_days,
-    }
 
 
 def load_recovery_logs_from_disk() -> list[dict]:
@@ -217,22 +177,6 @@ def current_dashboard_payload() -> dict | None:
     payload["recoveryLogs"] = get_recent_recovery_logs()
     payload["incidentLogs"] = get_recent_incident_logs()
     return payload
-
-
-def relative_to_base(path: Path) -> str:
-    try:
-        return str(path.relative_to(BASE_DIR)).replace("\\", "/")
-    except ValueError:
-        return path.name
-
-
-def config_source_info() -> dict:
-    path = active_config_path()
-    return {
-        "configFile": relative_to_base(path),
-        "usingLocalConfig": path == LOCAL_CONFIG_PATH,
-        "localConfigAvailable": LOCAL_CONFIG_PATH.exists(),
-    }
 
 
 def target_display_type(target_type: str) -> str:
@@ -429,51 +373,6 @@ def update_incident_state(
         return incident_view
 
     return incident_view
-
-
-def load_config() -> dict:
-    path = active_config_path()
-    if not path.exists():
-        return DEFAULT_CONFIG.copy()
-
-    with path.open("r", encoding="utf-8") as fh:
-        data = json.load(fh)
-
-    config = DEFAULT_CONFIG.copy()
-    config.update(data)
-    merged_monitoring = DEFAULT_CONFIG["monitoring"].copy()
-    merged_monitoring.update(data.get("monitoring") or {})
-    config["monitoring"] = merged_monitoring
-    config["servers"] = config.get("servers") or []
-    config["websites"] = config.get("websites") or []
-    config["resources"] = config.get("resources") or []
-    config["users"] = config.get("users") or []
-    config["_configPath"] = str(path)
-    config["_usingLocalConfig"] = path == LOCAL_CONFIG_PATH
-    return config
-
-
-def active_config_path() -> Path:
-    return LOCAL_CONFIG_PATH if LOCAL_CONFIG_PATH.exists() else CONFIG_PATH
-
-
-def load_config_raw() -> dict:
-    path = active_config_path()
-    if not path.exists():
-        return json.loads(json.dumps(DEFAULT_CONFIG))
-
-    with path.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def save_config_raw(raw_config: dict) -> None:
-    path = active_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".json.tmp")
-    with tmp_path.open("w", encoding="utf-8") as fh:
-        json.dump(raw_config, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp_path, path)
 
 
 def parse_expiry_datetime(value: object) -> datetime | None:
@@ -758,6 +657,17 @@ from backend.auth import (  # noqa: E402 - transitional re-export while app.py i
     verify_action_token,
     verify_password,
     verify_session_token,
+)
+from backend.config import (  # noqa: E402 - transitional re-export while app.py is split.
+    DEFAULT_CONFIG,
+    active_config_path,
+    config_source_info,
+    find_server,
+    find_website,
+    load_config,
+    load_config_raw,
+    monitoring_options,
+    save_config_raw,
 )
 from backend.expiry import (  # noqa: E402 - transitional re-export while app.py is split.
     classify_resource_expiry,
@@ -1730,20 +1640,6 @@ def bootstrap_runtime_state() -> None:
     with RUNTIME_LOCK:
         RUNTIME_STATE["recoveryLogs"] = logs
         RUNTIME_STATE["incidentLogs"] = incident_logs
-
-
-def find_server(config: dict, server_id: str) -> dict | None:
-    for server in config.get("servers", []):
-        if server.get("id") == server_id:
-            return server
-    return None
-
-
-def find_website(config: dict, website_id: str) -> dict | None:
-    for website in config.get("websites", []):
-        if website.get("id") == website_id:
-            return website
-    return None
 
 
 def find_action(server: dict, action_id: str) -> dict | None:
