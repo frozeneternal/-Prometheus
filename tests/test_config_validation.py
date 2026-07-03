@@ -88,6 +88,48 @@ class ConfigValidationTests(unittest.TestCase):
         )
         self.assertEqual(app.config_validation_summary.__module__, "backend.validation")
 
+    def test_config_validation_reports_manual_action_reference_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {"id": "restart_service", "enabled": True},
+                    ],
+                },
+                {
+                    "id": "app-server",
+                    "manualRecovery": {
+                        "actionServerId": "ops-host",
+                        "actionId": "missing_reboot",
+                    },
+                },
+            ],
+            "websites": [
+                {
+                    "id": "site-main",
+                    "serverId": "app-server",
+                    "manualRecovery": {
+                        "actionServerId": "missing-server",
+                        "actionId": "restart_site",
+                    },
+                    "manualCertRenewal": {
+                        "actionServerId": "ops-host",
+                        "actionId": "missing_certbot",
+                    },
+                },
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("manual-recovery-action-missing:app-server", issue_ids)
+        self.assertIn("manual-recovery-server-missing:site-main", issue_ids)
+        self.assertIn("manual-cert-renewal-action-missing:site-main", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

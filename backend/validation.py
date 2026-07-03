@@ -192,6 +192,21 @@ def config_validation_summary(config: dict) -> dict:
                 )
             )
 
+        manual_recovery = server.get("manualRecovery") or {}
+        if manual_recovery.get("actionId") or manual_recovery.get("actionServerId"):
+            issues.extend(
+                validate_action_reference(
+                    config,
+                    actions,
+                    server,
+                    "server",
+                    "manual-recovery",
+                    str(manual_recovery.get("actionServerId") or server_id),
+                    str(manual_recovery.get("actionId") or ""),
+                    False,
+                )
+            )
+
     for website in websites:
         website_id = str(website.get("id") or "")
         server_id = str(website.get("serverId") or "")
@@ -233,6 +248,36 @@ def config_validation_summary(config: dict) -> dict:
                     str(renewal.get("actionServerId") or server_id),
                     str(renewal.get("actionId") or ""),
                     True,
+                )
+            )
+
+        manual_recovery = website.get("manualRecovery") or {}
+        if manual_recovery.get("actionId") or manual_recovery.get("actionServerId"):
+            issues.extend(
+                validate_action_reference(
+                    config,
+                    actions,
+                    website,
+                    "website",
+                    "manual-recovery",
+                    str(manual_recovery.get("actionServerId") or server_id),
+                    str(manual_recovery.get("actionId") or ""),
+                    False,
+                )
+            )
+
+        manual_renewal = website.get("manualCertRenewal") or {}
+        if manual_renewal.get("actionId") or manual_renewal.get("actionServerId"):
+            issues.extend(
+                validate_action_reference(
+                    config,
+                    actions,
+                    website,
+                    "website",
+                    "manual-cert-renewal",
+                    str(manual_renewal.get("actionServerId") or server_id),
+                    str(manual_renewal.get("actionId") or ""),
+                    False,
                 )
             )
 
