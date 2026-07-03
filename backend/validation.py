@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .expiry import parse_expiry_datetime
+
 
 def make_issue(
     issue_id: str,
@@ -361,6 +363,16 @@ def config_validation_summary(config: dict) -> dict:
                     f"resource-expiry-missing:{resource_id}",
                     "warning",
                     "资源缺少到期时间，无法提前告警。",
+                    "resource",
+                    resource_id,
+                )
+            )
+        elif parse_expiry_datetime(expires_at) is None:
+            issues.append(
+                make_issue(
+                    f"resource-expiry-invalid:{resource_id}",
+                    "warning",
+                    f"资源到期时间无法解析：{expires_at}。",
                     "resource",
                     resource_id,
                 )

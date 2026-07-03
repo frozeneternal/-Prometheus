@@ -157,6 +157,25 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("action-command-invalid:ops-host/restart", issue_ids)
         self.assertIn("action-timeout-invalid:ops-host/renew-cert", issue_ids)
 
+    def test_config_validation_reports_invalid_resource_expiry_dates(self) -> None:
+        config = {
+            "servers": [],
+            "websites": [],
+            "resources": [
+                {"id": "missing-expiry", "expiresAt": ""},
+                {"id": "bad-expiry", "expiresAt": "not-a-date"},
+                {"id": "valid-expiry", "expiresAt": "2026-08-01"},
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "warning")
+        self.assertIn("resource-expiry-missing:missing-expiry", issue_ids)
+        self.assertIn("resource-expiry-invalid:bad-expiry", issue_ids)
+        self.assertNotIn("resource-expiry-invalid:valid-expiry", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
