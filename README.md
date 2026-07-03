@@ -202,7 +202,15 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
 - `app.py`：暂时保留 HTTP 路由、Prometheus 查询、动作执行和运行时状态。
 
-迁移规则：纯业务逻辑优先放到 `backend/`，`app.py` 只做编排和兼容入口。后续前端也会按同样原则从单个 `public/app.js` 拆成模块化目录。
+前端已经从单个 `public/app.js` 拆到 `public/js/`：
+
+- `public/js/app.js`：浏览器入口、页面渲染、事件绑定和运行编排。
+- `public/js/api.js`：统一处理 `fetch` 返回、错误和接口载荷。
+- `public/js/dom.js`：DOM 查询和 HTML 转义等浏览器基础工具。
+- `public/js/format.js`：状态标签、指标标签、时间和数值格式化。
+- `public/js/state.js`：前端运行时状态。
+
+迁移规则：纯业务逻辑优先放到 `backend/`，`app.py` 只做编排和兼容入口；前端共享工具放到 `public/js/`，`app.js` 只保留页面流程和渲染代码。
 
 ## 怎么看是否正常
 
