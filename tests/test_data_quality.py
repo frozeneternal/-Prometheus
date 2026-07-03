@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app  # noqa: E402
+from backend import prometheus  # noqa: E402
 
 
 def vector(value: float | None) -> dict:
@@ -99,7 +100,7 @@ class DataQualityTests(unittest.TestCase):
             ]
         }
 
-        with patch.object(app, "prom_query_range", side_effect=TimeoutError("timed out")):
+        with patch.object(prometheus, "prom_query_range", side_effect=TimeoutError("timed out")):
             status, payload = app.series_payload(
                 config,
                 {"serverId": ["srv1"], "metric": ["cpu"], "minutes": ["60"]},

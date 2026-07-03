@@ -200,7 +200,8 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 
 - `backend/auth.py`：账号、角色、密码哈希、会话签名、操作鉴权。
 - `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
-- `app.py`：暂时保留 HTTP 路由、Prometheus 查询、动作执行和运行时状态。
+- `backend/prometheus.py`：Prometheus ready 检查、查询封装、PromQL 构造、数据质量分级和趋势数据接口载荷。
+- `app.py`：暂时保留 HTTP 路由、监控视图编排、动作执行和运行时状态。
 
 前端已经从单个 `public/app.js` 拆到 `public/js/`：
 

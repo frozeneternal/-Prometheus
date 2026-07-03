@@ -32,11 +32,30 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(items[0]["status"], "critical")
         self.assertEqual(resource_expiry_summary(items)["critical"], 1)
 
+    def test_prometheus_module_owns_query_builders_and_series_payload(self) -> None:
+        from backend import prometheus
+
+        self.assertEqual(prometheus.prometheus_url.__module__, "backend.prometheus")
+        self.assertEqual(prometheus.build_metric_queries.__module__, "backend.prometheus")
+        self.assertEqual(prometheus.build_website_queries.__module__, "backend.prometheus")
+        self.assertEqual(prometheus.series_payload.__module__, "backend.prometheus")
+
+        metric_queries = prometheus.build_metric_queries(
+            {"labels": {"job": "node", "instance": 'srv"1:9100'}, "diskMountpoint": "/"}
+        )
+        self.assertIn(r'instance="srv\"1:9100"', metric_queries["up"])
+        self.assertIn('mountpoint="/"', metric_queries["disk"])
+
+        website_queries = prometheus.build_website_queries({"url": "https://example.test/"})
+        self.assertIn('instance="https://example.test/"', website_queries["success"])
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
         self.assertEqual(app.hash_password.__module__, "backend.auth")
         self.assertEqual(app.resource_expiry_items.__module__, "backend.expiry")
+        self.assertEqual(app.prom_query.__module__, "backend.prometheus")
+        self.assertEqual(app.series_payload.__module__, "backend.prometheus")
 
 
 if __name__ == "__main__":
