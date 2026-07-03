@@ -176,6 +176,47 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("resource-expiry-invalid:bad-expiry", issue_ids)
         self.assertNotIn("resource-expiry-invalid:valid-expiry", issue_ids)
 
+    def test_config_validation_reports_account_configuration_risks(self) -> None:
+        config = {
+            "sessionSecret": "",
+            "actionToken": "",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [
+                {
+                    "username": "ops",
+                    "role": "operator",
+                    "passwordHash": "pbkdf2_sha256$1000$salt$bad-digest",
+                },
+                {
+                    "username": "ops",
+                    "role": "admin",
+                    "passwordHash": app.hash_password("safe-pass", salt="safe-salt", iterations=1000),
+                },
+                {
+                    "username": "missing-hash",
+                    "role": "operator",
+                },
+                {
+                    "username": "bad-role",
+                    "role": "root",
+                    "passwordHash": app.hash_password("safe-pass", salt="role-salt", iterations=1000),
+                },
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("auth-session-secret-missing", issue_ids)
+        self.assertIn("duplicate-user-username:ops", issue_ids)
+        self.assertIn("user-password-hash-invalid:ops", issue_ids)
+        self.assertIn("user-password-hash-missing:missing-hash", issue_ids)
+        self.assertIn("user-role-invalid:bad-role", issue_ids)
+        self.assertNotIn("user-password-hash-invalid:bad-role", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

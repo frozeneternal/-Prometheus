@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .auth import ROLE_RANK
 from .expiry import parse_expiry_datetime
 
 
@@ -49,6 +50,100 @@ def duplicate_id_issues(items: list[dict], kind: str, label: str) -> list[dict]:
                 )
             )
         seen.add(item_id)
+    return issues
+
+
+def password_hash_format_valid(password_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt, digest = str(password_hash).split("$", 3)
+        iterations = int(iterations_text)
+        int(digest, 16)
+    except (TypeError, ValueError):
+        return False
+    return (
+        algorithm == "pbkdf2_sha256"
+        and iterations >= 1000
+        and bool(salt)
+        and len(digest) == 64
+    )
+
+
+def account_configuration_issues(config: dict) -> list[dict]:
+    users = config.get("users", []) or []
+    if not users:
+        return []
+
+    issues = []
+    enabled_users = [user for user in users if user.get("enabled", True) is not False]
+    if enabled_users and not (config.get("sessionSecret") or config.get("actionToken")):
+        issues.append(
+            make_issue(
+                "auth-session-secret-missing",
+                "error",
+                "启用账号模式时必须配置 sessionSecret 或 actionToken 作为会话签名密钥。",
+                "auth",
+            )
+        )
+
+    seen: set[str] = set()
+    for index, user in enumerate(users):
+        username = str(user.get("username") or "")
+        target_id = username or f"index-{index}"
+        if not username:
+            issues.append(
+                make_issue(
+                    f"user-username-missing:{index}",
+                    "error",
+                    "用户配置缺少 username。",
+                    "user",
+                    target_id,
+                )
+            )
+        elif username in seen:
+            issues.append(
+                make_issue(
+                    f"duplicate-user-username:{username}",
+                    "error",
+                    f"用户 username 重复：{username}。",
+                    "user",
+                    username,
+                )
+            )
+        seen.add(username)
+
+        password_hash = str(user.get("passwordHash") or "")
+        if not password_hash:
+            issues.append(
+                make_issue(
+                    f"user-password-hash-missing:{target_id}",
+                    "error",
+                    f"用户缺少 passwordHash：{target_id}。",
+                    "user",
+                    target_id,
+                )
+            )
+        elif not password_hash_format_valid(password_hash):
+            issues.append(
+                make_issue(
+                    f"user-password-hash-invalid:{target_id}",
+                    "error",
+                    f"用户 passwordHash 格式无效或无法验证：{target_id}。",
+                    "user",
+                    target_id,
+                )
+            )
+
+        role = str(user.get("role") or "viewer").lower()
+        if role not in ROLE_RANK:
+            issues.append(
+                make_issue(
+                    f"user-role-invalid:{target_id}",
+                    "error",
+                    f"用户角色无效：{target_id}/{role}。",
+                    "user",
+                    target_id,
+                )
+            )
     return issues
 
 
@@ -219,6 +314,7 @@ def config_validation_summary(config: dict) -> dict:
     issues.extend(duplicate_id_issues(servers, "server", "服务器"))
     issues.extend(duplicate_id_issues(websites, "website", "网站"))
     issues.extend(duplicate_id_issues(resources, "resource", "资源"))
+    issues.extend(account_configuration_issues(config))
 
     for server in servers:
         server_id = str(server.get("id") or "")
