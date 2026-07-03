@@ -710,6 +710,7 @@ from backend.public_view import (  # noqa: E402 - transitional re-export while a
     renew_action_label,
     server_type,
 )
+from backend.validation import config_validation_summary  # noqa: E402 - transitional re-export while app.py is split.
 
 
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
@@ -1343,6 +1344,7 @@ def dashboard_payload(config: dict) -> dict:
             "error": prometheus_error,
         },
         "configSource": config_source_info(),
+        "configValidation": config_validation_summary(config),
         "summary": {
             "total": len(snapshots),
             "online": online,

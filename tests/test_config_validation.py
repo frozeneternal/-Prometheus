@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import app  # noqa: E402
+
+
+class ConfigValidationTests(unittest.TestCase):
+    def test_config_validation_reports_cross_reference_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "host-a",
+                    "type": "physical",
+                    "actions": [
+                        {"id": "restart_vm", "enabled": True, "allowAuto": False},
+                    ],
+                },
+                {"id": "host-a", "type": "physical"},
+                {
+                    "id": "vm-1",
+                    "hostServerId": "missing-host",
+                    "autoRecovery": {
+                        "enabled": True,
+                        "actionServerId": "host-a",
+                        "actionId": "restart_vm",
+                    },
+                },
+            ],
+            "websites": [
+                {
+                    "id": "site-1",
+                    "serverId": "missing-server",
+                    "certRenewal": {
+                        "enabled": True,
+                        "actionServerId": "host-a",
+                        "actionId": "missing-action",
+                    },
+                },
+                {"id": "site-1", "serverId": "vm-1"},
+            ],
+            "resources": [
+                {"id": "domain", "linkedTarget": "site:missing-site", "expiresAt": ""},
+                {"id": "domain", "linkedTarget": "server:missing-server"},
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertGreaterEqual(result["errorCount"], 1)
+        self.assertGreaterEqual(result["warningCount"], 1)
+        self.assertIn("duplicate-server-id:host-a", issue_ids)
+        self.assertIn("duplicate-website-id:site-1", issue_ids)
+        self.assertIn("server-host-missing:vm-1", issue_ids)
+        self.assertIn("website-server-missing:site-1", issue_ids)
+        self.assertIn("auto-recovery-action-not-allowed:vm-1", issue_ids)
+        self.assertIn("cert-renewal-action-missing:site-1", issue_ids)
+        self.assertIn("resource-expiry-missing:domain", issue_ids)
+        self.assertIn("resource-linked-target-missing:domain", issue_ids)
+
+    def test_dashboard_payload_includes_config_validation_summary(self) -> None:
+        config = {
+            "prometheusUrl": "http://127.0.0.1:9090",
+            "servers": [
+                {"id": "srv1", "labels": {"job": "node", "instance": "srv1:9100"}},
+                {"id": "srv1", "labels": {"job": "node", "instance": "srv2:9100"}},
+            ],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        dashboard = app.dashboard_payload(config)
+
+        self.assertIn("configValidation", dashboard)
+        self.assertEqual(dashboard["configValidation"]["status"], "error")
+        self.assertTrue(
+            any(issue["id"] == "duplicate-server-id:srv1" for issue in dashboard["configValidation"]["issues"])
+        )
+        self.assertEqual(app.config_validation_summary.__module__, "backend.validation")
+
+
+if __name__ == "__main__":
+    unittest.main()
