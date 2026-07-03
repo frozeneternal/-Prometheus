@@ -6,7 +6,8 @@
   "actionToken": "replace-with-a-strong-token",
   "monitoring": {
     "pollIntervalSeconds": 30,
-    "recoveryLogLimit": 200
+    "recoveryLogLimit": 200,
+    "incidentLogLimit": 200
   },
   "servers": [
     {

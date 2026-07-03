@@ -4,3 +4,4 @@ __pycache__/
 server.out.log
 server.err.log
 known_hosts_test
+config/servers.local.json

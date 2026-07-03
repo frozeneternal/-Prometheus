@@ -131,6 +131,25 @@ input {
   margin-bottom: 16px;
 }
 
+.system-notice {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+  border: 1px solid #edd48d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--warn-bg);
+  color: #6f4f09;
+  box-shadow: var(--shadow);
+}
+
+.system-notice p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .summary-card {
   min-height: 86px;
   border: 1px solid var(--line);
@@ -361,6 +380,40 @@ input {
   overflow-wrap: anywhere;
 }
 
+.quality-block {
+  margin: 12px 14px 0;
+  border: 1px solid #d8dde6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.quality-block.untrusted {
+  border-color: #f1c2bd;
+  background: #fff8f7;
+}
+
+.quality-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.quality-head span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.quality-block p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -489,6 +542,14 @@ button.danger:hover,
   border-radius: 8px;
   padding: 12px;
   background: #f8fafc;
+}
+
+.incident-block {
+  margin: 12px 14px 0;
+  border: 1px solid #f1c2bd;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff8f7;
 }
 
 .recovery-head,

@@ -25,6 +25,8 @@
       </header>
 
       <main>
+        <section id="systemNotice" class="system-notice hidden" aria-live="polite"></section>
+
         <section class="summary-grid" aria-label="状态汇总">
           <article class="summary-card">
             <span class="summary-label">服务器</span>
@@ -83,6 +85,13 @@
               <p>编辑 config/servers.json 的 websites 后刷新。</p>
             </div>
             <div id="websiteGrid" class="website-grid"></div>
+
+            <h2 class="section-title section-gap">中断事件</h2>
+            <div id="incidentLogEmptyState" class="empty-state hidden">
+              <h2>还没有中断事件</h2>
+              <p>服务器或网站异常后，系统会在这里记录中断原因和恢复时间。</p>
+            </div>
+            <div id="incidentLogList" class="log-list"></div>
 
             <h2 class="section-title section-gap">恢复日志</h2>
             <div id="recoveryLogEmptyState" class="empty-state hidden">

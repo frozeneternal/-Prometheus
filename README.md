@@ -11,8 +11,17 @@
 
 - `prometheus/prometheus.yml`：告诉 Prometheus 去采集哪些服务器、探测哪些网站。
 - `config/servers.json`：告诉本地网页如何展示服务器、网站，以及允许执行哪些操作。
+- `config/servers.local.json`：本机私有真实配置，优先级高于 `servers.json`，已经被 `.gitignore` 忽略，不会提交到公开仓库。
 - `prometheus/blackbox.yml`：网站探测规则，默认已经能探测 HTTP/HTTPS。
 - `scripts/restart_vm_by_ip.py`：通过宿主机 SSH + `virsh` 按虚拟机 IP 拉起虚拟机的辅助脚本。
+
+如果你要把项目上传到公开 Git 仓库，保留脱敏后的 `config/servers.json` 即可；真实内网 IP、运维账号、站点映射放到 `config/servers.local.json`。可以先复制模板：
+
+```powershell
+Copy-Item .\config\servers.local.template.json .\config\servers.local.json
+```
+
+启动时后端和 `scripts/render_prometheus_config.py` 都会优先读取 `servers.local.json`。
 
 ## 加一台服务器
 
@@ -434,8 +443,119 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.
 ## 面板里能看到什么
 
 - 每张服务器/网站卡片会显示自动恢复状态、连续失败次数、最近执行时间。
+- 每张服务器/网站卡片会显示中断追踪：什么时候开始异常、当前持续多久、恢复后持续了多久。
+- 页面底部的“中断事件”会总结服务中断原因、恢复时间、持续时间，并关联对应恢复动作日志。
 - 页面底部会显示恢复日志。
 - 恢复日志会包含触发原因、动作名、执行方式、退出码、stdout、stderr。
+
+## 推荐的生产落地方案
+
+这套工具建议按“三层闭环”落地：
+
+1. 采集层：Prometheus + node_exporter 采集服务器资源，blackbox_exporter 探测网站可用性和 HTTPS 证书。
+2. 决策层：本地 Python 控制台读取 Prometheus 指标，按连续失败次数、冷却时间和阈值判断是否恢复。
+3. 执行层：只执行 `config/servers.json` 白名单里的动作，所有动作写入恢复日志，中断事件写入 `data/incident_logs.json`。
+
+新增或调整服务器、网站后，可以用配置生成脚本减少双写：
+
+```powershell
+python .\scripts\render_prometheus_config.py
+.\scripts\start-prometheus.ps1
+```
+
+这个脚本会读取 `config/servers.json` 里的 `servers[].labels.instance` 和 `websites[].url`，生成 `prometheus/prometheus.yml`。如果只是想检查是否同步：
+
+```powershell
+python .\scripts\render_prometheus_config.py --check
+```
+
+服务器动作建议优先使用统一远程运维脚本 `scripts/remote_ops.py`，例如重启 Web 栈：
+
+```json
+{
+  "id": "restart_web_stack",
+  "name": "重启 Web 栈",
+  "danger": "high",
+  "enabled": true,
+  "allowAuto": true,
+  "timeoutSeconds": 60,
+  "command": [
+    "python",
+    "scripts/remote_ops.py",
+    "--host",
+    "10.0.0.11",
+    "--user",
+    "ops",
+    "--action",
+    "service-restart",
+    "--service",
+    "nginx",
+    "--service",
+    "php-fpm"
+  ]
+}
+```
+
+证书续期可以走 `certbot`：
+
+```json
+{
+  "id": "renew_certbot",
+  "name": "续期证书",
+  "danger": "medium",
+  "enabled": true,
+  "allowAuto": true,
+  "timeoutSeconds": 180,
+  "command": [
+    "python",
+    "scripts/remote_ops.py",
+    "--host",
+    "10.0.0.11",
+    "--user",
+    "ops",
+    "--action",
+    "certbot-renew",
+    "--reload-service",
+    "nginx"
+  ]
+}
+```
+
+也可以走 `acme.sh`：
+
+```json
+{
+  "id": "renew_acme_example",
+  "name": "续期 example.com",
+  "danger": "medium",
+  "enabled": true,
+  "allowAuto": true,
+  "timeoutSeconds": 180,
+  "command": [
+    "python",
+    "scripts/remote_ops.py",
+    "--host",
+    "10.0.0.11",
+    "--user",
+    "ops",
+    "--action",
+    "acme-renew",
+    "--domain",
+    "example.com",
+    "--reload-service",
+    "nginx"
+  ]
+}
+```
+
+严谨一点的生产配置建议：
+
+- 自动恢复只给服务重启、虚拟机拉起这类可预期动作开启 `allowAuto: true`。
+- 整机重启保留 `confirm`，并把 `allowAuto` 设为 `false`，只允许人工触发。
+- 网站恢复先重启应用服务或反向代理，连续失败多次仍不恢复时再人工介入。
+- 证书续期建议提前 14 到 30 天触发，并保留一天以上冷却时间。
+- 运维账号使用免密 SSH 和 sudo 白名单，只允许 `systemctl restart/status/reload`、`certbot renew`、`virsh start/reboot` 等必要命令。
+- `data/recovery_logs.json` 记录执行输出，`data/incident_logs.json` 记录中断与恢复摘要，建议定期备份但不要提交到公开仓库。
 
 ## 安全建议
 

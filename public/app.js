@@ -55,6 +55,16 @@ const certRenewalLabels = {
   failed: "续期失败",
 };
 
+const dataQualityLabels = {
+  ok: "数据可信",
+  partial: "指标不完整",
+  collector_down: "采集层不可用",
+  no_series: "没有采集序列",
+  target_down: "目标不可达",
+  query_error: "查询失败",
+  unknown: "未知",
+};
+
 function formatPercent(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return `${Math.max(0, value).toFixed(1)}%`;
@@ -79,6 +89,18 @@ function formatDuration(seconds) {
   if (seconds >= day) return `${Math.floor(seconds / day)} 天`;
   if (seconds >= hour) return `${Math.floor(seconds / hour)} 小时`;
   return `${Math.floor(seconds / 60)} 分钟`;
+}
+
+function formatElapsed(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "--";
+  const value = Math.max(0, Math.floor(seconds));
+  const day = 86400;
+  const hour = 3600;
+  const minute = 60;
+  if (value >= day) return `${Math.floor(value / day)}天${Math.floor((value % day) / hour)}小时`;
+  if (value >= hour) return `${Math.floor(value / hour)}小时${Math.floor((value % hour) / minute)}分钟`;
+  if (value >= minute) return `${Math.floor(value / minute)}分钟${value % minute}秒`;
+  return `${value}秒`;
 }
 
 function formatSeconds(value) {
@@ -195,9 +217,11 @@ async function refreshDashboard() {
 function renderError(error) {
   $("#serverGrid").innerHTML = "";
   $("#websiteGrid").innerHTML = "";
+  $("#incidentLogList").innerHTML = "";
   $("#recoveryLogList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
   $("#websiteEmptyState").classList.add("hidden");
+  $("#incidentLogEmptyState").classList.add("hidden");
   $("#recoveryLogEmptyState").classList.add("hidden");
   $("#emptyState h2").textContent = "无法读取监控数据";
   $("#emptyState p").textContent = error.message;
@@ -217,10 +241,33 @@ function render() {
   $("#lastUpdated").textContent = new Date((state.dashboard?.generatedAt || Date.now() / 1000) * 1000)
     .toLocaleTimeString("zh-CN", { hour12: false });
 
+  renderSystemNotice();
   renderGroups();
   renderServers();
   renderWebsites();
+  renderIncidentLogs();
   renderRecoveryLogs();
+}
+
+function renderSystemNotice() {
+  const notice = $("#systemNotice");
+  const messages = [];
+  const prometheus = state.dashboard?.prometheus;
+  const configSource = state.dashboard?.configSource || {};
+
+  if (prometheus && !prometheus.available) {
+    const detail = prometheus.error ? `（${prometheus.error}）` : "";
+    messages.push(`Prometheus 当前不可用：${prometheus.message || "无法连接采集服务"}${detail}。这会导致所有目标显示“未知”，不代表服务器全部宕机。`);
+  }
+
+  if (!configSource.usingLocalConfig) {
+    messages.push(`当前加载 ${configSource.configFile || "config/servers.json"}。这是公开/示例配置；真实内网配置建议放到 config/servers.local.json。`);
+  } else {
+    messages.push(`当前加载本地私有配置 ${configSource.configFile}。`);
+  }
+
+  notice.classList.toggle("hidden", messages.length === 0);
+  notice.innerHTML = messages.map((message) => `<p>${escapeHtml(message)}</p>`).join("");
 }
 
 function renderGroups() {
@@ -303,6 +350,16 @@ function renderWebsites() {
   container.querySelectorAll("[data-manual-cert-renewal]").forEach((button) => {
     button.addEventListener("click", () => openManualCertRenewalDialog(button.dataset.websiteId));
   });
+
+  container.querySelectorAll("[data-cert-renewal-toggle]").forEach((input) => {
+    input.addEventListener("change", () => toggleCertRenewal(input.dataset.websiteId, input.checked));
+  });
+}
+
+function renderIncidentLogs() {
+  const logs = state.dashboard?.incidentLogs || [];
+  $("#incidentLogEmptyState").classList.toggle("hidden", logs.length !== 0);
+  $("#incidentLogList").innerHTML = logs.slice().reverse().map(incidentLogCard).join("");
 }
 
 function renderRecoveryLogs() {
@@ -325,7 +382,9 @@ function serverCard(server) {
       <span class="status ${escapeHtml(server.health || server.status)}">${healthLabels[server.health] || statusText(server.status)}</span>
     </div>
     ${serverMetaRows(server)}
+    ${dataQualityBlock(server.dataQuality)}
     ${issuesBlock(server.issues)}
+    ${incidentBlock(server.autoRecovery?.incident)}
     <div class="metric-grid">
       ${metricBlock("cpu", server.metrics.cpu)}
       ${metricBlock("memory", server.metrics.memory)}
@@ -371,7 +430,9 @@ function websiteCard(website) {
       </div>
       <span class="status ${escapeHtml(website.health || website.status)}">${healthLabels[website.health] || statusText(website.status)}</span>
     </div>
+    ${dataQualityBlock(website.dataQuality)}
     ${issuesBlock(website.issues)}
+    ${incidentBlock(website.autoRecovery?.incident)}
     <div class="metric-grid website-metrics">
       ${websiteMetricBlock("HTTP", formatStatusCode(website.metrics.statusCode))}
       ${websiteMetricBlock("响应", formatSeconds(website.metrics.duration))}
@@ -397,10 +458,48 @@ function websiteMetricBlock(label, value, raw = false) {
   </div>`;
 }
 
+function dataQualityBlock(quality) {
+  if (!quality || quality.level === "ok") return "";
+  const level = quality.level || "unknown";
+  const trusted = quality.trusted !== false;
+  const title = dataQualityLabels[level] || level;
+  const trustText = trusted ? "判定可信" : "数据不可信，自动恢复已阻断";
+  return `<div class="quality-block ${escapeHtml(level)} ${trusted ? "trusted" : "untrusted"}">
+    <div class="quality-head">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(trustText)}</span>
+    </div>
+    <p>${escapeHtml(quality.message || "暂无数据质量说明")}</p>
+  </div>`;
+}
+
 function issuesBlock(issues = []) {
   if (!issues.length) return "";
   return `<div class="issues">
     ${issues.map((issue) => `<span>${escapeHtml(issue)}</span>`).join("")}
+  </div>`;
+}
+
+function incidentBlock(incident) {
+  if (!incident || (!incident.active && !incident.recoveredAt)) return "";
+  const label = incident.active ? "中断中" : "已恢复";
+  const status = incident.active ? "failed" : "triggered";
+  const duration = incident.active
+    ? formatElapsed(incident.durationSeconds || 0)
+    : formatElapsed(incident.durationSeconds || 0);
+  const meta = incident.active
+    ? `开始 ${formatTime(incident.startedAt)}，已持续 ${duration}`
+    : `恢复 ${formatTime(incident.recoveredAt)}，持续 ${duration}`;
+  return `<div class="incident-block">
+    <div class="recovery-head">
+      <strong>中断追踪</strong>
+      <span class="recovery-badge ${status}">${label}</span>
+    </div>
+    <div class="recovery-meta">
+      <span>${escapeHtml(meta)}</span>
+      ${incident.lastLogId ? `<span>日志 ${escapeHtml(incident.lastLogId)}</span>` : ""}
+    </div>
+    <p class="recovery-message muted">${escapeHtml(incident.summary || incident.reason || "暂无摘要")}</p>
   </div>`;
 }
 
@@ -465,7 +564,10 @@ function certRenewalBlock(certRenewal, manualCertRenewal, website) {
     : `剩余 ${certRenewal.expiresInDays} 天`;
   return `<div class="recovery-block">
     <div class="recovery-head">
-      <strong>证书续期</strong>
+      <div class="block-title-row">
+        <strong>证书续期</strong>
+        ${toggleControl(certRenewal.enabled, "cert-renewal-toggle", { websiteId: website.id })}
+      </div>
       <span class="recovery-badge ${escapeHtml(status)}">${escapeHtml(statusText)}</span>
     </div>
     <div class="recovery-meta">
@@ -521,6 +623,33 @@ function recoveryLogCard(log) {
         <p class="muted">${escapeHtml(log.actionServerName || log.actionServerId || "")}</p>
       </div>
       <span class="status ${statusClass}">${log.ok ? "成功" : "失败"}</span>
+    </div>
+    <pre class="log-output">${escapeHtml(output)}</pre>
+  </article>`;
+}
+
+function incidentLogCard(log) {
+  const active = log.status === "active";
+  const statusClass = active ? "down" : "healthy";
+  const statusText = active ? "中断中" : "已恢复";
+  const output = [
+    log.summary || "",
+    `类型: ${log.targetKind || log.targetType || "--"}`,
+    `目标: ${log.targetName || log.targetId || "--"}`,
+    `原因: ${log.reason || "--"}`,
+    `开始: ${formatTime(log.startedAt)}`,
+    `恢复: ${log.recoveredAt ? formatTime(log.recoveredAt) : "--"}`,
+    `持续: ${formatElapsed(log.durationSeconds || 0)}`,
+    log.lastLogId ? `关联恢复日志: ${log.lastLogId}` : "",
+  ].filter(Boolean).join("\n");
+
+  return `<article class="log-card incident-log-card">
+    <div class="log-head">
+      <div>
+        <h3>${escapeHtml(log.targetName || log.targetId || "中断事件")}</h3>
+        <p class="muted">${escapeHtml(log.targetKind || log.targetType || "")}</p>
+      </div>
+      <span class="status ${statusClass}">${statusText}</span>
     </div>
     <pre class="log-output">${escapeHtml(output)}</pre>
   </article>`;
@@ -701,6 +830,22 @@ async function toggleAutoBackup(serverId, enabled) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ serverId, enabled }),
+    });
+    state.dashboard = payload;
+    state.dashboard.ok = true;
+    await loadConfig();
+    render();
+  } catch (error) {
+    await refreshDashboard();
+  }
+}
+
+async function toggleCertRenewal(websiteId, enabled) {
+  try {
+    const payload = await getJson("/api/settings/cert-renewal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ websiteId, enabled }),
     });
     state.dashboard = payload;
     state.dashboard.ok = true;

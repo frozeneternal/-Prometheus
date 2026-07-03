@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $DockerDesktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-$TimeoutSeconds = 120
+$TimeoutSeconds = 240
 $StartedAt = Get-Date
 
 $Service = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
@@ -17,8 +17,15 @@ if (Test-Path $DockerDesktop) {
 }
 
 while (((Get-Date) - $StartedAt).TotalSeconds -lt $TimeoutSeconds) {
-  docker version *> $null
-  if ($LASTEXITCODE -eq 0) {
+  $DockerReady = $false
+  try {
+    docker version *> $null
+    $DockerReady = ($LASTEXITCODE -eq 0)
+  } catch {
+    $DockerReady = $false
+  }
+
+  if ($DockerReady) {
     exit 0
   }
 

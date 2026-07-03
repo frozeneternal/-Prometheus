@@ -19,8 +19,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
 CONFIG_PATH = BASE_DIR / "config" / "servers.json"
+LOCAL_CONFIG_PATH = BASE_DIR / "config" / "servers.local.json"
 DATA_DIR = BASE_DIR / "data"
 RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
+INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
 
 DEFAULT_CONFIG = {
     "appName": "本地服务器监控台",
@@ -31,6 +33,7 @@ DEFAULT_CONFIG = {
     "monitoring": {
         "pollIntervalSeconds": 30,
         "recoveryLogLimit": 200,
+        "incidentLogLimit": 200,
     },
     "servers": [],
     "websites": [],
@@ -45,6 +48,7 @@ RUNTIME_STATE = {
     "dashboard": None,
     "entityStates": {},
     "recoveryLogs": [],
+    "incidentLogs": [],
 }
 
 
@@ -56,9 +60,11 @@ def monitoring_options(config: dict) -> dict:
     raw = config.get("monitoring") or {}
     poll_interval = max(10, int(raw.get("pollIntervalSeconds", 30)))
     recovery_log_limit = max(20, min(1000, int(raw.get("recoveryLogLimit", 200))))
+    incident_log_limit = max(20, min(1000, int(raw.get("incidentLogLimit", recovery_log_limit))))
     return {
         "pollIntervalSeconds": poll_interval,
         "recoveryLogLimit": recovery_log_limit,
+        "incidentLogLimit": incident_log_limit,
     }
 
 
@@ -96,6 +102,48 @@ def append_recovery_log(config: dict, event: dict) -> dict:
         logs = logs[-limit:]
         RUNTIME_STATE["recoveryLogs"] = logs
     save_recovery_logs_to_disk(logs)
+    return event
+
+
+def load_incident_logs_from_disk() -> list[dict]:
+    ensure_data_dir()
+    if not INCIDENT_LOG_PATH.exists():
+        return []
+
+    try:
+        with INCIDENT_LOG_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    return data if isinstance(data, list) else []
+
+
+def save_incident_logs_to_disk(logs: list[dict]) -> None:
+    ensure_data_dir()
+    with INCIDENT_LOG_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(logs, fh, ensure_ascii=False, indent=2)
+
+
+def get_recent_incident_logs(limit: int = 50) -> list[dict]:
+    with RUNTIME_LOCK:
+        logs = list(RUNTIME_STATE["incidentLogs"])
+    return logs[-limit:]
+
+
+def upsert_incident_log(config: dict, event: dict) -> dict:
+    limit = monitoring_options(config)["incidentLogLimit"]
+    with RUNTIME_LOCK:
+        logs = list(RUNTIME_STATE["incidentLogs"])
+        for index, existing in enumerate(logs):
+            if existing.get("id") == event.get("id"):
+                logs[index] = {**existing, **event}
+                break
+        else:
+            logs.append(event)
+        logs = logs[-limit:]
+        RUNTIME_STATE["incidentLogs"] = logs
+    save_incident_logs_to_disk(logs)
     return event
 
 
@@ -156,14 +204,228 @@ def current_dashboard_payload() -> dict | None:
 
     payload = dict(dashboard)
     payload["recoveryLogs"] = get_recent_recovery_logs()
+    payload["incidentLogs"] = get_recent_incident_logs()
     return payload
 
 
+def relative_to_base(path: Path) -> str:
+    try:
+        return str(path.relative_to(BASE_DIR)).replace("\\", "/")
+    except ValueError:
+        return path.name
+
+
+def config_source_info() -> dict:
+    path = active_config_path()
+    return {
+        "configFile": relative_to_base(path),
+        "usingLocalConfig": path == LOCAL_CONFIG_PATH,
+        "localConfigAvailable": LOCAL_CONFIG_PATH.exists(),
+    }
+
+
+def target_display_type(target_type: str) -> str:
+    return {
+        "server": "服务器",
+        "website": "网站",
+        "website-cert": "网站证书",
+        "server-backup": "服务器备份",
+    }.get(target_type, target_type)
+
+
+def summarize_incident_reason(target_type: str, snapshot: dict) -> str:
+    issues = [str(item) for item in snapshot.get("issues") or [] if str(item)]
+    if issues:
+        return "；".join(issues)
+
+    status = snapshot.get("status", "unknown")
+    if target_type == "server":
+        if status == "offline":
+            return "node_exporter 离线，可能是服务器宕机、网络不通、防火墙阻断或 exporter 服务异常。"
+        if status == "unknown":
+            return "Prometheus 暂无该服务器数据，可能是采集配置、Prometheus 状态或网络链路异常。"
+    if target_type == "website":
+        if status == "offline":
+            code = snapshot.get("metrics", {}).get("statusCode")
+            if code:
+                return f"网站探测失败，最后 HTTP 状态码为 {int(code)}。"
+            return "网站探测失败，可能是站点进程、反向代理、端口监听、证书或网络链路异常。"
+        if status == "unknown":
+            return "Prometheus 暂无该网站探测数据，可能是 blackbox 配置、Prometheus 状态或目标 URL 异常。"
+    return str(status)
+
+
+def update_incident_state(
+    config: dict,
+    target_type: str,
+    entity: dict,
+    snapshot: dict,
+    state: dict,
+) -> dict:
+    target_id = str(entity.get("id") or snapshot.get("id") or "")
+    target_name = str(entity.get("name") or snapshot.get("name") or target_id)
+    health = snapshot.get("health", "unknown")
+    trigger_health = (entity.get("autoRecovery") or {}).get("triggerHealth") or ["down"]
+    now = time.time()
+    quality = snapshot.get("dataQuality") or {}
+    data_trusted = quality.get("trusted") is not False
+
+    incident_view = {
+        "active": False,
+        "id": state.get("activeIncidentId", ""),
+        "startedAt": state.get("incidentStartedAt", 0.0),
+        "recoveredAt": state.get("incidentRecoveredAt", 0.0),
+        "durationSeconds": state.get("incidentDurationSeconds", 0),
+        "reason": state.get("incidentReason", ""),
+        "summary": "当前未发现中断。",
+        "lastLogId": state.get("incidentLastLogId", ""),
+    }
+
+    is_bad = health in trigger_health
+    if is_bad and not data_trusted:
+        blocked_reason = quality.get("message") or "监控数据不可信，不能确认目标是否真实中断。"
+        if state.get("activeIncidentId"):
+            started_at = float(state.get("incidentStartedAt", now) or now)
+            duration = int(now - started_at)
+            upsert_incident_log(
+                config,
+                {
+                    "id": state["activeIncidentId"],
+                    "status": "active",
+                    "durationSeconds": duration,
+                    "reason": state.get("incidentReason", blocked_reason),
+                    "summary": f"{target_name} 仍在观察中：{blocked_reason}",
+                    "lastHealth": health,
+                    "lastStatus": snapshot.get("status", "unknown"),
+                    "lastLogId": state.get("lastLogId", ""),
+                },
+            )
+            incident_view.update(
+                {
+                    "active": True,
+                    "id": state["activeIncidentId"],
+                    "startedAt": state.get("incidentStartedAt", 0.0),
+                    "recoveredAt": 0.0,
+                    "durationSeconds": duration,
+                    "reason": state.get("incidentReason", blocked_reason),
+                    "summary": f"{target_name} 仍在观察中：{blocked_reason}",
+                    "lastLogId": state.get("lastLogId", ""),
+                }
+            )
+            return incident_view
+
+        incident_view["summary"] = f"监控数据不可信，未创建中断记录：{blocked_reason}"
+        return incident_view
+
+    if is_bad:
+        reason = summarize_incident_reason(target_type, snapshot)
+        if not state.get("activeIncidentId"):
+            state["incidentStartedAt"] = now
+            state["incidentRecoveredAt"] = 0.0
+            state["incidentDurationSeconds"] = 0
+            state["incidentReason"] = reason
+            state["activeIncidentId"] = f"{int(now * 1000)}-{target_type}-{target_id}"
+            upsert_incident_log(
+                config,
+                {
+                    "id": state["activeIncidentId"],
+                    "targetType": target_type,
+                    "targetId": target_id,
+                    "targetName": target_name,
+                    "targetKind": target_display_type(target_type),
+                    "status": "active",
+                    "startedAt": state["incidentStartedAt"],
+                    "recoveredAt": 0.0,
+                    "durationSeconds": 0,
+                    "reason": reason,
+                    "summary": f"{target_name} 从 {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))} 开始异常：{reason}",
+                    "lastHealth": health,
+                    "lastStatus": snapshot.get("status", "unknown"),
+                    "lastLogId": state.get("lastLogId", ""),
+                },
+            )
+        else:
+            state["incidentReason"] = reason
+            upsert_incident_log(
+                config,
+                {
+                    "id": state["activeIncidentId"],
+                    "status": "active",
+                    "durationSeconds": int(now - float(state.get("incidentStartedAt", now) or now)),
+                    "reason": reason,
+                    "lastHealth": health,
+                    "lastStatus": snapshot.get("status", "unknown"),
+                    "lastLogId": state.get("lastLogId", ""),
+                },
+            )
+
+        incident_view.update(
+            {
+                "active": True,
+                "id": state["activeIncidentId"],
+                "startedAt": state.get("incidentStartedAt", 0.0),
+                "recoveredAt": 0.0,
+                "durationSeconds": int(now - float(state.get("incidentStartedAt", now) or now)),
+                "reason": state.get("incidentReason", reason),
+                "summary": f"{target_name} 仍处于异常：{state.get('incidentReason', reason)}",
+                "lastLogId": state.get("lastLogId", ""),
+            }
+        )
+        return incident_view
+
+    if state.get("activeIncidentId"):
+        started_at = float(state.get("incidentStartedAt", now) or now)
+        duration = int(now - started_at)
+        reason = state.get("incidentReason", "")
+        incident_id = state.get("activeIncidentId", "")
+        state["incidentRecoveredAt"] = now
+        state["incidentDurationSeconds"] = duration
+        state["incidentLastLogId"] = state.get("lastLogId", "")
+        upsert_incident_log(
+            config,
+            {
+                "id": incident_id,
+                "targetType": target_type,
+                "targetId": target_id,
+                "targetName": target_name,
+                "targetKind": target_display_type(target_type),
+                "status": "recovered",
+                "startedAt": started_at,
+                "recoveredAt": now,
+                "durationSeconds": duration,
+                "reason": reason,
+                "summary": f"{target_name} 已恢复，中断持续 {duration} 秒。初判原因：{reason or '未记录'}",
+                "lastHealth": health,
+                "lastStatus": snapshot.get("status", "unknown"),
+                "lastLogId": state.get("lastLogId", ""),
+            },
+        )
+        state["activeIncidentId"] = ""
+        state["incidentStartedAt"] = 0.0
+        state["incidentReason"] = ""
+        incident_view.update(
+            {
+                "active": False,
+                "id": incident_id,
+                "startedAt": started_at,
+                "recoveredAt": now,
+                "durationSeconds": duration,
+                "reason": reason,
+                "summary": f"已恢复，持续 {duration} 秒。",
+                "lastLogId": state.get("lastLogId", ""),
+            }
+        )
+        return incident_view
+
+    return incident_view
+
+
 def load_config() -> dict:
-    if not CONFIG_PATH.exists():
+    path = active_config_path()
+    if not path.exists():
         return DEFAULT_CONFIG.copy()
 
-    with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
 
     config = DEFAULT_CONFIG.copy()
@@ -173,24 +435,32 @@ def load_config() -> dict:
     config["monitoring"] = merged_monitoring
     config["servers"] = config.get("servers") or []
     config["websites"] = config.get("websites") or []
+    config["_configPath"] = str(path)
+    config["_usingLocalConfig"] = path == LOCAL_CONFIG_PATH
     return config
 
 
+def active_config_path() -> Path:
+    return LOCAL_CONFIG_PATH if LOCAL_CONFIG_PATH.exists() else CONFIG_PATH
+
+
 def load_config_raw() -> dict:
-    if not CONFIG_PATH.exists():
+    path = active_config_path()
+    if not path.exists():
         return json.loads(json.dumps(DEFAULT_CONFIG))
 
-    with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
 def save_config_raw(raw_config: dict) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = CONFIG_PATH.with_suffix(".json.tmp")
+    path = active_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".json.tmp")
     with tmp_path.open("w", encoding="utf-8") as fh:
         json.dump(raw_config, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
-    os.replace(tmp_path, CONFIG_PATH)
+    os.replace(tmp_path, path)
 
 
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
@@ -260,6 +530,42 @@ def persist_auto_backup_enabled(server_id: str, enabled: bool) -> tuple[int, dic
         reset_runtime_entity_state("server-backup", server_id, "自动备份已关闭。")
 
     return 200, {"ok": True, "message": "自动备份已更新。"}
+
+
+def persist_cert_renewal_enabled(website_id: str, enabled: bool) -> tuple[int, dict]:
+    raw_config = load_config_raw()
+    website = find_raw_entity(raw_config, "website", website_id)
+    if website is None:
+        return 404, {"ok": False, "message": "网站不存在。"}
+
+    renewal = website.setdefault("certRenewal", {})
+    default_action_server_id = website.get("serverId") or ""
+    if enabled:
+        inferred = public_manual_cert_renewal(website, default_action_server_id)
+        action_server_id = inferred.get("actionServerId") or renewal.get("actionServerId") or default_action_server_id
+        action_id = inferred.get("actionId") or renewal.get("actionId") or ""
+        if not action_server_id or not action_id:
+            return 400, {"ok": False, "message": "启用证书续期前需要先配置续期动作。"}
+        renewal["actionServerId"] = action_server_id
+        renewal["actionId"] = action_id
+        renewal.setdefault("renewBeforeDays", 14)
+        renewal.setdefault("cooldownSeconds", 86400)
+
+        action_server = find_raw_entity(raw_config, "server", action_server_id)
+        if action_server is not None:
+            action = find_raw_action(action_server, action_id)
+            if action is not None:
+                action["enabled"] = True
+                action["allowAuto"] = True
+
+    renewal["enabled"] = bool(enabled)
+    save_config_raw(raw_config)
+    if enabled:
+        reset_runtime_entity_state("website-cert", website_id, "证书自动续期已启用，等待下一次证书检查。")
+    else:
+        reset_runtime_entity_state("website-cert", website_id, "证书自动续期已关闭。")
+
+    return 200, {"ok": True, "message": "证书自动续期已更新。"}
 
 
 def persist_dashboard_settings(config: dict) -> dict:
@@ -487,6 +793,7 @@ def public_config(config: dict) -> dict:
     return {
         "appName": config.get("appName", DEFAULT_CONFIG["appName"]),
         "prometheusUrl": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
+        **config_source_info(),
         "actionsRequireToken": bool(config.get("actionToken")),
         "monitoring": monitoring_options(config),
         "servers": servers,
@@ -551,6 +858,15 @@ def prometheus_ready(config: dict, timeout: float = 4.0) -> bool:
     request = urllib.request.Request(f"{base}/-/ready", headers={"User-Agent": "local-prometheus-console/1.0"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return 200 <= response.status < 300
+
+
+def prometheus_ready_status(config: dict, timeout: float = 4.0) -> tuple[bool, str]:
+    try:
+        return prometheus_ready(config, timeout), ""
+    except urllib.error.URLError as exc:
+        return False, str(exc.reason or exc)
+    except Exception as exc:  # noqa: BLE001 - status endpoint should report the connection issue.
+        return False, str(exc)
 
 
 def prom_query(config: dict, query: str) -> dict:
@@ -642,6 +958,110 @@ def first_value(prometheus_payload: dict) -> float | None:
         return None
 
 
+def data_quality(level: str, message: str, trusted: bool, details: dict | None = None) -> dict:
+    return {
+        "level": level,
+        "trusted": bool(trusted),
+        "source": "prometheus",
+        "message": message,
+        "details": details or {},
+    }
+
+
+def server_data_quality(status: str, values: dict[str, float | None], errors: dict[str, str]) -> dict:
+    if errors.get("up"):
+        return data_quality(
+            "query_error",
+            "Prometheus 查询 up 指标失败，不能确认服务器是否真实掉线。",
+            False,
+            {"error": errors["up"]},
+        )
+
+    if status == "unknown":
+        return data_quality(
+            "no_series",
+            "Prometheus 可用，但没有这台服务器的 up 时间序列，通常是采集配置、标签或 exporter 注册问题。",
+            False,
+        )
+
+    if status == "offline":
+        return data_quality(
+            "target_down",
+            "Prometheus 已返回 up=0，可以判定目标当前不可达或 exporter 离线。",
+            True,
+            {"up": values.get("up")},
+        )
+
+    missing = [metric for metric in ("cpu", "memory", "disk") if values.get(metric) is None]
+    metric_errors = {metric: error for metric, error in errors.items() if metric != "up"}
+    if missing or metric_errors:
+        return data_quality(
+            "partial",
+            "服务器在线，但部分资源指标缺失，容量判断需要谨慎。",
+            True,
+            {"missingMetrics": missing, "errors": metric_errors},
+        )
+
+    return data_quality("ok", "服务器在线，核心资源指标完整。", True)
+
+
+def website_data_quality(website: dict, status: str, values: dict[str, float | None], errors: dict[str, str]) -> dict:
+    if errors.get("success"):
+        return data_quality(
+            "query_error",
+            "Prometheus 查询 blackbox success 指标失败，不能确认网站是否真实掉线。",
+            False,
+            {"error": errors["success"]},
+        )
+
+    if status == "unknown":
+        return data_quality(
+            "no_series",
+            "Prometheus 可用，但没有这个网站的 blackbox 时间序列，通常是 blackbox 配置、标签或目标 URL 问题。",
+            False,
+        )
+
+    if status == "offline":
+        return data_quality(
+            "target_down",
+            "Prometheus 已返回 probe_success=0，可以判定网站探测失败。",
+            True,
+            {"success": values.get("success"), "statusCode": values.get("statusCode")},
+        )
+
+    expected_metrics = ["statusCode", "duration"]
+    if str(website.get("url", "")).lower().startswith("https://"):
+        expected_metrics.append("certExpiresIn")
+    missing = [metric for metric in expected_metrics if values.get(metric) is None]
+    metric_errors = {metric: error for metric, error in errors.items() if metric != "success"}
+    if missing or metric_errors:
+        return data_quality(
+            "partial",
+            "网站探测成功，但部分 HTTP 或证书指标缺失。",
+            True,
+            {"missingMetrics": missing, "errors": metric_errors},
+        )
+
+    return data_quality("ok", "网站探测成功，核心 HTTP 指标完整。", True)
+
+
+def data_quality_summary(items: list[dict]) -> dict:
+    levels: dict[str, int] = {}
+    trusted = 0
+    for item in items:
+        quality = item.get("dataQuality") or {}
+        level = str(quality.get("level") or "unknown")
+        levels[level] = levels.get(level, 0) + 1
+        if quality.get("trusted"):
+            trusted += 1
+
+    return {
+        "trusted": trusted,
+        "untrusted": len(items) - trusted,
+        "levels": levels,
+    }
+
+
 def server_health(server: dict, status: str, values: dict[str, float | None]) -> tuple[str, list[str]]:
     if status == "offline":
         return "down", ["node_exporter 离线，Prometheus 无法采集这台服务器。"]
@@ -687,6 +1107,7 @@ def metric_snapshot(config: dict, server: dict) -> dict:
         status = "offline"
 
     health, issues = server_health(server, status, values)
+    quality = server_data_quality(status, values, errors)
 
     return {
         "id": server.get("id"),
@@ -698,6 +1119,7 @@ def metric_snapshot(config: dict, server: dict) -> dict:
         "status": status,
         "health": health,
         "issues": issues,
+        "dataQuality": quality,
         "metrics": values,
         "errors": errors,
     }
@@ -715,6 +1137,12 @@ def unavailable_metric_snapshot(server: dict, message: str) -> dict:
         "status": "unknown",
         "health": "unknown",
         "issues": [message],
+        "dataQuality": data_quality(
+            "collector_down",
+            "Prometheus 采集层不可用，当前不能判断这台服务器是否真实掉线。",
+            False,
+            {"error": message},
+        ),
         "metrics": values,
         "errors": {"prometheus": message},
     }
@@ -770,6 +1198,7 @@ def website_snapshot(config: dict, website: dict) -> dict:
         status = "offline"
 
     health, issues = website_health(website, status, values)
+    quality = website_data_quality(website, status, values, errors)
 
     return {
         "id": website.get("id"),
@@ -780,6 +1209,7 @@ def website_snapshot(config: dict, website: dict) -> dict:
         "status": status,
         "health": health,
         "issues": issues,
+        "dataQuality": quality,
         "metrics": values,
         "errors": errors,
     }
@@ -805,6 +1235,12 @@ def unavailable_website_snapshot(website: dict, message: str) -> dict:
         "status": "unknown",
         "health": "unknown",
         "issues": [message],
+        "dataQuality": data_quality(
+            "collector_down",
+            "Prometheus 采集层不可用，当前不能判断这个网站是否真实掉线。",
+            False,
+            {"error": message},
+        ),
         "metrics": values,
         "errors": {"prometheus": message},
     }
@@ -1050,10 +1486,7 @@ def dashboard_payload(config: dict) -> dict:
     websites = config.get("websites", [])
     prometheus_message = "Prometheus 暂不可用或未启动。"
 
-    try:
-        prometheus_available = prometheus_ready(config, timeout=1.5)
-    except Exception:  # noqa: BLE001 - dashboard should stay responsive when Prometheus is down.
-        prometheus_available = False
+    prometheus_available, prometheus_error = prometheus_ready_status(config, timeout=1.5)
 
     if prometheus_available:
         snapshots = [metric_snapshot(config, server) for server in servers]
@@ -1100,6 +1533,13 @@ def dashboard_payload(config: dict) -> dict:
 
     payload = {
         "generatedAt": time.time(),
+        "prometheus": {
+            "available": prometheus_available,
+            "url": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
+            "message": "" if prometheus_available else prometheus_message,
+            "error": prometheus_error,
+        },
+        "configSource": config_source_info(),
         "summary": {
             "total": len(snapshots),
             "online": online,
@@ -1107,6 +1547,7 @@ def dashboard_payload(config: dict) -> dict:
             "unknown": len(snapshots) - online - offline,
             "warning": sum(1 for item in snapshots if item["health"] == "warning"),
             "down": sum(1 for item in snapshots if item["health"] == "down"),
+            "dataQuality": data_quality_summary(snapshots),
         },
         "websiteSummary": {
             "total": len(website_snapshots),
@@ -1115,10 +1556,12 @@ def dashboard_payload(config: dict) -> dict:
             "unknown": len(website_snapshots) - website_online - website_offline,
             "warning": sum(1 for item in website_snapshots if item["health"] == "warning"),
             "down": sum(1 for item in website_snapshots if item["health"] == "down"),
+            "dataQuality": data_quality_summary(website_snapshots),
         },
         "servers": snapshots,
         "websites": website_snapshots,
         "recoveryLogs": get_recent_recovery_logs(),
+        "incidentLogs": get_recent_incident_logs(),
     }
     set_runtime_dashboard(payload)
     return payload
@@ -1138,8 +1581,10 @@ def monitor_loop() -> None:
 
 def bootstrap_runtime_state() -> None:
     logs = load_recovery_logs_from_disk()
+    incident_logs = load_incident_logs_from_disk()
     with RUNTIME_LOCK:
         RUNTIME_STATE["recoveryLogs"] = logs
+        RUNTIME_STATE["incidentLogs"] = incident_logs
 
 
 def find_server(config: dict, server_id: str) -> dict | None:
@@ -1428,8 +1873,11 @@ def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapsho
     recovery_config = entity.get("autoRecovery") or {}
     enabled = bool(recovery_config.get("enabled"))
     trigger_health = recovery_config.get("triggerHealth") or ["down"]
+    quality = snapshot.get("dataQuality") or {}
+    data_trusted = quality.get("trusted") is not False
+    incident = update_incident_state(config, target_type, entity, snapshot, state)
 
-    if enabled and health in trigger_health:
+    if enabled and health in trigger_health and data_trusted:
         state["consecutiveFailures"] = int(state.get("consecutiveFailures", 0)) + 1
     else:
         state["consecutiveFailures"] = 0
@@ -1448,10 +1896,18 @@ def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapsho
         "lastResult": state.get("lastResult", ""),
         "lastReason": state.get("lastReason", ""),
         "lastLogId": state.get("lastLogId", ""),
+        "incident": incident,
+        "dataQuality": quality,
     }
 
     if not recovery_view["enabled"]:
         recovery_view["message"] = "自动恢复未启用。"
+        set_runtime_entity_state(target_type, target_id, state)
+        return recovery_view
+
+    if health in trigger_health and not data_trusted:
+        recovery_view["status"] = "blocked"
+        recovery_view["message"] = quality.get("message") or "监控数据不可信，禁止执行自动恢复。"
         set_runtime_entity_state(target_type, target_id, state)
         return recovery_view
 
@@ -1482,6 +1938,16 @@ def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapsho
     state["lastCompletedAt"] = time.time()
     state["lastResult"] = "success" if payload.get("ok") else "failed"
     state["lastLogId"] = payload.get("logId", "")
+    if state.get("activeIncidentId") and state.get("lastLogId"):
+        upsert_incident_log(
+            config,
+            {
+                "id": state["activeIncidentId"],
+                "lastLogId": state["lastLogId"],
+                "lastActionAt": state["lastCompletedAt"],
+                "lastActionResult": state["lastResult"],
+            },
+        )
     if payload.get("ok"):
         state["consecutiveFailures"] = 0
 
@@ -1495,6 +1961,10 @@ def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapsho
             "lastResult": state["lastResult"],
             "lastReason": reason,
             "lastLogId": state["lastLogId"],
+            "incident": {
+                **incident,
+                "lastLogId": state["lastLogId"],
+            },
             "lastHttpStatus": http_status,
         }
     )
@@ -1563,6 +2033,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
             json_response(self, 200, {"ok": True, "logs": get_recent_recovery_logs()})
             return
 
+        if path == "/api/incident-logs":
+            json_response(self, 200, {"ok": True, "logs": get_recent_incident_logs()})
+            return
+
         if path == "/api/series":
             status, payload = series_payload(config, query_params)
             json_response(self, status, payload)
@@ -1577,10 +2051,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/prometheus/ready":
-            try:
-                json_response(self, 200, {"ok": prometheus_ready(config)})
-            except Exception as exc:  # noqa: BLE001
-                json_response(self, 502, {"ok": False, "message": str(exc)})
+            ok, message = prometheus_ready_status(config)
+            json_response(self, 200 if ok else 502, {"ok": ok, "message": message})
             return
 
         self.serve_static(path)
@@ -1636,6 +2108,27 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 return
 
             status, payload = persist_auto_backup_enabled(server_id, enabled)
+            if status != 200:
+                json_response(self, status, payload)
+                return
+            status, payload = settings_response(payload["message"])
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/settings/cert-renewal":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+
+            website_id = str(body.get("websiteId") or "")
+            enabled = bool(body.get("enabled"))
+            if not website_id:
+                json_response(self, 400, {"ok": False, "message": "证书续期参数不正确。"})
+                return
+
+            status, payload = persist_cert_renewal_enabled(website_id, enabled)
             if status != 200:
                 json_response(self, status, payload)
                 return

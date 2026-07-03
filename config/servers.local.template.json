@@ -1,0 +1,128 @@
+{
+  "appName": "Local Server Monitor",
+  "listenHost": "127.0.0.1",
+  "listenPort": 8787,
+  "prometheusUrl": "http://127.0.0.1:9090",
+  "actionToken": "replace-with-a-strong-local-token",
+  "monitoring": {
+    "pollIntervalSeconds": 30,
+    "recoveryLogLimit": 200,
+    "incidentLogLimit": 200
+  },
+  "servers": [
+    {
+      "id": "physical-host-a",
+      "name": "Physical Host A",
+      "type": "physical",
+      "group": "Physical Hosts",
+      "description": "SSH: ops@10.0.0.10",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.0.10:9100"
+      },
+      "diskMountpoint": "/",
+      "autoRecovery": {
+        "enabled": false
+      },
+      "manualRecovery": {
+        "actionServerId": "physical-host-a",
+        "actionId": "reboot_host",
+        "label": "Manual Reboot"
+      },
+      "actions": [
+        {
+          "id": "reboot_host",
+          "name": "Reboot Physical Host A",
+          "danger": "high",
+          "enabled": true,
+          "allowAuto": false,
+          "confirm": "reboot physical host a",
+          "timeoutSeconds": 20,
+          "successReturnCodes": [
+            0,
+            255
+          ],
+          "command": [
+            "python",
+            "scripts/remote_ops.py",
+            "--host",
+            "10.0.0.10",
+            "--user",
+            "ops",
+            "--action",
+            "reboot"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vm-app-01",
+      "name": "Application VM 01",
+      "type": "virtual",
+      "hostServerId": "physical-host-a",
+      "group": "Virtual Machines",
+      "description": "SSH: ops@10.0.1.20",
+      "labels": {
+        "job": "node",
+        "instance": "10.0.1.20:9100"
+      },
+      "diskMountpoint": "/",
+      "autoRecovery": {
+        "enabled": true,
+        "actionServerId": "physical-host-a",
+        "actionId": "restart_vm_app_01",
+        "minimumConsecutiveFailures": 2,
+        "cooldownSeconds": 300,
+        "triggerHealth": [
+          "down"
+        ]
+      },
+      "actions": [
+        {
+          "id": "restart_vm_app_01",
+          "name": "Restart Application VM 01",
+          "danger": "high",
+          "enabled": false,
+          "allowAuto": true,
+          "timeoutSeconds": 90,
+          "command": [
+            "python",
+            "scripts/remote_ops.py",
+            "--host",
+            "10.0.0.10",
+            "--user",
+            "ops",
+            "--action",
+            "service-restart",
+            "--service",
+            "example-vm-control"
+          ]
+        }
+      ]
+    }
+  ],
+  "websites": [
+    {
+      "id": "public-site-a",
+      "name": "Public Site A",
+      "group": "External Sites",
+      "serverId": "vm-app-01",
+      "url": "https://example.com",
+      "description": "Public endpoint -> application VM",
+      "autoRecovery": {
+        "enabled": false
+      },
+      "certRenewal": {
+        "enabled": false,
+        "actionServerId": "vm-app-01",
+        "actionId": "renew_site_cert",
+        "renewBeforeDays": 14,
+        "cooldownSeconds": 86400
+      },
+      "thresholds": {
+        "duration": 3,
+        "certDays": 14
+      }
+    }
+  ]
+}

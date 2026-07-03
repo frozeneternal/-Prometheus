@@ -6,7 +6,8 @@
   "actionToken": "replace-with-a-long-random-token",
   "monitoring": {
     "pollIntervalSeconds": 30,
-    "recoveryLogLimit": 200
+    "recoveryLogLimit": 200,
+    "incidentLogLimit": 200
   },
   "servers": [
     {
@@ -38,15 +39,15 @@
           "confirm": "restart nginx",
           "timeoutSeconds": 30,
           "command": [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=5",
-            "root@10.0.0.11",
-            "sudo",
-            "systemctl",
-            "restart",
+            "python",
+            "scripts/remote_ops.py",
+            "--host",
+            "10.0.0.11",
+            "--user",
+            "ops",
+            "--action",
+            "service-restart",
+            "--service",
             "nginx"
           ]
         },
@@ -77,16 +78,16 @@
           "allowAuto": true,
           "timeoutSeconds": 180,
           "command": [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=5",
-            "root@10.0.0.11",
-            "sudo",
-            "certbot",
-            "renew",
-            "--quiet"
+            "python",
+            "scripts/remote_ops.py",
+            "--host",
+            "10.0.0.11",
+            "--user",
+            "ops",
+            "--action",
+            "certbot-renew",
+            "--reload-service",
+            "nginx"
           ]
         },
         {
@@ -102,14 +103,13 @@
             255
           ],
           "command": [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=5",
-            "root@10.0.0.11",
-            "sudo",
-            "systemctl",
+            "python",
+            "scripts/remote_ops.py",
+            "--host",
+            "10.0.0.11",
+            "--user",
+            "ops",
+            "--action",
             "reboot"
           ]
         }
@@ -150,20 +150,20 @@
       },
       "certRenewal": {
         "enabled": true,
-          "actionServerId": "web-01",
-          "actionId": "renew_certbot_homepage",
-          "renewBeforeDays": 14,
-          "cooldownSeconds": 86400
-        },
-        "manualCertRenewal": {
-          "actionServerId": "web-01",
-          "actionId": "renew_certbot_homepage",
-          "label": "手动续期"
-        },
-        "thresholds": {
-          "duration": 3,
-          "certDays": 14
-        }
+        "actionServerId": "web-01",
+        "actionId": "renew_certbot_homepage",
+        "renewBeforeDays": 14,
+        "cooldownSeconds": 86400
+      },
+      "manualCertRenewal": {
+        "actionServerId": "web-01",
+        "actionId": "renew_certbot_homepage",
+        "label": "手动续期"
+      },
+      "thresholds": {
+        "duration": 3,
+        "certDays": 14
+      }
     }
   ]
 }
