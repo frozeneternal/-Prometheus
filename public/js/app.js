@@ -135,6 +135,8 @@ function renderError(error) {
   $("#resourceExpiryList").innerHTML = "";
   $("#incidentLogList").innerHTML = "";
   $("#recoveryLogList").innerHTML = "";
+  $("#configValidationPanel").innerHTML = "";
+  $("#configValidationPanel").classList.add("hidden");
   $("#emptyState").classList.remove("hidden");
   $("#websiteEmptyState").classList.add("hidden");
   $("#resourceExpiryEmptyState").classList.add("hidden");
@@ -165,6 +167,7 @@ function render() {
     .toLocaleTimeString("zh-CN", { hour12: false });
 
   renderSystemNotice();
+  renderConfigValidation();
   renderGroups();
   renderServers();
   renderWebsites();
@@ -192,6 +195,49 @@ function renderSystemNotice() {
 
   notice.classList.toggle("hidden", messages.length === 0);
   notice.innerHTML = messages.map((message) => `<p>${escapeHtml(message)}</p>`).join("");
+}
+
+function renderConfigValidation() {
+  const panel = $("#configValidationPanel");
+  const validation = state.dashboard?.configValidation;
+  if (!validation) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+
+  const status = validation.status || "unknown";
+  const items = validation.items || [];
+  const title = {
+    ok: "配置健康",
+    warning: "配置需要核查",
+    error: "配置存在错误",
+    unknown: "配置状态未知",
+  }[status] || "配置状态未知";
+  const summary = [
+    `检查项 ${validation.total ?? items.length}`,
+    `错误 ${validation.error ?? 0}`,
+    `警告 ${validation.warning ?? 0}`,
+  ];
+
+  panel.className = `config-validation-panel ${escapeHtml(status)}`;
+  panel.innerHTML = `
+    <div class="config-validation-head">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(summary.join(" · "))}</p>
+      </div>
+      <span class="config-validation-badge ${escapeHtml(status)}">${escapeHtml(status)}</span>
+    </div>
+    ${items.length ? `<div class="config-validation-list">
+      ${items.map((item) => `
+        <div class="config-validation-item ${escapeHtml(item.level || "unknown")}">
+          <span>${escapeHtml(item.level || "unknown")}</span>
+          <p>${escapeHtml(item.message || "")}</p>
+        </div>
+      `).join("")}
+    </div>` : ""}
+  `;
 }
 
 function renderGroups() {

@@ -184,6 +184,98 @@ input {
   font-weight: 700;
 }
 
+.config-validation-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #bbe3d2;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--good-bg);
+  box-shadow: var(--shadow);
+}
+
+.config-validation-panel.warning,
+.config-validation-panel.unknown {
+  border-color: #edd48d;
+  background: var(--warn-bg);
+}
+
+.config-validation-panel.error {
+  border-color: #f1c2bd;
+  background: var(--bad-bg);
+}
+
+.config-validation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.config-validation-head strong {
+  font-size: 14px;
+}
+
+.config-validation-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.config-validation-badge {
+  min-width: 72px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #d8f0e5;
+  color: var(--good);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.config-validation-badge.warning,
+.config-validation-badge.unknown {
+  background: #fff3cf;
+  color: var(--warn);
+}
+
+.config-validation-badge.error {
+  background: #fde2df;
+  color: var(--bad);
+}
+
+.config-validation-list {
+  display: grid;
+  gap: 8px;
+}
+
+.config-validation-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.config-validation-item span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.config-validation-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .summary-card {
   min-height: 86px;
   border: 1px solid var(--line);

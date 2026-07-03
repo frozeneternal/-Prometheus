@@ -61,5 +61,24 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertLess(app_js.index("canFetchSeries(state.dashboard)"), app_js.index("/api/series"))
 
 
+    def test_config_validation_summary_is_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="configValidationPanel"', index_html)
+        self.assertIn("function renderConfigValidation()", app_js)
+        self.assertIn("state.dashboard?.configValidation", app_js)
+        self.assertIn("renderConfigValidation();", app_js)
+        self.assertIn(".config-validation-panel", styles_css)
+
+    def test_config_validation_panel_is_cleared_on_dashboard_error(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        render_error = app_js[app_js.index("function renderError("):app_js.index("function render()")]
+
+        self.assertIn('$("#configValidationPanel").innerHTML = "";', render_error)
+        self.assertIn('$("#configValidationPanel").classList.add("hidden");', render_error)
+
+
 if __name__ == "__main__":
     unittest.main()
