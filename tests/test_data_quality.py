@@ -65,6 +65,23 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(snapshot["dataQuality"]["level"], "target_down")
         self.assertTrue(snapshot["dataQuality"]["trusted"])
 
+    def test_health_checks_fallback_to_default_thresholds_when_threshold_config_is_invalid(self) -> None:
+        server_health, server_issues = app.server_health(
+            {"id": "srv1", "thresholds": {"cpu": "hot", "memory": True, "disk": "full"}},
+            "online",
+            {"cpu": 95.0, "memory": 50.0, "disk": 95.0},
+        )
+        website_health, website_issues = app.website_health(
+            {"id": "site1", "thresholds": {"duration": "slow", "certDays": "soon"}},
+            "online",
+            {"duration": 4.0, "certExpiresIn": 10 * 86400},
+        )
+
+        self.assertEqual(server_health, "warning")
+        self.assertEqual(len(server_issues), 2)
+        self.assertEqual(website_health, "warning")
+        self.assertEqual(len(website_issues), 2)
+
     def test_auto_recovery_does_not_trigger_on_untrusted_data(self) -> None:
         entity = {
             "id": "srv1",

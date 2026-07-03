@@ -855,6 +855,24 @@ def safe_positive_int(value: object, default: int, minimum: int = 1) -> int:
     return parsed if parsed >= minimum else default
 
 
+def safe_positive_float(value: object, default: float, minimum: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > minimum else default
+
+
+def metric_thresholds(configured: dict | None, defaults: dict[str, float]) -> dict[str, float]:
+    configured = configured or {}
+    return {
+        key: safe_positive_float(configured.get(key, default), default)
+        for key, default in defaults.items()
+    }
+
+
 def data_quality_summary(items: list[dict]) -> dict:
     levels: dict[str, int] = {}
     trusted = 0
@@ -878,12 +896,11 @@ def server_health(server: dict, status: str, values: dict[str, float | None]) ->
     if status == "unknown":
         return "unknown", ["Prometheus 暂无这台服务器的数据。"]
 
-    thresholds = {
+    thresholds = metric_thresholds(server.get("thresholds"), {
         "cpu": 85,
         "memory": 90,
         "disk": 90,
-    }
-    thresholds.update(server.get("thresholds") or {})
+    })
 
     issues = []
     if values.get("cpu") is not None and values["cpu"] >= thresholds["cpu"]:
@@ -967,11 +984,10 @@ def website_health(website: dict, status: str, values: dict[str, float | None]) 
     if status == "unknown":
         return "unknown", ["Prometheus 暂无这个网站的探测数据。"]
 
-    thresholds = {
+    thresholds = metric_thresholds(website.get("thresholds"), {
         "duration": 3,
         "certDays": 14,
-    }
-    thresholds.update(website.get("thresholds") or {})
+    })
 
     issues = []
     if values.get("duration") is not None and values["duration"] >= thresholds["duration"]:

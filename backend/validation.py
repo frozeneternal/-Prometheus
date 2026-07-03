@@ -8,6 +8,8 @@ AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
 AUTO_RECOVERY_MIN_COOLDOWN_SECONDS = 30
 CERT_RENEWAL_MIN_COOLDOWN_SECONDS = 300
 AUTO_BACKUP_MIN_INTERVAL_SECONDS = 300
+SERVER_THRESHOLD_KEYS = ("cpu", "memory", "disk")
+WEBSITE_THRESHOLD_KEYS = ("duration", "certDays")
 
 
 def make_issue(
@@ -269,6 +271,16 @@ def positive_int_value(value: object) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def positive_number_value(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def int_value(value: object) -> int | None:
     try:
         return int(value)
@@ -504,6 +516,38 @@ def auto_backup_policy_issues(server: dict) -> list[dict]:
     return []
 
 
+def metric_threshold_issues(owner: dict, owner_type: str, allowed_keys: tuple[str, ...]) -> list[dict]:
+    thresholds = owner.get("thresholds") or {}
+    if not isinstance(thresholds, dict):
+        owner_id = str(owner.get("id") or "")
+        return [
+            make_issue(
+                f"{owner_type}-thresholds-invalid:{owner_id}",
+                "error",
+                "监控阈值 thresholds 必须是对象。",
+                owner_type,
+                owner_id,
+            )
+        ]
+
+    owner_id = str(owner.get("id") or "")
+    issues = []
+    for key in allowed_keys:
+        if key not in thresholds:
+            continue
+        if positive_number_value(thresholds.get(key)) is None:
+            issues.append(
+                make_issue(
+                    f"{owner_type}-threshold-invalid:{owner_id}/{key}",
+                    "error",
+                    f"监控阈值 thresholds.{key} 必须是大于 0 的数字。",
+                    owner_type,
+                    owner_id,
+                )
+            )
+    return issues
+
+
 def validate_action_reference(
     config: dict,
     actions: dict[tuple[str, str], dict],
@@ -606,6 +650,7 @@ def config_validation_summary(config: dict) -> dict:
 
     for server in servers:
         server_id = str(server.get("id") or "")
+        issues.extend(metric_threshold_issues(server, "server", SERVER_THRESHOLD_KEYS))
         issues.extend(action_definition_issues(server))
         host_server_id = str(server.get("hostServerId") or "")
         if host_server_id and host_server_id not in server_ids:
@@ -668,6 +713,7 @@ def config_validation_summary(config: dict) -> dict:
 
     for website in websites:
         website_id = str(website.get("id") or "")
+        issues.extend(metric_threshold_issues(website, "website", WEBSITE_THRESHOLD_KEYS))
         server_id = str(website.get("serverId") or "")
         if server_id and server_id not in server_ids:
             issues.append(

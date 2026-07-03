@@ -161,6 +161,33 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("action-timeout-invalid:ops-host/auto-missing-timeout", issue_ids)
         self.assertIn("action-timeout-invalid:ops-host/renew-cert", issue_ids)
 
+    def test_config_validation_reports_metric_threshold_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "thresholds": {"cpu": "hot", "memory": True, "disk": -1},
+                },
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "thresholds": {"duration": "slow", "certDays": 0},
+                },
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("server-threshold-invalid:srv1/cpu", issue_ids)
+        self.assertIn("server-threshold-invalid:srv1/memory", issue_ids)
+        self.assertIn("server-threshold-invalid:srv1/disk", issue_ids)
+        self.assertIn("website-threshold-invalid:site1/duration", issue_ids)
+        self.assertIn("website-threshold-invalid:site1/certDays", issue_ids)
+
     def test_config_validation_reports_invalid_resource_expiry_dates(self) -> None:
         config = {
             "servers": [],
