@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 import urllib.error
@@ -125,9 +126,10 @@ def first_value(prometheus_payload: dict) -> float | None:
         return None
 
     try:
-        return float(value[1])
+        parsed = float(value[1])
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def data_quality(level: str, message: str, trusted: bool, details: dict | None = None) -> dict:

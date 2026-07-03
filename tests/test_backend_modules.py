@@ -110,6 +110,15 @@ class BackendModuleTests(unittest.TestCase):
         website_queries = prometheus.build_website_queries({"url": "https://example.test/"})
         self.assertIn('instance="https://example.test/"', website_queries["success"])
 
+    def test_prometheus_first_value_rejects_non_finite_samples(self) -> None:
+        from backend import prometheus
+
+        for sample in ("NaN", "+Inf", "-Inf"):
+            with self.subTest(sample=sample):
+                self.assertIsNone(
+                    prometheus.first_value({"data": {"result": [{"value": [0, sample]}]}})
+                )
+
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
 
