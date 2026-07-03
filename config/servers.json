@@ -122,6 +122,7 @@
           "danger": "high",
           "enabled": true,
           "allowAuto": true,
+          "confirm": "restart vm example",
           "timeoutSeconds": 90,
           "command": [
             "python",
@@ -202,6 +203,7 @@
           "danger": "high",
           "enabled": false,
           "allowAuto": true,
+          "confirm": "restart web stack",
           "timeoutSeconds": 60,
           "command": [
             "ssh",

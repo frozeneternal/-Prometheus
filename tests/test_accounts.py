@@ -127,6 +127,20 @@ class AccountAuthTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(execute.call_args.kwargs["actor"]["username"], "ops")
 
+    def test_high_danger_action_without_confirm_is_blocked(self) -> None:
+        config = self.config_with_users()
+        config["servers"][0]["actions"][0].update({"danger": "high", "confirm": ""})
+        operator = app.authenticate_user(config, "ops", "ops-pass")
+        token = app.create_session_token(config, operator)
+
+        with patch.object(app, "execute_server_action", return_value=(200, {"ok": True, "message": "ran"})) as execute:
+            status, payload = app.run_action(config, {"serverId": "srv1", "actionId": "restart", "sessionToken": token})
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("高危", payload["message"])
+        execute.assert_not_called()
+
     def test_settings_require_auth_when_legacy_token_is_configured(self) -> None:
         config = {"actionToken": "legacy-token", "users": []}
 

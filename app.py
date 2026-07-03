@@ -1756,6 +1756,8 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
         return 404, {"ok": False, "message": "操作不存在。"}
 
     expected_confirm = str(action.get("confirm") or "")
+    if str(action.get("danger") or "").lower() == "high" and not expected_confirm:
+        return 400, {"ok": False, "message": "高危动作必须配置确认文本后才允许手动执行。"}
     if expected_confirm and confirm != expected_confirm:
         return 400, {"ok": False, "message": f"请输入确认文本：{expected_confirm}"}
 

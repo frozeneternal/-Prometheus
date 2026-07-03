@@ -256,6 +256,17 @@ def action_definition_issues(server: dict) -> list[dict]:
                 )
             )
 
+        if str(action.get("danger") or "").lower() == "high" and not str(action.get("confirm") or ""):
+            issues.append(
+                make_issue(
+                    f"action-confirm-required:{server_id}/{action_id}",
+                    "error",
+                    f"高危动作必须配置 confirm 确认文本：{server_id}/{action_id}。",
+                    "action",
+                    target_id,
+                )
+            )
+
         has_timeout = "timeoutSeconds" in action
         try:
             timeout_seconds = int(action.get("timeoutSeconds", 30))
