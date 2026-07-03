@@ -305,11 +305,9 @@ def action_definition_issues(server: dict) -> list[dict]:
 
 
 def positive_int_value(value: object) -> int | None:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
+    if not isinstance(value, int) or isinstance(value, bool):
         return None
-    return parsed if parsed > 0 else None
+    return value if value > 0 else None
 
 
 def positive_number_value(value: object) -> float | None:
@@ -323,10 +321,9 @@ def positive_number_value(value: object) -> float | None:
 
 
 def int_value(value: object) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
+    if not isinstance(value, int) or isinstance(value, bool):
         return None
+    return value
 
 
 def monitoring_option_issues(config: dict) -> list[dict]:

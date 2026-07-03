@@ -177,8 +177,8 @@ class DataQualityTests(unittest.TestCase):
                 "actionServerId": "ops-host",
                 "actionId": "restart",
                 "triggerHealth": ["down"],
-                "minimumConsecutiveFailures": "twice",
-                "cooldownSeconds": "soon",
+                "minimumConsecutiveFailures": 1.5,
+                "cooldownSeconds": 300,
             },
         }
         snapshot = {
@@ -196,6 +196,50 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertIn("minimumConsecutiveFailures", result["message"])
         self.assertEqual(result["consecutiveFailures"], 1)
+        execute_server_action.assert_not_called()
+
+    def test_auto_recovery_blocks_bool_cooldown_without_executing_action(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "restart",
+                            "command": ["echo", "restart"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "restart",
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 1,
+                "cooldownSeconds": True,
+            },
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["target down"],
+            "dataQuality": {"level": "target_down", "trusted": True},
+        }
+
+        with patch.object(app, "execute_server_action") as execute_server_action:
+            result = app.maybe_trigger_recovery(config, "server", entity, snapshot)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("cooldownSeconds", result["message"])
         execute_server_action.assert_not_called()
 
     def test_cert_renewal_blocks_invalid_policy_without_executing_action(self) -> None:
@@ -222,8 +266,8 @@ class DataQualityTests(unittest.TestCase):
                 "enabled": True,
                 "actionServerId": "ops-host",
                 "actionId": "renew-cert",
-                "renewBeforeDays": "soon",
-                "cooldownSeconds": "later",
+                "renewBeforeDays": 1.5,
+                "cooldownSeconds": 86400,
             },
         }
         snapshot = {
@@ -243,6 +287,51 @@ class DataQualityTests(unittest.TestCase):
         self.assertIn("renewBeforeDays", result["message"])
         execute_server_action.assert_not_called()
 
+    def test_cert_renewal_blocks_bool_cooldown_without_executing_action(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "command": ["echo", "renew"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ]
+        }
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "serverId": "ops-host",
+            "certRenewal": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "renew-cert",
+                "renewBeforeDays": 14,
+                "cooldownSeconds": True,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert expires soon"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with patch.object(app, "execute_server_action") as execute_server_action:
+            result = app.maybe_trigger_cert_renewal(config, website, snapshot)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("cooldownSeconds", result["message"])
+        execute_server_action.assert_not_called()
+
     def test_auto_backup_blocks_invalid_policy_without_executing_action(self) -> None:
         config = {
             "servers": [
@@ -253,7 +342,7 @@ class DataQualityTests(unittest.TestCase):
                         "enabled": True,
                         "actionServerId": "srv1",
                         "actionId": "backup",
-                        "intervalSeconds": "often",
+                        "intervalSeconds": 1.5,
                     },
                     "actions": [
                         {

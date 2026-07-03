@@ -386,8 +386,8 @@ class ConfigValidationTests(unittest.TestCase):
                         "actionServerId": "ops-host",
                         "actionId": "restart",
                         "triggerHealth": ["healthy", "broken"],
-                        "minimumConsecutiveFailures": 0,
-                        "cooldownSeconds": "soon",
+                        "minimumConsecutiveFailures": 1.5,
+                        "cooldownSeconds": True,
                     },
                 },
             ],
@@ -442,8 +442,8 @@ class ConfigValidationTests(unittest.TestCase):
                         "enabled": True,
                         "actionServerId": "ops-host",
                         "actionId": "renew-cert",
-                        "renewBeforeDays": "soon",
-                        "cooldownSeconds": 120,
+                        "renewBeforeDays": 1.5,
+                        "cooldownSeconds": True,
                     },
                 },
                 {
@@ -466,7 +466,7 @@ class ConfigValidationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "error")
         self.assertIn("cert-renewal-renew-before-invalid:bad-site", issue_ids)
-        self.assertIn("cert-renewal-cooldown-too-low:bad-site", issue_ids)
+        self.assertIn("cert-renewal-cooldown-invalid:bad-site", issue_ids)
         self.assertIn("cert-renewal-renew-before-invalid:zero-site", issue_ids)
         self.assertIn("cert-renewal-cooldown-invalid:zero-site", issue_ids)
 
@@ -490,7 +490,7 @@ class ConfigValidationTests(unittest.TestCase):
                         "enabled": True,
                         "actionServerId": "ops-host",
                         "actionId": "backup",
-                        "intervalSeconds": "often",
+                        "intervalSeconds": 1.5,
                     },
                 },
                 {
@@ -517,9 +517,9 @@ class ConfigValidationTests(unittest.TestCase):
     def test_config_validation_reports_monitoring_option_risks(self) -> None:
         config = {
             "monitoring": {
-                "pollIntervalSeconds": "fast",
+                "pollIntervalSeconds": 10.5,
                 "recoveryLogLimit": 5,
-                "incidentLogLimit": "many",
+                "incidentLogLimit": True,
                 "resourceExpiryWarningDays": 0,
                 "resourceExpiryCriticalDays": 20,
             },

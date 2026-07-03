@@ -848,11 +848,23 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
 
 
 def safe_positive_int(value: object, default: int, minimum: int = 1) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
+    parsed = strict_int_value(value)
+    if parsed is None:
         return default
     return parsed if parsed >= minimum else default
+
+
+def strict_int_value(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    return value
+
+
+def strict_positive_int_value(value: object) -> int | None:
+    parsed = strict_int_value(value)
+    if parsed is None or parsed <= 0:
+        return None
+    return parsed
 
 
 def safe_positive_float(value: object, default: float, minimum: float = 0.0) -> float:
@@ -1130,11 +1142,11 @@ def can_trigger_cert_renewal(website: dict, snapshot: dict, state: dict) -> tupl
     if cert_expires_in is None:
         return False, "当前没有可用的证书到期数据。"
 
-    renew_before_days = int(renewal.get("renewBeforeDays", 14))
+    renew_before_days = strict_positive_int_value(renewal.get("renewBeforeDays", 14)) or 14
     if cert_expires_in > renew_before_days * 86400:
         return False, f"证书距到期还有 {int(cert_expires_in / 86400)} 天。"
 
-    cooldown = int(renewal.get("cooldownSeconds", 86400))
+    cooldown = strict_positive_int_value(renewal.get("cooldownSeconds", 86400)) or 86400
     last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
     if last_completed and time.time() - last_completed < cooldown:
         remain = int(cooldown - (time.time() - last_completed))
@@ -1144,16 +1156,14 @@ def can_trigger_cert_renewal(website: dict, snapshot: dict, state: dict) -> tupl
 
 
 def cert_renewal_policy_error(renewal: dict) -> str:
-    try:
-        renew_before_days = int(renewal.get("renewBeforeDays", 14))
-    except (TypeError, ValueError):
+    renew_before_days = strict_int_value(renewal.get("renewBeforeDays", 14))
+    if renew_before_days is None:
         return "证书自动续期 renewBeforeDays 必须是整数。"
     if renew_before_days <= 0:
         return "证书自动续期 renewBeforeDays 必须大于 0。"
 
-    try:
-        cooldown = int(renewal.get("cooldownSeconds", 86400))
-    except (TypeError, ValueError):
+    cooldown = strict_int_value(renewal.get("cooldownSeconds", 86400))
+    if cooldown is None:
         return "证书自动续期 cooldownSeconds 必须是整数。"
     if cooldown < 300:
         return "证书自动续期 cooldownSeconds 不能低于 300 秒。"
@@ -1196,7 +1206,7 @@ def can_trigger_backup(server: dict, snapshot: dict, state: dict) -> tuple[bool,
     if snapshot.get("status") != "online":
         return False, "服务器当前不在线，跳过自动备份。"
 
-    interval = int(backup.get("intervalSeconds", 86400))
+    interval = strict_positive_int_value(backup.get("intervalSeconds", 86400)) or 86400
     last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
     if last_completed and time.time() - last_completed < interval:
         remain = int(interval - (time.time() - last_completed))
@@ -1206,9 +1216,8 @@ def can_trigger_backup(server: dict, snapshot: dict, state: dict) -> tuple[bool,
 
 
 def backup_policy_error(backup: dict) -> str:
-    try:
-        interval = int(backup.get("intervalSeconds", 86400))
-    except (TypeError, ValueError):
+    interval = strict_int_value(backup.get("intervalSeconds", 86400))
+    if interval is None:
         return "自动备份 intervalSeconds 必须是整数。"
     if interval < 300:
         return "自动备份 intervalSeconds 不能低于 300 秒。"
@@ -1866,12 +1875,12 @@ def can_trigger_recovery(entity: dict, health: str, state: dict) -> tuple[bool, 
     if health not in trigger_health:
         return False, f"当前状态 {health} 不在自动恢复触发条件内。"
 
-    min_failures = int(recovery.get("minimumConsecutiveFailures", 2))
+    min_failures = strict_positive_int_value(recovery.get("minimumConsecutiveFailures", 2)) or 2
     min_failures = max(1, min_failures)
     if state.get("consecutiveFailures", 0) < min_failures:
         return False, f"连续失败次数不足 {min_failures} 次。"
 
-    cooldown = int(recovery.get("cooldownSeconds", 300))
+    cooldown = strict_positive_int_value(recovery.get("cooldownSeconds", 300)) or 300
     cooldown = max(30, cooldown)
     last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
     if last_completed and time.time() - last_completed < cooldown:
@@ -1891,16 +1900,14 @@ def recovery_policy_error(recovery: dict) -> str:
     ):
         return "自动恢复 triggerHealth 必须是 down/warning/unknown 组成的非空数组。"
 
-    try:
-        min_failures = int(recovery.get("minimumConsecutiveFailures", 2))
-    except (TypeError, ValueError):
+    min_failures = strict_int_value(recovery.get("minimumConsecutiveFailures", 2))
+    if min_failures is None:
         return "自动恢复 minimumConsecutiveFailures 必须是整数。"
     if min_failures <= 0:
         return "自动恢复 minimumConsecutiveFailures 必须大于 0。"
 
-    try:
-        cooldown = int(recovery.get("cooldownSeconds", 300))
-    except (TypeError, ValueError):
+    cooldown = strict_int_value(recovery.get("cooldownSeconds", 300))
+    if cooldown is None:
         return "自动恢复 cooldownSeconds 必须是整数。"
     if cooldown < 30:
         return "自动恢复 cooldownSeconds 不能低于 30 秒。"
