@@ -143,6 +143,8 @@ class ConfigValidationTests(unittest.TestCase):
                         {"id": "auto-missing-timeout", "command": ["echo", "auto"], "allowAuto": True},
                         {"id": "renew-cert", "command": ["certbot", "renew"], "allowAuto": True, "timeoutSeconds": 0},
                         {"id": "danger-no-confirm", "command": ["echo", "danger"], "danger": "high", "timeoutSeconds": 30},
+                        {"id": "bad-success-codes", "command": ["echo", "bad"], "timeoutSeconds": 30, "successReturnCodes": ["ok"]},
+                        {"id": "float-success-codes", "command": ["echo", "bad"], "timeoutSeconds": 30, "successReturnCodes": [1.2]},
                     ],
                 }
             ],
@@ -162,6 +164,8 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("action-timeout-invalid:ops-host/auto-missing-timeout", issue_ids)
         self.assertIn("action-timeout-invalid:ops-host/renew-cert", issue_ids)
         self.assertIn("action-confirm-required:ops-host/danger-no-confirm", issue_ids)
+        self.assertIn("action-success-codes-invalid:ops-host/bad-success-codes", issue_ids)
+        self.assertIn("action-success-codes-invalid:ops-host/float-success-codes", issue_ids)
 
     def test_config_validation_reports_metric_threshold_risks(self) -> None:
         config = {

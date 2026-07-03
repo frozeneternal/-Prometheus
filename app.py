@@ -1529,13 +1529,25 @@ def normalize_success_codes(action: dict) -> set[int]:
     if not isinstance(raw, list) or not raw:
         return {0}
 
-    codes = set()
+    return set(raw)
+
+
+def is_success_return_code(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def success_return_codes_error(action: dict) -> str:
+    if "successReturnCodes" not in action:
+        return ""
+
+    raw = action.get("successReturnCodes")
+    if not isinstance(raw, list) or not raw:
+        return "动作 successReturnCodes 必须是非空整数数组。"
+
     for item in raw:
-        try:
-            codes.add(int(item))
-        except (TypeError, ValueError):
-            continue
-    return codes or {0}
+        if not is_success_return_code(item):
+            return "动作 successReturnCodes 必须是非空整数数组。"
+    return ""
 
 
 def build_log_event(
@@ -1636,6 +1648,30 @@ def execute_server_action(
         payload = {
             "ok": False,
             "message": "动作 timeoutSeconds 必须是大于 0 的整数。",
+            "stdout": "",
+            "stderr": "",
+        }
+        log_event = build_log_event(
+            invocation=invocation,
+            target_type=target_type,
+            target_id=target_id,
+            target_name=target_name,
+            action_server=action_server,
+            action=action,
+            reason=reason,
+            consecutive_failures=consecutive_failures,
+            payload=payload,
+            actor=actor,
+        )
+        append_recovery_log(config, log_event)
+        payload["logId"] = log_event["id"]
+        return 400, payload
+
+    success_codes_error = success_return_codes_error(action)
+    if success_codes_error:
+        payload = {
+            "ok": False,
+            "message": success_codes_error,
             "stdout": "",
             "stderr": "",
         }

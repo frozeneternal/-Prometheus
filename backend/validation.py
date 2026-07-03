@@ -79,6 +79,13 @@ def password_hash_format_valid(password_hash: str) -> bool:
     )
 
 
+def success_return_codes_valid(value: object) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+
+    return all(isinstance(item, int) and not isinstance(item, bool) for item in value)
+
+
 def account_configuration_issues(config: dict) -> list[dict]:
     users = config.get("users", []) or []
     has_actions = any((server.get("actions") or []) for server in config.get("servers", []) or [])
@@ -280,6 +287,16 @@ def action_definition_issues(server: dict) -> list[dict]:
                     f"action-timeout-invalid:{server_id}/{action_id}",
                     "error",
                     f"动作必须配置大于 0 的 timeoutSeconds：{server_id}/{action_id}。",
+                    "action",
+                    target_id,
+                )
+            )
+        if "successReturnCodes" in action and not success_return_codes_valid(action.get("successReturnCodes")):
+            issues.append(
+                make_issue(
+                    f"action-success-codes-invalid:{server_id}/{action_id}",
+                    "error",
+                    f"动作 successReturnCodes 必须是非空整数数组：{server_id}/{action_id}。",
                     "action",
                     target_id,
                 )

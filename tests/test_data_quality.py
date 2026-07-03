@@ -312,6 +312,72 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(app.RUNTIME_STATE["recoveryLogs"][-1]["id"], payload["logId"])
         subprocess_run.assert_not_called()
 
+    def test_execute_server_action_logs_invalid_success_codes_without_running_command(self) -> None:
+        config = {"monitoring": {}}
+        action_server = {"id": "srv1", "name": "Server 1"}
+        action = {
+            "id": "restart",
+            "name": "Restart",
+            "command": ["echo", "should-not-run"],
+            "timeoutSeconds": 30,
+            "successReturnCodes": ["ok"],
+        }
+
+        with patch.object(
+            app.subprocess,
+            "run",
+            return_value=app.subprocess.CompletedProcess(action["command"], 0, "ran", ""),
+        ) as subprocess_run:
+            status, payload = app.execute_server_action(
+                config,
+                action_server,
+                action,
+                invocation="manual",
+                target_type="server",
+                target_id="srv1",
+                target_name="Server 1",
+                reason="test invalid success codes",
+            )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("successReturnCodes", payload["message"])
+        self.assertTrue(payload["logId"])
+        self.assertEqual(app.RUNTIME_STATE["recoveryLogs"][-1]["id"], payload["logId"])
+        subprocess_run.assert_not_called()
+
+    def test_execute_server_action_rejects_float_success_codes_without_running_command(self) -> None:
+        config = {"monitoring": {}}
+        action_server = {"id": "srv1", "name": "Server 1"}
+        action = {
+            "id": "restart",
+            "name": "Restart",
+            "command": ["echo", "should-not-run"],
+            "timeoutSeconds": 30,
+            "successReturnCodes": [1.2],
+        }
+
+        with patch.object(
+            app.subprocess,
+            "run",
+            return_value=app.subprocess.CompletedProcess(action["command"], 0, "ran", ""),
+        ) as subprocess_run:
+            status, payload = app.execute_server_action(
+                config,
+                action_server,
+                action,
+                invocation="manual",
+                target_type="server",
+                target_id="srv1",
+                target_name="Server 1",
+                reason="test invalid success codes",
+            )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("successReturnCodes", payload["message"])
+        subprocess_run.assert_not_called()
+
     def test_series_payload_returns_empty_values_when_collector_is_unavailable(self) -> None:
         config = {
             "servers": [
