@@ -395,7 +395,8 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
     "actionServerId": "web-01",
     "actionId": "renew_certbot_homepage",
     "renewBeforeDays": 14,
-    "cooldownSeconds": 86400
+    "cooldownSeconds": 86400,
+    "verificationTimeoutSeconds": 1800
   }
 }
 ```
@@ -407,12 +408,13 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - `actionId`：续期动作 ID。
 - `renewBeforeDays`：距离到期多少天以内开始自动续期。
 - `cooldownSeconds`：两次自动续期之间至少间隔多久。
+- `verificationTimeoutSeconds`：续期命令成功后等待监控确认新证书到期时间的最长秒数，默认 1800 秒，最低 300 秒。
 
 面板里的行为：
 
 - 网站卡片会显示证书剩余天数。
 - 如果配置了 `certRenewal`，会出现一个小号的 `手动续期` 按钮。
-- 当证书剩余天数小于等于 `renewBeforeDays` 时，后台会自动执行续期动作。
+- 当证书剩余天数小于等于 `renewBeforeDays` 时，后台会自动执行续期动作；命令返回成功后会进入“确认中”，只有监控到证书到期时间延长后才标记为续期成功。
 - 每次自动续期或手动续期都会写入恢复日志。
 
 注意：

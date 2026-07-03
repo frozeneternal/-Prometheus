@@ -387,6 +387,138 @@ class DataQualityTests(unittest.TestCase):
         self.assertFalse(result["dataQuality"]["trusted"])
         execute_server_action.assert_not_called()
 
+    def test_cert_renewal_waits_for_verified_expiry_after_command_success(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "command": ["echo", "renew"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ]
+        }
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "serverId": "ops-host",
+            "certRenewal": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "renew-cert",
+                "renewBeforeDays": 14,
+                "cooldownSeconds": 86400,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert expires soon"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with patch.object(
+            app,
+            "execute_server_action",
+            return_value=(200, {"ok": True, "message": "renew command returned zero", "logId": "log-1"}),
+        ) as execute_server_action:
+            result = app.maybe_trigger_cert_renewal(config, website, snapshot)
+
+        self.assertEqual(result["status"], "verifying")
+        self.assertEqual(result["lastResult"], "verifying")
+        self.assertEqual(result["pendingExpiresIn"], 3 * 86400)
+        self.assertIn("等待证书监控确认", result["message"])
+        execute_server_action.assert_called_once()
+
+    def test_cert_renewal_marks_success_only_after_expiry_extends(self) -> None:
+        state = app.get_runtime_entity_state("website-cert", "site1")
+        state.update(
+            {
+                "lastResult": "verifying",
+                "lastAttemptAt": 1000.0,
+                "pendingExpiresIn": 3 * 86400,
+                "lastLogId": "log-1",
+            }
+        )
+        app.set_runtime_entity_state("website-cert", "site1", state)
+        config = {"servers": []}
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "certRenewal": {"enabled": True, "renewBeforeDays": 14, "cooldownSeconds": 86400},
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "healthy",
+            "issues": [],
+            "metrics": {"certExpiresIn": 40 * 86400},
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with patch.object(app, "execute_server_action") as execute_server_action:
+            result = app.maybe_trigger_cert_renewal(config, website, snapshot)
+
+        self.assertEqual(result["status"], "triggered")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertEqual(result["verifiedExpiresIn"], 40 * 86400)
+        self.assertIn("证书续期已确认", result["message"])
+        execute_server_action.assert_not_called()
+
+    def test_cert_renewal_fails_when_verification_times_out_without_expiry_extension(self) -> None:
+        state = app.get_runtime_entity_state("website-cert", "site1")
+        state.update(
+            {
+                "lastResult": "verifying",
+                "lastAttemptAt": 1000.0,
+                "pendingExpiresIn": 3 * 86400,
+                "lastLogId": "log-1",
+            }
+        )
+        app.set_runtime_entity_state("website-cert", "site1", state)
+        config = {"servers": []}
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "certRenewal": {
+                "enabled": True,
+                "renewBeforeDays": 14,
+                "cooldownSeconds": 86400,
+                "verificationTimeoutSeconds": 300,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert still expires soon"],
+            "metrics": {"certExpiresIn": 2 * 86400},
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with (
+            patch.object(app, "time") as time_module,
+            patch.object(app, "execute_server_action") as execute_server_action,
+        ):
+            time_module.time.return_value = 1301.0
+            result = app.maybe_trigger_cert_renewal(config, website, snapshot)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["lastResult"], "failed")
+        self.assertEqual(result["verifiedExpiresIn"], 2 * 86400)
+        self.assertIn("超时", result["message"])
+        execute_server_action.assert_not_called()
+
     def test_auto_backup_blocks_invalid_policy_without_executing_action(self) -> None:
         config = {
             "servers": [

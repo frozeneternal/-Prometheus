@@ -814,7 +814,8 @@ button.danger:hover,
   background: var(--surface-soft);
 }
 
-.recovery-badge.waiting {
+.recovery-badge.waiting,
+.recovery-badge.verifying {
   color: var(--warn);
   background: var(--warn-bg);
 }

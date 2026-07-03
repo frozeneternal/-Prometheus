@@ -39,6 +39,7 @@ export const backupLabels = {
 export const certRenewalLabels = {
   idle: "空闲",
   waiting: "等待续期",
+  verifying: "确认中",
   blocked: "配置阻塞",
   triggered: "已续期",
   failed: "续期失败",

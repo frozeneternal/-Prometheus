@@ -72,7 +72,7 @@
       "diskMountpoint": "/",
       "autoRecovery": {
         "enabled": true,
-        "actionServerId": "physical-host-a",
+        "actionServerId": "vm-app-01",
         "actionId": "restart_vm_app_01",
         "minimumConsecutiveFailures": 2,
         "cooldownSeconds": 300,
@@ -87,6 +87,7 @@
           "danger": "high",
           "enabled": false,
           "allowAuto": true,
+          "confirm": "restart application vm 01",
           "timeoutSeconds": 90,
           "command": [
             "python",
@@ -148,7 +149,8 @@
         "actionServerId": "vm-app-01",
         "actionId": "renew_site_cert",
         "renewBeforeDays": 14,
-        "cooldownSeconds": 86400
+        "cooldownSeconds": 86400,
+        "verificationTimeoutSeconds": 1800
       },
       "thresholds": {
         "duration": 3,

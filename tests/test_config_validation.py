@@ -446,6 +446,7 @@ class ConfigValidationTests(unittest.TestCase):
                         "actionId": "renew-cert",
                         "renewBeforeDays": 1.5,
                         "cooldownSeconds": True,
+                        "verificationTimeoutSeconds": True,
                     },
                 },
                 {
@@ -457,6 +458,7 @@ class ConfigValidationTests(unittest.TestCase):
                         "actionId": "renew-cert",
                         "renewBeforeDays": 0,
                         "cooldownSeconds": "later",
+                        "verificationTimeoutSeconds": 0,
                     },
                 },
             ],
@@ -471,6 +473,8 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("cert-renewal-cooldown-invalid:bad-site", issue_ids)
         self.assertIn("cert-renewal-renew-before-invalid:zero-site", issue_ids)
         self.assertIn("cert-renewal-cooldown-invalid:zero-site", issue_ids)
+        self.assertIn("cert-renewal-verification-timeout-invalid:bad-site", issue_ids)
+        self.assertIn("cert-renewal-verification-timeout-invalid:zero-site", issue_ids)
 
     def test_config_validation_reports_auto_backup_policy_risks(self) -> None:
         config = {

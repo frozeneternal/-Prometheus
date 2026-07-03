@@ -184,7 +184,8 @@
         "actionServerId": "web-01",
         "actionId": "renew_certbot_homepage",
         "renewBeforeDays": 14,
-        "cooldownSeconds": 86400
+        "cooldownSeconds": 86400,
+        "verificationTimeoutSeconds": 1800
       },
       "manualCertRenewal": {
         "actionServerId": "web-01",

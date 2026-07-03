@@ -111,6 +111,14 @@ class FrontendModuleTests(unittest.TestCase):
             function_body = format_js[start:] if end == -1 else format_js[start:end]
             self.assertIn("isFiniteNumber", function_body, function_name)
 
+    def test_cert_renewal_labels_include_verification_state(self) -> None:
+        format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
+        start = format_js.index("export const certRenewalLabels")
+        end = format_js.index("};", start)
+        labels_block = format_js[start:end]
+
+        self.assertIn("verifying", labels_block)
+
 
 if __name__ == "__main__":
     unittest.main()

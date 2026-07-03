@@ -1171,6 +1171,41 @@ def cert_renewal_policy_error(renewal: dict) -> str:
     return ""
 
 
+def cert_renewal_verification_timeout(renewal: dict) -> int:
+    return safe_positive_int(renewal.get("verificationTimeoutSeconds", 1800), 1800, 300)
+
+
+def maybe_finish_pending_cert_renewal(
+    state: dict,
+    renewal: dict,
+    cert_expires_in: float | None,
+    now: float,
+) -> tuple[bool, str, str]:
+    if state.get("lastResult") != "verifying":
+        return False, "", ""
+    if cert_expires_in is None:
+        return True, "verifying", "等待证书监控返回新的到期时间。"
+
+    previous = state.get("pendingExpiresIn")
+    if isinstance(previous, (int, float)) and not isinstance(previous, bool) and cert_expires_in > previous:
+        state["lastResult"] = "success"
+        state["lastCompletedAt"] = now
+        state["verifiedExpiresIn"] = cert_expires_in
+        state.pop("pendingExpiresIn", None)
+        return True, "triggered", "证书续期已确认，监控到新的证书到期时间。"
+
+    timeout = cert_renewal_verification_timeout(renewal)
+    last_attempt = float(state.get("lastAttemptAt", 0.0) or 0.0)
+    if last_attempt and now - last_attempt >= timeout:
+        state["lastResult"] = "failed"
+        state["lastCompletedAt"] = now
+        state["verifiedExpiresIn"] = cert_expires_in
+        state.pop("pendingExpiresIn", None)
+        return True, "failed", "证书续期命令已执行，但超时后证书到期时间仍未延长。"
+
+    return True, "verifying", "续期命令已执行，等待证书监控确认新的到期时间。"
+
+
 def resolve_cert_renewal_action(config: dict, website: dict) -> tuple[dict | None, dict | None, str]:
     renewal = website.get("certRenewal") or {}
     action_server_id = renewal.get("actionServerId") or website.get("serverId") or ""
@@ -1340,10 +1375,9 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
     cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
     quality = snapshot.get("dataQuality") or {}
     data_trusted = quality.get("trusted") is not False
+    now = time.time()
 
     state["lastReason"] = reason
-    action_server, action, resolve_message = resolve_cert_renewal_action(config, website)
-    allowed, block_message = can_trigger_cert_renewal(website, snapshot, state)
 
     renewal_view = {
         "enabled": enabled,
@@ -1358,6 +1392,10 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         "lastLogId": state.get("lastLogId", ""),
         "dataQuality": quality,
     }
+    if "pendingExpiresIn" in state:
+        renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
+    if "verifiedExpiresIn" in state:
+        renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
 
     if not renewal_view["enabled"]:
         renewal_view["message"] = "证书自动续期未启用。"
@@ -1369,6 +1407,33 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         renewal_view["message"] = quality.get("message") or "证书监控数据不可信，禁止执行自动续期。"
         set_runtime_entity_state("website-cert", target_id, state)
         return renewal_view
+
+    pending_handled, pending_status, pending_message = maybe_finish_pending_cert_renewal(
+        state,
+        renewal_config,
+        cert_expires_in,
+        now,
+    )
+    if pending_handled:
+        renewal_view.update(
+            {
+                "status": pending_status,
+                "message": pending_message,
+                "lastCompletedAt": state.get("lastCompletedAt", 0.0),
+                "lastResult": state.get("lastResult", ""),
+                "lastReason": state.get("lastReason", ""),
+                "lastLogId": state.get("lastLogId", ""),
+            }
+        )
+        if "pendingExpiresIn" in state:
+            renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
+        if "verifiedExpiresIn" in state:
+            renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
+        set_runtime_entity_state("website-cert", target_id, state)
+        return renewal_view
+
+    action_server, action, resolve_message = resolve_cert_renewal_action(config, website)
+    allowed, block_message = can_trigger_cert_renewal(website, snapshot, state)
 
     if resolve_message:
         renewal_view["status"] = "blocked"
@@ -1389,7 +1454,7 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         set_runtime_entity_state("website-cert", target_id, state)
         return renewal_view
 
-    state["lastAttemptAt"] = time.time()
+    state["lastAttemptAt"] = now
     http_status, payload = execute_server_action(
         config,
         action_server,
@@ -1400,22 +1465,29 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         target_name=f"{website.get('name', target_id)} 证书",
         reason=reason,
     )
-    state["lastCompletedAt"] = time.time()
-    state["lastResult"] = "success" if payload.get("ok") else "failed"
+    if payload.get("ok"):
+        state["lastResult"] = "verifying"
+        state["pendingExpiresIn"] = cert_expires_in
+        state.pop("verifiedExpiresIn", None)
+    else:
+        state["lastResult"] = "failed"
+        state["lastCompletedAt"] = time.time()
     state["lastLogId"] = payload.get("logId", "")
 
     renewal_view.update(
         {
-            "status": "triggered" if payload.get("ok") else "failed",
-            "message": payload.get("message", ""),
+            "status": "verifying" if payload.get("ok") else "failed",
+            "message": "续期命令已执行，等待证书监控确认新的到期时间。" if payload.get("ok") else payload.get("message", ""),
             "lastAttemptAt": state["lastAttemptAt"],
-            "lastCompletedAt": state["lastCompletedAt"],
+            "lastCompletedAt": state.get("lastCompletedAt", 0.0),
             "lastResult": state["lastResult"],
             "lastReason": reason,
             "lastLogId": state["lastLogId"],
             "lastHttpStatus": http_status,
         }
     )
+    if "pendingExpiresIn" in state:
+        renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
     set_runtime_entity_state("website-cert", target_id, state)
     return renewal_view
 
