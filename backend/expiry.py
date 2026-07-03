@@ -10,7 +10,10 @@ def parse_expiry_datetime(value: object) -> datetime | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), timezone.utc)
+        try:
+            return datetime.fromtimestamp(float(value), timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
 
     text = str(value).strip()
     if not text:

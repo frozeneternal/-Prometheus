@@ -111,6 +111,21 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertIsNone(items[0]["expiresAtTimestamp"])
         self.assertIsNone(items[0]["daysRemaining"])
 
+    def test_resource_expiry_treats_out_of_range_timestamps_as_unknown(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {"id": "huge-expiry", "name": "Huge Expiry", "expiresAt": 10**20},
+            ]
+        }
+
+        items = app.resource_expiry_items(config, now=now)
+
+        self.assertEqual(items[0]["id"], "huge-expiry")
+        self.assertEqual(items[0]["status"], "unknown")
+        self.assertIsNone(items[0]["expiresAtTimestamp"])
+        self.assertIsNone(items[0]["daysRemaining"])
+
     def test_resource_expiry_thresholds_tolerate_invalid_values(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {
