@@ -332,6 +332,61 @@ class DataQualityTests(unittest.TestCase):
         self.assertIn("cooldownSeconds", result["message"])
         execute_server_action.assert_not_called()
 
+    def test_cert_renewal_does_not_trigger_on_untrusted_data(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "command": ["echo", "renew"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ]
+        }
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "serverId": "ops-host",
+            "certRenewal": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "renew-cert",
+                "renewBeforeDays": 14,
+                "cooldownSeconds": 86400,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "unknown",
+            "health": "warning",
+            "issues": ["cert metric missing"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {
+                "level": "no_series",
+                "trusted": False,
+                "message": "Certificate expiry data is not trusted.",
+            },
+        }
+
+        with patch.object(
+            app,
+            "execute_server_action",
+            return_value=(200, {"ok": True, "message": "renewed"}),
+        ) as execute_server_action:
+            result = app.maybe_trigger_cert_renewal(config, website, snapshot)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("Certificate expiry data is not trusted.", result["message"])
+        self.assertIn("dataQuality", result)
+        self.assertFalse(result["dataQuality"]["trusted"])
+        execute_server_action.assert_not_called()
+
     def test_auto_backup_blocks_invalid_policy_without_executing_action(self) -> None:
         config = {
             "servers": [

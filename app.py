@@ -1338,6 +1338,8 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
     renewal_config = website.get("certRenewal") or {}
     enabled = bool(renewal_config.get("enabled"))
     cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
+    quality = snapshot.get("dataQuality") or {}
+    data_trusted = quality.get("trusted") is not False
 
     state["lastReason"] = reason
     action_server, action, resolve_message = resolve_cert_renewal_action(config, website)
@@ -1354,10 +1356,17 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         "lastResult": state.get("lastResult", ""),
         "lastReason": state.get("lastReason", ""),
         "lastLogId": state.get("lastLogId", ""),
+        "dataQuality": quality,
     }
 
     if not renewal_view["enabled"]:
         renewal_view["message"] = "证书自动续期未启用。"
+        set_runtime_entity_state("website-cert", target_id, state)
+        return renewal_view
+
+    if not data_trusted:
+        renewal_view["status"] = "blocked"
+        renewal_view["message"] = quality.get("message") or "证书监控数据不可信，禁止执行自动续期。"
         set_runtime_entity_state("website-cert", target_id, state)
         return renewal_view
 
