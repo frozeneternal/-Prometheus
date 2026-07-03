@@ -22,6 +22,7 @@ PUBLIC_DIR = BASE_DIR / "public"
 DATA_DIR = BASE_DIR / "data"
 RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
 INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
+SESSION_REVOCATION_PATH = DATA_DIR / "revoked_sessions.json"
 
 MAX_OUTPUT_CHARS = 20000
 SERVER_METRICS = ("up", "cpu", "memory", "disk", "rx", "tx", "load", "uptime")
@@ -94,6 +95,27 @@ def save_incident_logs_to_disk(logs: list[dict]) -> None:
     ensure_data_dir()
     with INCIDENT_LOG_PATH.open("w", encoding="utf-8") as fh:
         json.dump(logs, fh, ensure_ascii=False, indent=2)
+
+
+def load_revoked_sessions_from_disk() -> dict[str, float]:
+    ensure_data_dir()
+    if not SESSION_REVOCATION_PATH.exists():
+        return {}
+
+    try:
+        with SESSION_REVOCATION_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    revoked = data.get("revokedSessionIds", data) if isinstance(data, dict) else {}
+    return revoked if isinstance(revoked, dict) else {}
+
+
+def save_revoked_sessions_to_disk(session_ids: dict[str, float]) -> None:
+    ensure_data_dir()
+    with SESSION_REVOCATION_PATH.open("w", encoding="utf-8") as fh:
+        json.dump({"revokedSessionIds": session_ids}, fh, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 def get_recent_incident_logs(limit: int = 50) -> list[dict]:
@@ -649,8 +671,11 @@ from backend.auth import (  # noqa: E402 - transitional re-export while app.py i
     create_session_token,
     find_user,
     hash_password,
+    load_revoked_sessions,
     normalize_role,
     public_user,
+    revoke_session_token,
+    revoked_session_snapshot,
     role_allows,
     session_signing_key,
     users_enabled,
@@ -1631,6 +1656,7 @@ def monitor_loop() -> None:
 def bootstrap_runtime_state() -> None:
     logs = load_recovery_logs_from_disk()
     incident_logs = load_incident_logs_from_disk()
+    load_revoked_sessions(load_revoked_sessions_from_disk())
     with RUNTIME_LOCK:
         RUNTIME_STATE["recoveryLogs"] = logs
         RUNTIME_STATE["incidentLogs"] = incident_logs
@@ -1964,6 +1990,22 @@ def session_payload(config: dict, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True, "mode": "session", "user": user}
 
 
+def logout_payload(config: dict, body: dict) -> tuple[int, dict]:
+    if not users_enabled(config):
+        return 200, {"ok": True, "mode": "legacy-token", "message": "未启用账号登录模式。"}
+
+    token = str(body.get("sessionToken") or "")
+    if not token:
+        return 400, {"ok": False, "message": "缺少会话令牌。"}
+    if not revoke_session_token(config, token):
+        return 401, {"ok": False, "message": "登录已失效。"}
+    try:
+        save_revoked_sessions_to_disk(revoked_session_snapshot())
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"会话已撤销，但撤销记录保存失败：{exc}"}
+    return 200, {"ok": True, "mode": "session", "message": "已退出登录。"}
+
+
 def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
     state = get_runtime_entity_state(target_type, target_id)
     return {
@@ -2242,6 +2284,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
             status, payload = session_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/logout":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = logout_payload(config, body)
             json_response(self, status, payload)
             return
 

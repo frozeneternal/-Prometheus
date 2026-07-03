@@ -976,11 +976,24 @@ async function loginCurrentUser(event) {
   }
 }
 
-function logoutCurrentUser() {
-  state.sessionToken = "";
-  state.currentUser = null;
-  window.localStorage.removeItem("monitorSessionToken");
-  renderAuthControls();
+async function logoutCurrentUser() {
+  const token = state.sessionToken;
+  try {
+    if (token) {
+      await getJson("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken: token }),
+      });
+    }
+  } catch (error) {
+    // Local logout must still proceed even if the server session is already expired.
+  } finally {
+    state.sessionToken = "";
+    state.currentUser = null;
+    window.localStorage.removeItem("monitorSessionToken");
+    renderAuthControls();
+  }
 }
 
 $("#refreshButton").addEventListener("click", refreshDashboard);

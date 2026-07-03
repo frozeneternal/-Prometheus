@@ -9,6 +9,8 @@ import time
 
 
 ROLE_RANK = {"viewer": 0, "operator": 1, "admin": 2}
+# Values are token expiration timestamps. Keys may be sid:<sid>, token:<sha256>, or legacy raw sid.
+REVOKED_SESSION_IDS: dict[str, float] = {}
 
 
 def b64url_encode(raw: bytes) -> str:
@@ -89,19 +91,21 @@ def create_session_token(config: dict, user: dict, now: float | None = None, ttl
     if not secret:
         raise ValueError("sessionSecret or actionToken is required when users are enabled")
     issued_at = int(time.time() if now is None else now)
+    expires_at = issued_at + max(300, int(ttl_seconds))
     payload = {
         "username": user.get("username", ""),
         "role": normalize_role(user.get("role")),
         "iat": issued_at,
-        "exp": issued_at + max(300, int(ttl_seconds)),
+        "exp": expires_at,
         "nonce": secrets.token_hex(8),
+        "sid": secrets.token_hex(16),
     }
     encoded_payload = b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
     signature = hmac.new(secret.encode("utf-8"), encoded_payload.encode("ascii"), hashlib.sha256).hexdigest()
     return f"v1.{encoded_payload}.{signature}"
 
 
-def verify_session_token(config: dict, token: str, now: float | None = None) -> dict | None:
+def session_payload_from_token(config: dict, token: str, now: float | None = None) -> dict | None:
     secret = session_signing_key(config)
     if not secret or not token:
         return None
@@ -120,6 +124,71 @@ def verify_session_token(config: dict, token: str, now: float | None = None) -> 
         return None
     current = time.time() if now is None else float(now)
     if float(payload.get("exp", 0)) < current:
+        return None
+    return payload
+
+
+def prune_revoked_sessions(now: float) -> None:
+    expired = [sid for sid, expires_at in REVOKED_SESSION_IDS.items() if expires_at < now]
+    for sid in expired:
+        REVOKED_SESSION_IDS.pop(sid, None)
+
+
+def token_fingerprint(token: str) -> str:
+    return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+
+def primary_revocation_key(token: str, payload: dict) -> str:
+    sid = str(payload.get("sid") or "")
+    if sid:
+        return f"sid:{sid}"
+    return f"token:{token_fingerprint(token)}"
+
+
+def revocation_lookup_keys(token: str, payload: dict) -> list[str]:
+    sid = str(payload.get("sid") or "")
+    keys = [f"token:{token_fingerprint(token)}"]
+    if sid:
+        keys.extend([f"sid:{sid}", sid])
+    return keys
+
+
+def load_revoked_sessions(session_ids: dict, now: float | None = None) -> None:
+    current = time.time() if now is None else float(now)
+    REVOKED_SESSION_IDS.clear()
+    for sid, expires_at in (session_ids or {}).items():
+        try:
+            expires_at_value = float(expires_at)
+        except (TypeError, ValueError):
+            continue
+        sid_value = str(sid or "")
+        if sid_value and expires_at_value >= current:
+            REVOKED_SESSION_IDS[sid_value] = expires_at_value
+
+
+def revoked_session_snapshot(now: float | None = None) -> dict[str, float]:
+    current = time.time() if now is None else float(now)
+    prune_revoked_sessions(current)
+    return dict(REVOKED_SESSION_IDS)
+
+
+def revoke_session_token(config: dict, token: str, now: float | None = None) -> bool:
+    current = time.time() if now is None else float(now)
+    payload = session_payload_from_token(config, token, now=current)
+    if not payload:
+        return False
+    prune_revoked_sessions(current)
+    REVOKED_SESSION_IDS[primary_revocation_key(token, payload)] = float(payload.get("exp", current))
+    return True
+
+
+def verify_session_token(config: dict, token: str, now: float | None = None) -> dict | None:
+    current = time.time() if now is None else float(now)
+    payload = session_payload_from_token(config, token, now=current)
+    if not payload:
+        return None
+    prune_revoked_sessions(current)
+    if any(key in REVOKED_SESSION_IDS for key in revocation_lookup_keys(token, payload)):
         return None
     user = find_user(config, str(payload.get("username") or ""))
     if not user:

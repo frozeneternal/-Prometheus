@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 
@@ -11,9 +15,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app  # noqa: E402
+from backend import auth as auth_backend  # noqa: E402
 
 
 class AccountAuthTests(unittest.TestCase):
+    def setUp(self) -> None:
+        auth_backend.REVOKED_SESSION_IDS.clear()
+
     def config_with_users(self) -> dict:
         return {
             "sessionSecret": "test-session-secret",
@@ -48,6 +56,22 @@ class AccountAuthTests(unittest.TestCase):
             "monitoring": {},
         }
 
+    def legacy_session_token(self, config: dict, user: dict, now: int = 1000, ttl_seconds: int = 600) -> str:
+        payload = {
+            "username": user.get("username", ""),
+            "role": app.normalize_role(user.get("role")),
+            "iat": now,
+            "exp": now + ttl_seconds,
+            "nonce": "legacy-token-without-session-id",
+        }
+        encoded_payload = app.b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+        signature = hmac.new(
+            app.session_signing_key(config).encode("utf-8"),
+            encoded_payload.encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
+        return f"v1.{encoded_payload}.{signature}"
+
     def test_authenticate_user_verifies_password_hash(self) -> None:
         config = self.config_with_users()
 
@@ -66,6 +90,62 @@ class AccountAuthTests(unittest.TestCase):
 
         self.assertEqual(app.verify_session_token(config, token, now=1010)["username"], "ops")
         self.assertIsNone(app.verify_session_token(config, token, now=2000))
+
+    def test_session_token_can_be_revoked_by_session_id(self) -> None:
+        config = self.config_with_users()
+        user = app.authenticate_user(config, "ops", "ops-pass")
+        token = app.create_session_token(config, user, now=1000, ttl_seconds=60)
+
+        revoked = app.revoke_session_token(config, token, now=1010)
+
+        self.assertTrue(revoked)
+        self.assertIsNone(app.verify_session_token(config, token, now=1011))
+
+    def test_legacy_session_token_without_sid_can_be_revoked_by_fingerprint(self) -> None:
+        config = self.config_with_users()
+        user = app.authenticate_user(config, "ops", "ops-pass")
+        token = self.legacy_session_token(config, user)
+
+        self.assertEqual(app.verify_session_token(config, token, now=1010)["username"], "ops")
+        self.assertTrue(app.revoke_session_token(config, token, now=1010))
+        self.assertIsNone(app.verify_session_token(config, token, now=1011))
+
+    def test_logout_payload_revokes_current_session(self) -> None:
+        config = self.config_with_users()
+        user = app.authenticate_user(config, "ops", "ops-pass")
+        token = app.create_session_token(config, user)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "revoked_sessions.json"
+            with patch.object(app, "SESSION_REVOCATION_PATH", path):
+                status, payload = app.logout_payload(config, {"sessionToken": token})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertIsNone(app.verify_session_token(config, token))
+
+    def test_logout_payload_persists_revocation_across_restart(self) -> None:
+        config = self.config_with_users()
+        user = app.authenticate_user(config, "ops", "ops-pass")
+        token = app.create_session_token(config, user)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "revoked_sessions.json"
+            with (
+                patch.object(app, "SESSION_REVOCATION_PATH", path),
+                patch.object(app, "load_recovery_logs_from_disk", return_value=[]),
+                patch.object(app, "load_incident_logs_from_disk", return_value=[]),
+            ):
+                status, payload = app.logout_payload(config, {"sessionToken": token})
+                auth_backend.REVOKED_SESSION_IDS.clear()
+
+                self.assertEqual(status, 200)
+                self.assertTrue(payload["ok"])
+                self.assertIsNotNone(app.verify_session_token(config, token))
+
+                app.bootstrap_runtime_state()
+
+        self.assertIsNone(app.verify_session_token(config, token))
 
     def test_legacy_action_token_still_authorizes_without_users(self) -> None:
         config = {"actionToken": "legacy-token", "users": []}

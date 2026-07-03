@@ -129,6 +129,14 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("persist_resource_acknowledgement", backend_py)
         self.assertIn('authorize_operation(config, body, "operator")', backend_py)
 
+    def test_logout_calls_backend_session_revocation_route(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('"/api/auth/logout"', app_js)
+        self.assertIn('parsed.path == "/api/auth/logout"', backend_py)
+        self.assertIn("revoke_session_token", backend_py)
+
 
 if __name__ == "__main__":
     unittest.main()
