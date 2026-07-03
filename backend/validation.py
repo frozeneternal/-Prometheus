@@ -50,6 +50,76 @@ def duplicate_id_issues(items: list[dict], kind: str, label: str) -> list[dict]:
     return issues
 
 
+def action_definition_issues(server: dict) -> list[dict]:
+    server_id = str(server.get("id") or "")
+    seen: set[str] = set()
+    issues = []
+    for action in server.get("actions", []) or []:
+        action_id = str(action.get("id") or "")
+        target_id = f"{server_id}/{action_id}" if action_id else server_id
+        if not action_id:
+            issues.append(
+                make_issue(
+                    f"missing-action-id:{server_id}",
+                    "error",
+                    "动作缺少 id，无法被恢复、备份或证书续期配置安全引用。",
+                    "action",
+                    server_id,
+                )
+            )
+            continue
+        if action_id in seen:
+            issues.append(
+                make_issue(
+                    f"duplicate-action-id:{server_id}/{action_id}",
+                    "error",
+                    f"服务器动作 id 重复：{server_id}/{action_id}。",
+                    "action",
+                    target_id,
+                )
+            )
+        seen.add(action_id)
+
+        command = action.get("command")
+        if not isinstance(command, list) or not command:
+            issues.append(
+                make_issue(
+                    f"action-command-empty:{server_id}/{action_id}",
+                    "error",
+                    f"动作命令为空或不是数组：{server_id}/{action_id}。",
+                    "action",
+                    target_id,
+                )
+            )
+        elif not all(isinstance(item, str) and item for item in command):
+            issues.append(
+                make_issue(
+                    f"action-command-invalid:{server_id}/{action_id}",
+                    "error",
+                    f"动作命令只能包含非空字符串：{server_id}/{action_id}。",
+                    "action",
+                    target_id,
+                )
+            )
+
+        if action.get("allowAuto", False):
+            try:
+                timeout_seconds = int(action.get("timeoutSeconds", 0))
+            except (TypeError, ValueError):
+                timeout_seconds = 0
+            if timeout_seconds <= 0:
+                issues.append(
+                    make_issue(
+                        f"action-timeout-invalid:{server_id}/{action_id}",
+                        "error",
+                        f"自动动作必须配置大于 0 的 timeoutSeconds：{server_id}/{action_id}。",
+                        "action",
+                        target_id,
+                    )
+                )
+    return issues
+
+
 def validate_action_reference(
     config: dict,
     actions: dict[tuple[str, str], dict],
@@ -150,6 +220,7 @@ def config_validation_summary(config: dict) -> dict:
 
     for server in servers:
         server_id = str(server.get("id") or "")
+        issues.extend(action_definition_issues(server))
         host_server_id = str(server.get("hostServerId") or "")
         if host_server_id and host_server_id not in server_ids:
             issues.append(

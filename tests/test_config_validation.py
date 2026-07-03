@@ -130,6 +130,33 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("manual-recovery-server-missing:site-main", issue_ids)
         self.assertIn("manual-cert-renewal-action-missing:site-main", issue_ids)
 
+    def test_config_validation_reports_action_definition_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {"id": "", "command": ["echo", "missing-id"]},
+                        {"id": "restart", "command": [], "allowAuto": True, "timeoutSeconds": 30},
+                        {"id": "restart", "command": ["echo", 1]},
+                        {"id": "renew-cert", "command": ["certbot", "renew"], "allowAuto": True, "timeoutSeconds": 0},
+                    ],
+                }
+            ],
+            "websites": [],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("missing-action-id:ops-host", issue_ids)
+        self.assertIn("duplicate-action-id:ops-host/restart", issue_ids)
+        self.assertIn("action-command-empty:ops-host/restart", issue_ids)
+        self.assertIn("action-command-invalid:ops-host/restart", issue_ids)
+        self.assertIn("action-timeout-invalid:ops-host/renew-cert", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
