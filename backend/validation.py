@@ -6,6 +6,7 @@ from .expiry import parse_expiry_datetime
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
 AUTO_RECOVERY_MIN_COOLDOWN_SECONDS = 30
+CERT_RENEWAL_MIN_COOLDOWN_SECONDS = 300
 
 
 def make_issue(
@@ -327,6 +328,47 @@ def auto_recovery_policy_issues(owner: dict, owner_type: str) -> list[dict]:
     return issues
 
 
+def cert_renewal_policy_issues(website: dict) -> list[dict]:
+    website_id = str(website.get("id") or "")
+    renewal = website.get("certRenewal") or {}
+    issues = []
+
+    if positive_int_value(renewal.get("renewBeforeDays", 14)) is None:
+        issues.append(
+            make_issue(
+                f"cert-renewal-renew-before-invalid:{website_id}",
+                "error",
+                "证书自动续期 renewBeforeDays 必须是大于 0 的整数，避免续期窗口判断异常。",
+                "website",
+                website_id,
+            )
+        )
+
+    cooldown = positive_int_value(renewal.get("cooldownSeconds", 86400))
+    if cooldown is None:
+        issues.append(
+            make_issue(
+                f"cert-renewal-cooldown-invalid:{website_id}",
+                "error",
+                "证书自动续期 cooldownSeconds 必须是大于 0 的整数。",
+                "website",
+                website_id,
+            )
+        )
+    elif cooldown < CERT_RENEWAL_MIN_COOLDOWN_SECONDS:
+        issues.append(
+            make_issue(
+                f"cert-renewal-cooldown-too-low:{website_id}",
+                "error",
+                f"证书自动续期 cooldownSeconds 不能低于 {CERT_RENEWAL_MIN_COOLDOWN_SECONDS} 秒，避免重复执行续期命令。",
+                "website",
+                website_id,
+            )
+        )
+
+    return issues
+
+
 def validate_action_reference(
     config: dict,
     actions: dict[tuple[str, str], dict],
@@ -519,6 +561,7 @@ def config_validation_summary(config: dict) -> dict:
 
         renewal = website.get("certRenewal") or {}
         if renewal.get("enabled"):
+            issues.extend(cert_renewal_policy_issues(website))
             issues.extend(
                 validate_action_reference(
                     config,

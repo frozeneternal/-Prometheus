@@ -44,8 +44,8 @@ def public_cert_renewal(website: dict, default_action_server_id: str = "") -> di
         "enabled": bool(raw.get("enabled")),
         "actionId": raw.get("actionId", ""),
         "actionServerId": raw.get("actionServerId", default_action_server_id),
-        "renewBeforeDays": int(raw.get("renewBeforeDays", 14)),
-        "cooldownSeconds": int(raw.get("cooldownSeconds", 86400)),
+        "renewBeforeDays": safe_positive_int(raw.get("renewBeforeDays", 14), 14),
+        "cooldownSeconds": safe_positive_int(raw.get("cooldownSeconds", 86400), 86400, 300),
     }
 
 

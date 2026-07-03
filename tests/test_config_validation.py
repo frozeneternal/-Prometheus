@@ -340,6 +340,57 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("auto-recovery-minimum-failures-invalid:bad-site", issue_ids)
         self.assertIn("auto-recovery-cooldown-too-low:bad-site", issue_ids)
 
+    def test_config_validation_reports_cert_renewal_policy_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "command": ["echo", "renew"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        },
+                    ],
+                },
+            ],
+            "websites": [
+                {
+                    "id": "bad-site",
+                    "serverId": "ops-host",
+                    "certRenewal": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "renew-cert",
+                        "renewBeforeDays": "soon",
+                        "cooldownSeconds": 120,
+                    },
+                },
+                {
+                    "id": "zero-site",
+                    "serverId": "ops-host",
+                    "certRenewal": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "renew-cert",
+                        "renewBeforeDays": 0,
+                        "cooldownSeconds": "later",
+                    },
+                },
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("cert-renewal-renew-before-invalid:bad-site", issue_ids)
+        self.assertIn("cert-renewal-cooldown-too-low:bad-site", issue_ids)
+        self.assertIn("cert-renewal-renew-before-invalid:zero-site", issue_ids)
+        self.assertIn("cert-renewal-cooldown-invalid:zero-site", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

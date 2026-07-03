@@ -134,6 +134,51 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(result["consecutiveFailures"], 1)
         execute_server_action.assert_not_called()
 
+    def test_cert_renewal_blocks_invalid_policy_without_executing_action(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "command": ["echo", "renew"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ]
+        }
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "serverId": "ops-host",
+            "certRenewal": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "renew-cert",
+                "renewBeforeDays": "soon",
+                "cooldownSeconds": "later",
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert expires soon"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with patch.object(app, "execute_server_action") as execute_server_action:
+            result = app.maybe_trigger_cert_renewal(config, website, snapshot)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("renewBeforeDays", result["message"])
+        execute_server_action.assert_not_called()
+
     def test_series_payload_returns_empty_values_when_collector_is_unavailable(self) -> None:
         config = {
             "servers": [

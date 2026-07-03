@@ -847,6 +847,14 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
     return json.loads(raw.decode("utf-8"))
 
 
+def safe_positive_int(value: object, default: int, minimum: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= minimum else default
+
+
 def data_quality_summary(items: list[dict]) -> dict:
     levels: dict[str, int] = {}
     trusted = 0
@@ -1053,21 +1061,43 @@ def can_trigger_cert_renewal(website: dict, snapshot: dict, state: dict) -> tupl
     if not renewal.get("enabled"):
         return False, "证书自动续期未启用。"
 
+    policy_message = cert_renewal_policy_error(renewal)
+    if policy_message:
+        return False, policy_message
+
     cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
     if cert_expires_in is None:
         return False, "当前没有可用的证书到期数据。"
 
-    renew_before_days = max(1, int(renewal.get("renewBeforeDays", 14)))
+    renew_before_days = int(renewal.get("renewBeforeDays", 14))
     if cert_expires_in > renew_before_days * 86400:
         return False, f"证书距到期还有 {int(cert_expires_in / 86400)} 天。"
 
-    cooldown = max(300, int(renewal.get("cooldownSeconds", 86400)))
+    cooldown = int(renewal.get("cooldownSeconds", 86400))
     last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
     if last_completed and time.time() - last_completed < cooldown:
         remain = int(cooldown - (time.time() - last_completed))
         return False, f"证书续期仍在冷却中，剩余约 {max(0, remain)} 秒。"
 
     return True, ""
+
+
+def cert_renewal_policy_error(renewal: dict) -> str:
+    try:
+        renew_before_days = int(renewal.get("renewBeforeDays", 14))
+    except (TypeError, ValueError):
+        return "证书自动续期 renewBeforeDays 必须是整数。"
+    if renew_before_days <= 0:
+        return "证书自动续期 renewBeforeDays 必须大于 0。"
+
+    try:
+        cooldown = int(renewal.get("cooldownSeconds", 86400))
+    except (TypeError, ValueError):
+        return "证书自动续期 cooldownSeconds 必须是整数。"
+    if cooldown < 300:
+        return "证书自动续期 cooldownSeconds 不能低于 300 秒。"
+
+    return ""
 
 
 def resolve_cert_renewal_action(config: dict, website: dict) -> tuple[dict | None, dict | None, str]:
@@ -1227,7 +1257,7 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         "status": "idle",
         "message": "",
         "expiresInDays": None if cert_expires_in is None else max(0, int(cert_expires_in / 86400)),
-        "renewBeforeDays": max(1, int(renewal_config.get("renewBeforeDays", 14))),
+        "renewBeforeDays": safe_positive_int(renewal_config.get("renewBeforeDays", 14), 14),
         "lastAttemptAt": state.get("lastAttemptAt", 0.0),
         "lastCompletedAt": state.get("lastCompletedAt", 0.0),
         "lastResult": state.get("lastResult", ""),
@@ -1243,6 +1273,13 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
     if resolve_message:
         renewal_view["status"] = "blocked"
         renewal_view["message"] = resolve_message
+        set_runtime_entity_state("website-cert", target_id, state)
+        return renewal_view
+
+    policy_message = cert_renewal_policy_error(renewal_config)
+    if policy_message:
+        renewal_view["status"] = "blocked"
+        renewal_view["message"] = policy_message
         set_runtime_entity_state("website-cert", target_id, state)
         return renewal_view
 
