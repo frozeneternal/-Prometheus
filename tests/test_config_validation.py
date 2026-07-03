@@ -249,6 +249,43 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("auth-operator-missing", viewer_issue_ids)
         self.assertNotIn("auth-operator-missing", operator_issue_ids)
 
+    def test_config_validation_reports_weak_session_signing_keys(self) -> None:
+        base_user = {
+            "username": "ops",
+            "role": "operator",
+            "passwordHash": app.hash_password("ops-pass", salt="ops-salt", iterations=1000),
+        }
+        weak_config = {
+            "sessionSecret": "short",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [base_user],
+        }
+        placeholder_config = {
+            "actionToken": "replace-with-a-strong-token",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [base_user],
+        }
+        strong_config = {
+            "sessionSecret": "prod-session-secret-0123456789abcdef",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [base_user],
+        }
+
+        weak_ids = {issue["id"] for issue in app.config_validation_summary(weak_config)["issues"]}
+        placeholder_ids = {issue["id"] for issue in app.config_validation_summary(placeholder_config)["issues"]}
+        strong_ids = {issue["id"] for issue in app.config_validation_summary(strong_config)["issues"]}
+
+        self.assertIn("auth-session-secret-weak", weak_ids)
+        self.assertIn("auth-session-secret-placeholder", placeholder_ids)
+        self.assertNotIn("auth-session-secret-weak", strong_ids)
+        self.assertNotIn("auth-session-secret-placeholder", strong_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -75,7 +75,8 @@ def account_configuration_issues(config: dict) -> list[dict]:
 
     issues = []
     enabled_users = [user for user in users if user.get("enabled", True) is not False]
-    if enabled_users and not (config.get("sessionSecret") or config.get("actionToken")):
+    signing_key = str(config.get("sessionSecret") or config.get("actionToken") or "")
+    if enabled_users and not signing_key:
         issues.append(
             make_issue(
                 "auth-session-secret-missing",
@@ -84,6 +85,26 @@ def account_configuration_issues(config: dict) -> list[dict]:
                 "auth",
             )
         )
+    elif enabled_users:
+        lowered_key = signing_key.lower()
+        if any(marker in lowered_key for marker in ("replace-with", "change-me", "changeme", "example")):
+            issues.append(
+                make_issue(
+                    "auth-session-secret-placeholder",
+                    "error",
+                    "账号会话签名密钥仍是占位值，必须替换为私有随机密钥。",
+                    "auth",
+                )
+            )
+        if len(signing_key) < 32:
+            issues.append(
+                make_issue(
+                    "auth-session-secret-weak",
+                    "error",
+                    "账号会话签名密钥长度不足，建议至少 32 个字符。",
+                    "auth",
+                )
+            )
 
     operator_users = [
         user for user in enabled_users
