@@ -520,6 +520,44 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(float(end) - float(start), 60 * 60)
         self.assertEqual(step, "30")
 
+    def test_series_payload_filters_non_finite_samples(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "labels": {"job": "node", "instance": "srv1:9100"},
+                }
+            ]
+        }
+
+        with patch.object(prometheus, "prom_query_range") as query_range:
+            query_range.return_value = {
+                "status": "success",
+                "data": {
+                    "result": [
+                        {
+                            "values": [
+                                [1, "10"],
+                                [2, "NaN"],
+                                [3, "+Inf"],
+                                [4, "-Inf"],
+                                [5, "11.5"],
+                            ]
+                        }
+                    ]
+                },
+            }
+
+            status, payload = app.series_payload(
+                config,
+                {"serverId": ["srv1"], "metric": ["cpu"], "minutes": ["60"]},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["values"], [[1, "10"], [5, "11.5"]])
+
     def test_series_payload_returns_query_build_error_for_invalid_labels(self) -> None:
         config = {
             "servers": [

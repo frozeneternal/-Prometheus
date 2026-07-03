@@ -132,6 +132,24 @@ def first_value(prometheus_payload: dict) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
+def finite_series_values(values: object) -> list[list[object]]:
+    filtered = []
+    if not isinstance(values, list):
+        return filtered
+
+    for item in values:
+        if not isinstance(item, list) or len(item) < 2:
+            continue
+        try:
+            timestamp = float(item[0])
+            value = float(item[1])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(timestamp) and math.isfinite(value):
+            filtered.append(item)
+    return filtered
+
+
 def data_quality(level: str, message: str, trusted: bool, details: dict | None = None) -> dict:
     return {
         "level": level,
@@ -287,6 +305,6 @@ def series_payload(config: dict, query_params: dict[str, list[str]]) -> tuple[in
     result = payload.get("data", {}).get("result", [])
     values = []
     if result:
-        values = result[0].get("values", [])
+        values = finite_series_values(result[0].get("values", []))
 
     return 200, {"ok": True, "metric": metric, "values": values}
