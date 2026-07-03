@@ -225,6 +225,7 @@ class ConfigValidationTests(unittest.TestCase):
             "resources": [
                 {"id": "missing-expiry", "expiresAt": ""},
                 {"id": "bad-expiry", "expiresAt": "not-a-date"},
+                {"id": "bool-expiry", "expiresAt": True},
                 {"id": "valid-expiry", "expiresAt": "2026-08-01"},
             ],
         }
@@ -235,6 +236,7 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertEqual(result["status"], "warning")
         self.assertIn("resource-expiry-missing:missing-expiry", issue_ids)
         self.assertIn("resource-expiry-invalid:bad-expiry", issue_ids)
+        self.assertIn("resource-expiry-invalid:bool-expiry", issue_ids)
         self.assertNotIn("resource-expiry-invalid:valid-expiry", issue_ids)
 
     def test_config_validation_reports_account_configuration_risks(self) -> None:

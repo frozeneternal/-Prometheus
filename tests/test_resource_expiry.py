@@ -96,6 +96,21 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(summary["unknown"], 1)
         self.assertEqual(summary["actionRequired"], 4)
 
+    def test_resource_expiry_rejects_boolean_expiry_values(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {"id": "bool-expiry", "name": "Boolean Expiry", "expiresAt": True},
+            ]
+        }
+
+        items = app.resource_expiry_items(config, now=now)
+
+        self.assertEqual(items[0]["id"], "bool-expiry")
+        self.assertEqual(items[0]["status"], "unknown")
+        self.assertIsNone(items[0]["expiresAtTimestamp"])
+        self.assertIsNone(items[0]["daysRemaining"])
+
     def test_resource_expiry_thresholds_tolerate_invalid_values(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {

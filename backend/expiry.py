@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 def parse_expiry_datetime(value: object) -> datetime | None:
     if value in (None, ""):
         return None
+    if isinstance(value, bool):
+        return None
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(float(value), timezone.utc)
 
