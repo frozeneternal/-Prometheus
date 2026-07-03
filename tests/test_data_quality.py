@@ -290,6 +290,34 @@ class DataQualityTests(unittest.TestCase):
         self.assertFalse(payload["dataQuality"]["trusted"])
         self.assertIn("timed out", payload["dataQuality"]["message"])
 
+    def test_series_payload_tolerates_invalid_minutes(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "labels": {"job": "node", "instance": "srv1:9100"},
+                }
+            ]
+        }
+
+        with patch.object(prometheus, "time") as fake_time, patch.object(prometheus, "prom_query_range") as query_range:
+            fake_time.time.return_value = 1_000_000
+            query_range.return_value = {"status": "success", "data": {"result": [{"values": [[1, "10"]]}]}}
+
+            status, payload = app.series_payload(
+                config,
+                {"serverId": ["srv1"], "metric": ["cpu"], "minutes": ["bad"]},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["values"], [[1, "10"]])
+        query_range.assert_called_once()
+        _config, _query, start, end, step = query_range.call_args.args
+        self.assertEqual(float(end) - float(start), 60 * 60)
+        self.assertEqual(step, "30")
+
 
 if __name__ == "__main__":
     unittest.main()

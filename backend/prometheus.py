@@ -226,11 +226,18 @@ def find_server_by_id(config: dict, server_id: str) -> dict | None:
     return None
 
 
+def safe_series_minutes(value: object, default: int = 60) -> int:
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        minutes = default
+    return max(5, min(minutes, 24 * 60))
+
+
 def series_payload(config: dict, query_params: dict[str, list[str]]) -> tuple[int, dict]:
     server_id = (query_params.get("serverId") or [""])[0]
     metric = (query_params.get("metric") or ["cpu"])[0]
-    minutes = int((query_params.get("minutes") or ["60"])[0])
-    minutes = max(5, min(minutes, 24 * 60))
+    minutes = safe_series_minutes((query_params.get("minutes") or ["60"])[0])
 
     server = find_server_by_id(config, server_id)
     if not server:
