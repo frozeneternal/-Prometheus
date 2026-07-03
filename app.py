@@ -914,7 +914,30 @@ def server_health(server: dict, status: str, values: dict[str, float | None]) ->
 
 
 def metric_snapshot(config: dict, server: dict) -> dict:
-    queries = build_metric_queries(server)
+    try:
+        queries = build_metric_queries(server)
+    except ValueError as exc:
+        message = str(exc)
+        values = {metric: None for metric in SERVER_METRICS}
+        return {
+            "id": server.get("id"),
+            "name": server.get("name"),
+            "type": server_type(server),
+            "hostServerId": server.get("hostServerId", ""),
+            "group": server.get("group", "默认"),
+            "labels": server.get("labels", {}),
+            "status": "unknown",
+            "health": "unknown",
+            "issues": [message],
+            "dataQuality": data_quality(
+                "query_build_error",
+                "Prometheus 查询构建失败，请检查目标 labels 配置。",
+                False,
+                {"error": message},
+            ),
+            "metrics": values,
+            "errors": {"query": message},
+        }
     values: dict[str, float | None] = {}
     errors: dict[str, str] = {}
 
@@ -1004,7 +1027,29 @@ def website_health(website: dict, status: str, values: dict[str, float | None]) 
 
 
 def website_snapshot(config: dict, website: dict) -> dict:
-    queries = build_website_queries(website)
+    try:
+        queries = build_website_queries(website)
+    except ValueError as exc:
+        message = str(exc)
+        values = {metric: None for metric in WEBSITE_METRICS}
+        return {
+            "id": website.get("id"),
+            "name": website.get("name"),
+            "url": website.get("url"),
+            "group": website.get("group", "默认"),
+            "serverId": website.get("serverId"),
+            "status": "unknown",
+            "health": "unknown",
+            "issues": [message],
+            "dataQuality": data_quality(
+                "query_build_error",
+                "Prometheus 查询构建失败，请检查网站 labels 配置。",
+                False,
+                {"error": message},
+            ),
+            "metrics": values,
+            "errors": {"query": message},
+        }
     values: dict[str, float | None] = {}
     errors: dict[str, str] = {}
 

@@ -188,6 +188,30 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("website-threshold-invalid:site1/duration", issue_ids)
         self.assertIn("website-threshold-invalid:site1/certDays", issue_ids)
 
+    def test_config_validation_reports_invalid_prometheus_label_names(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "labels": {"bad-label": "srv1:9100", "instance": "srv1:9100"},
+                }
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "labels": {"bad label": "https://example.test/"},
+                }
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("server-label-invalid:srv1/bad-label", issue_ids)
+        self.assertIn("website-label-invalid:site1/bad label", issue_ids)
+
     def test_config_validation_reports_invalid_resource_expiry_dates(self) -> None:
         config = {
             "servers": [],

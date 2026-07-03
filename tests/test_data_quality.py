@@ -53,6 +53,53 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(snapshot["dataQuality"]["level"], "target_down")
         self.assertTrue(snapshot["dataQuality"]["trusted"])
 
+    def test_dashboard_payload_isolates_invalid_server_label_config(self) -> None:
+        config = {
+            "prometheusUrl": "http://127.0.0.1:9090",
+            "servers": [
+                {"id": "bad-label", "name": "Bad Label", "labels": {"bad-label": "srv1:9100"}},
+            ],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        with patch.object(app, "prometheus_ready_status", return_value=(True, "")):
+            payload = app.dashboard_payload(config)
+
+        self.assertEqual(payload["summary"]["total"], 1)
+        self.assertEqual(payload["servers"][0]["id"], "bad-label")
+        self.assertEqual(payload["servers"][0]["status"], "unknown")
+        self.assertEqual(payload["servers"][0]["dataQuality"]["level"], "query_build_error")
+        self.assertFalse(payload["servers"][0]["dataQuality"]["trusted"])
+        self.assertIn("bad-label", payload["servers"][0]["errors"]["query"])
+
+    def test_dashboard_payload_isolates_invalid_website_label_config(self) -> None:
+        config = {
+            "prometheusUrl": "http://127.0.0.1:9090",
+            "servers": [],
+            "websites": [
+                {
+                    "id": "bad-site-label",
+                    "name": "Bad Site Label",
+                    "url": "https://example.test/",
+                    "labels": {"bad label": "https://example.test/"},
+                },
+            ],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        with patch.object(app, "prometheus_ready_status", return_value=(True, "")):
+            payload = app.dashboard_payload(config)
+
+        self.assertEqual(payload["websiteSummary"]["total"], 1)
+        self.assertEqual(payload["websites"][0]["id"], "bad-site-label")
+        self.assertEqual(payload["websites"][0]["status"], "unknown")
+        self.assertEqual(payload["websites"][0]["dataQuality"]["level"], "query_build_error")
+        self.assertFalse(payload["websites"][0]["dataQuality"]["trusted"])
+        self.assertIn("bad label", payload["websites"][0]["errors"]["query"])
+
     def test_website_snapshot_marks_probe_zero_as_trusted_target_down(self) -> None:
         def fake_query(_config: dict, query: str) -> dict:
             return vector(0 if query.startswith("probe_success") else None)

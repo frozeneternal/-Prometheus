@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from .auth import ROLE_RANK
 from .expiry import parse_expiry_datetime
 
@@ -10,6 +12,7 @@ CERT_RENEWAL_MIN_COOLDOWN_SECONDS = 300
 AUTO_BACKUP_MIN_INTERVAL_SECONDS = 300
 SERVER_THRESHOLD_KEYS = ("cpu", "memory", "disk")
 WEBSITE_THRESHOLD_KEYS = ("duration", "certDays")
+LABEL_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def make_issue(
@@ -548,6 +551,36 @@ def metric_threshold_issues(owner: dict, owner_type: str, allowed_keys: tuple[st
     return issues
 
 
+def prometheus_label_issues(owner: dict, owner_type: str) -> list[dict]:
+    labels = owner.get("labels") or {}
+    owner_id = str(owner.get("id") or "")
+    if not isinstance(labels, dict):
+        return [
+            make_issue(
+                f"{owner_type}-labels-invalid:{owner_id}",
+                "error",
+                "Prometheus labels 必须是对象。",
+                owner_type,
+                owner_id,
+            )
+        ]
+
+    issues = []
+    for key in labels:
+        key_text = str(key)
+        if not LABEL_NAME_RE.match(key_text):
+            issues.append(
+                make_issue(
+                    f"{owner_type}-label-invalid:{owner_id}/{key_text}",
+                    "error",
+                    f"Prometheus label 名称无效：{key_text}。",
+                    owner_type,
+                    owner_id,
+                )
+            )
+    return issues
+
+
 def validate_action_reference(
     config: dict,
     actions: dict[tuple[str, str], dict],
@@ -650,6 +683,7 @@ def config_validation_summary(config: dict) -> dict:
 
     for server in servers:
         server_id = str(server.get("id") or "")
+        issues.extend(prometheus_label_issues(server, "server"))
         issues.extend(metric_threshold_issues(server, "server", SERVER_THRESHOLD_KEYS))
         issues.extend(action_definition_issues(server))
         host_server_id = str(server.get("hostServerId") or "")
@@ -713,6 +747,7 @@ def config_validation_summary(config: dict) -> dict:
 
     for website in websites:
         website_id = str(website.get("id") or "")
+        issues.extend(prometheus_label_issues(website, "website"))
         issues.extend(metric_threshold_issues(website, "website", WEBSITE_THRESHOLD_KEYS))
         server_id = str(website.get("serverId") or "")
         if server_id and server_id not in server_ids:
