@@ -85,6 +85,21 @@ def account_configuration_issues(config: dict) -> list[dict]:
             )
         )
 
+    operator_users = [
+        user for user in enabled_users
+        if str(user.get("role") or "viewer").lower() in {"operator", "admin"}
+        and password_hash_format_valid(str(user.get("passwordHash") or ""))
+    ]
+    if enabled_users and not operator_users:
+        issues.append(
+            make_issue(
+                "auth-operator-missing",
+                "error",
+                "账号模式已启用，但没有可执行运维操作的 operator/admin 账号。",
+                "auth",
+            )
+        )
+
     seen: set[str] = set()
     for index, user in enumerate(users):
         username = str(user.get("username") or "")

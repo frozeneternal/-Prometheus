@@ -217,6 +217,38 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("user-role-invalid:bad-role", issue_ids)
         self.assertNotIn("user-password-hash-invalid:bad-role", issue_ids)
 
+    def test_config_validation_reports_missing_operator_account(self) -> None:
+        config = {
+            "sessionSecret": "session-secret",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [
+                {
+                    "username": "viewer",
+                    "role": "viewer",
+                    "passwordHash": app.hash_password("viewer-pass", salt="viewer-salt", iterations=1000),
+                },
+            ],
+        }
+
+        viewer_only = app.config_validation_summary(config)
+        viewer_issue_ids = {issue["id"] for issue in viewer_only["issues"]}
+
+        config["users"].append(
+            {
+                "username": "ops",
+                "role": "operator",
+                "passwordHash": app.hash_password("ops-pass", salt="ops-salt", iterations=1000),
+            }
+        )
+        with_operator = app.config_validation_summary(config)
+        operator_issue_ids = {issue["id"] for issue in with_operator["issues"]}
+
+        self.assertEqual(viewer_only["status"], "error")
+        self.assertIn("auth-operator-missing", viewer_issue_ids)
+        self.assertNotIn("auth-operator-missing", operator_issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
