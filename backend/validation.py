@@ -81,6 +81,16 @@ def password_hash_format_valid(password_hash: str) -> bool:
 
 def account_configuration_issues(config: dict) -> list[dict]:
     users = config.get("users", []) or []
+    has_actions = any((server.get("actions") or []) for server in config.get("servers", []) or [])
+    if has_actions and not users and not config.get("actionToken"):
+        return [
+            make_issue(
+                "auth-required-for-actions",
+                "error",
+                "已配置运维动作，但未配置 users 或 actionToken，手动运维动作将被阻止。",
+                "auth",
+            )
+        ]
     if not users:
         return []
 

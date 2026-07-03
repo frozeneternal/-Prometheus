@@ -215,7 +215,8 @@ def server_type(server: dict) -> str:
 
 def public_config(config: dict) -> dict:
     servers = []
-    auth_mode = "users" if users_enabled(config) else ("token" if config.get("actionToken") else "open")
+    auth_mode = "users" if users_enabled(config) else ("token" if config.get("actionToken") else "unconfigured")
+    manual_actions_enabled = auth_mode in {"users", "token"}
     for server in config.get("servers", []):
         servers.append(
             {
@@ -232,7 +233,7 @@ def public_config(config: dict) -> dict:
                         "name": action.get("name"),
                         "danger": action.get("danger", "low"),
                         "confirm": action.get("confirm", ""),
-                        "enabled": action.get("enabled", True),
+                        "enabled": bool(action.get("enabled", True) and manual_actions_enabled),
                         "allowAuto": action.get("allowAuto", False),
                     }
                     for action in server.get("actions", [])

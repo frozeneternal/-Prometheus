@@ -304,6 +304,24 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("auth-operator-missing", viewer_issue_ids)
         self.assertNotIn("auth-operator-missing", operator_issue_ids)
 
+    def test_config_validation_reports_actions_without_authentication(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "actions": [{"id": "restart", "command": ["echo", "ok"]}],
+                }
+            ],
+            "websites": [],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("auth-required-for-actions", issue_ids)
+
     def test_config_validation_reports_weak_session_signing_keys(self) -> None:
         base_user = {
             "username": "ops",

@@ -76,6 +76,35 @@ class AccountAuthTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["mode"], "legacy-token")
 
+    def test_manual_actions_are_blocked_when_auth_is_not_configured(self) -> None:
+        config = {"users": [], "servers": [{"id": "srv1", "actions": [{"id": "restart", "command": ["echo", "ok"]}]}]}
+
+        ok, status, payload = app.authorize_operation(config, {}, "operator")
+
+        self.assertFalse(ok)
+        self.assertEqual(status, 403)
+        self.assertIn("认证", payload["message"])
+
+    def test_public_config_marks_manual_actions_unavailable_without_auth(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "actions": [{"id": "restart", "name": "Restart", "command": ["echo", "ok"]}],
+                }
+            ],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        public = app.public_config(config)
+
+        self.assertEqual(public["auth"]["mode"], "unconfigured")
+        self.assertFalse(public["actionsRequireToken"])
+        self.assertFalse(public["servers"][0]["actions"][0]["enabled"])
+
     def test_viewer_cannot_run_action_when_users_are_enabled(self) -> None:
         config = self.config_with_users()
         viewer = app.authenticate_user(config, "viewer", "viewer-pass")

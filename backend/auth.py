@@ -137,7 +137,7 @@ def role_allows(actual_role: str, required_role: str) -> bool:
 def verify_action_token(config: dict, provided: str) -> bool:
     expected = str(config.get("actionToken") or "")
     if not expected:
-        return True
+        return False
     return hmac.compare_digest(expected, provided or "")
 
 
@@ -153,4 +153,6 @@ def authorize_operation(config: dict, body: dict, required_role: str = "operator
 
     if verify_action_token(config, str(body.get("token") or "")):
         return True, 200, {"ok": True, "mode": "legacy-token"}
+    if not config.get("actionToken"):
+        return False, 403, {"ok": False, "message": "操作认证未配置，已阻止手动运维动作。"}
     return False, 403, {"ok": False, "message": "操作口令不正确。"}
