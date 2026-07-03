@@ -202,6 +202,7 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - `backend/config.py`：公开/私有配置选择、默认配置合并、监控参数规范化和目标查找。
 - `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
 - `backend/prometheus.py`：Prometheus ready 检查、查询封装、PromQL 构造、数据质量分级和趋势数据接口载荷。
+- `backend/public_view.py`：前端可见配置裁剪、动作视图推断、账号公开字段过滤。
 - `app.py`：暂时保留 HTTP 路由、监控视图编排、动作执行和运行时状态。
 
 前端已经从单个 `public/app.js` 拆到 `public/js/`：

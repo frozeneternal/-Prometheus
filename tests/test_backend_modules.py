@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -88,6 +89,82 @@ class BackendModuleTests(unittest.TestCase):
         website_queries = prometheus.build_website_queries({"url": "https://example.test/"})
         self.assertIn('instance="https://example.test/"', website_queries["success"])
 
+    def test_public_view_module_filters_secret_config_fields(self) -> None:
+        from backend import public_view
+
+        config = {
+            "appName": "Ops",
+            "prometheusUrl": "http://prometheus.local",
+            "actionToken": "secret-token",
+            "sessionSecret": "secret-session",
+            "monitoring": {},
+            "users": [
+                {"username": "admin", "role": "admin", "passwordHash": "secret-hash", "enabled": True}
+            ],
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "group": "\u7269\u7406\u670d\u52a1\u5668",
+                    "actions": [
+                        {
+                            "id": "restart_nginx",
+                            "name": "restart nginx",
+                            "danger": "high",
+                            "confirm": "yes",
+                            "command": ["systemctl", "restart", "nginx"],
+                            "allowAuto": True,
+                        },
+                        {
+                            "id": "backup_data",
+                            "name": "backup data",
+                            "command": ["backup-secret"],
+                        },
+                    ],
+                }
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "url": "https://example.test",
+                    "serverId": "srv1",
+                    "certRenewal": {
+                        "enabled": True,
+                        "actionId": "renew_cert",
+                        "actionServerId": "srv1",
+                    },
+                }
+            ],
+            "resources": [
+                {
+                    "id": "domain",
+                    "name": "Domain",
+                    "expiresAt": "2026-08-01",
+                    "secret": "private",
+                }
+            ],
+        }
+
+        view = public_view.public_config(config)
+        serialized = json.dumps(view, ensure_ascii=False)
+
+        self.assertEqual(public_view.public_config.__module__, "backend.public_view")
+        self.assertEqual(view["auth"]["mode"], "users")
+        self.assertEqual(view["auth"]["users"][0]["username"], "admin")
+        self.assertEqual(view["auth"]["users"][0]["role"], "admin")
+        self.assertNotIn("passwordHash", view["auth"]["users"][0])
+        self.assertEqual(view["servers"][0]["type"], "physical")
+        self.assertTrue(view["servers"][0]["manualRecovery"]["available"])
+        self.assertTrue(view["servers"][0]["manualBackup"]["available"])
+        self.assertTrue(view["websites"][0]["manualCertRenewal"]["available"])
+        self.assertNotIn("secret-token", serialized)
+        self.assertNotIn("secret-session", serialized)
+        self.assertNotIn("secret-hash", serialized)
+        self.assertNotIn("systemctl", serialized)
+        self.assertNotIn("backup-secret", serialized)
+        self.assertNotIn("private", serialized)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -97,6 +174,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.series_payload.__module__, "backend.prometheus")
         self.assertEqual(app.load_config.__module__, "backend.config")
         self.assertEqual(app.find_server.__module__, "backend.config")
+        self.assertEqual(app.public_config.__module__, "backend.public_view")
 
 
 if __name__ == "__main__":
