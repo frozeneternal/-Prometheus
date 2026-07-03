@@ -119,6 +119,50 @@ Copy-Item .\config\servers.local.template.json .\config\servers.local.json
 
 `url` 必须和 Prometheus blackbox 目标完全一致。`serverId` 用来把网站关联到某台服务器。
 
+## 资源到期告警
+
+把域名、账号、云资源、服务器租约、合同或授权放到顶层 `resources` 清单里。这个功能不依赖 Prometheus，即使采集层不可用，也会继续按配置里的到期时间计算风险。
+
+```json
+{
+  "resources": [
+    {
+      "id": "domain-main",
+      "name": "Main Public Domain",
+      "type": "domain",
+      "provider": "Example Registrar",
+      "owner": "ops@example.com",
+      "linkedTarget": "external-site-a",
+      "expiresAt": "2026-08-15",
+      "warningDays": 30,
+      "criticalDays": 7,
+      "renewUrl": "https://registrar.example.com/domains",
+      "notes": "Renew domain before DNS change freeze window."
+    }
+  ]
+}
+```
+
+状态规则：
+- `expired`：已经过期。
+- `critical`：剩余天数小于等于 `criticalDays`。
+- `warning`：剩余天数小于等于 `warningDays`。
+- `ok`：暂未进入预警窗口。
+- `unknown`：`expiresAt` 为空或日期格式无效。
+
+全局默认阈值可以放在 `monitoring` 里：
+
+```json
+{
+  "monitoring": {
+    "resourceExpiryWarningDays": 30,
+    "resourceExpiryCriticalDays": 7
+  }
+}
+```
+
+真实账号、域名、供应商入口和备注建议只写入 `config/servers.local.json`，不要提交到公开仓库。
+
 ## 怎么看是否正常
 
 网页打开后看两块：

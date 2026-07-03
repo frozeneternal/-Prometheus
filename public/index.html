@@ -60,6 +60,22 @@
             <span class="summary-label">网站未知</span>
             <strong id="websiteUnknownCount">0</strong>
           </article>
+          <article class="summary-card">
+            <span class="summary-label">资源</span>
+            <strong id="resourceTotalCount">0</strong>
+          </article>
+          <article class="summary-card bad">
+            <span class="summary-label">已过期</span>
+            <strong id="resourceExpiredCount">0</strong>
+          </article>
+          <article class="summary-card warn">
+            <span class="summary-label">到期风险</span>
+            <strong id="resourceRiskCount">0</strong>
+          </article>
+          <article class="summary-card warn">
+            <span class="summary-label">待核实</span>
+            <strong id="resourceUnknownCount">0</strong>
+          </article>
         </section>
 
         <section class="workspace">
@@ -85,6 +101,13 @@
               <p>编辑 config/servers.json 的 websites 后刷新。</p>
             </div>
             <div id="websiteGrid" class="website-grid"></div>
+
+            <h2 class="section-title section-gap">资源到期</h2>
+            <div id="resourceExpiryEmptyState" class="empty-state hidden">
+              <h2>还没有资源到期记录</h2>
+              <p>资源、账号、域名、合同或授权到期后会显示在这里。</p>
+            </div>
+            <div id="resourceExpiryList" class="expiry-list"></div>
 
             <h2 class="section-title section-gap">中断事件</h2>
             <div id="incidentLogEmptyState" class="empty-state hidden">

@@ -7,7 +7,9 @@
   "monitoring": {
     "pollIntervalSeconds": 30,
     "recoveryLogLimit": 200,
-    "incidentLogLimit": 200
+    "incidentLogLimit": 200,
+    "resourceExpiryWarningDays": 30,
+    "resourceExpiryCriticalDays": 7
   },
   "servers": [
     {
@@ -265,6 +267,33 @@
           ]
         }
       ]
+    }
+  ],
+  "resources": [
+    {
+      "id": "domain-main",
+      "name": "Main Public Domain",
+      "type": "domain",
+      "provider": "Example Registrar",
+      "owner": "ops@example.com",
+      "linkedTarget": "external-site-a",
+      "expiresAt": "2026-08-15",
+      "warningDays": 30,
+      "criticalDays": 7,
+      "renewUrl": "https://registrar.example.com/domains",
+      "notes": "Renew domain before DNS change freeze window."
+    },
+    {
+      "id": "cloud-account-main",
+      "name": "Primary Cloud Account",
+      "type": "account",
+      "provider": "Example Cloud",
+      "owner": "platform@example.com",
+      "expiresAt": "2026-07-20",
+      "warningDays": 30,
+      "criticalDays": 7,
+      "renewUrl": "https://cloud.example.com/billing",
+      "notes": "Verify billing owner and backup payment method."
     }
   ],
   "websites": [

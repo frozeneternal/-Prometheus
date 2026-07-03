@@ -7,7 +7,9 @@
   "monitoring": {
     "pollIntervalSeconds": 30,
     "recoveryLogLimit": 200,
-    "incidentLogLimit": 200
+    "incidentLogLimit": 200,
+    "resourceExpiryWarningDays": 30,
+    "resourceExpiryCriticalDays": 7
   },
   "servers": [
     {
@@ -129,6 +131,33 @@
       },
       "diskMountpoint": "/",
       "actions": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "domain-main",
+      "name": "Main Public Domain",
+      "type": "domain",
+      "provider": "Example Registrar",
+      "owner": "ops@example.com",
+      "linkedTarget": "web-01-homepage",
+      "expiresAt": "2026-08-15",
+      "warningDays": 30,
+      "criticalDays": 7,
+      "renewUrl": "https://registrar.example.com/domains",
+      "notes": "Replace this sample with the real private domain record in servers.local.json."
+    },
+    {
+      "id": "ops-account",
+      "name": "Operations Account Contract",
+      "type": "account",
+      "provider": "Example Provider",
+      "owner": "platform@example.com",
+      "expiresAt": "2026-07-20",
+      "warningDays": 30,
+      "criticalDays": 7,
+      "renewUrl": "https://provider.example.com/account",
+      "notes": "Track account, billing, contract, license, or server lease expiry here."
     }
   ],
   "websites": [

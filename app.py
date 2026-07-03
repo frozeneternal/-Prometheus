@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -34,9 +35,12 @@ DEFAULT_CONFIG = {
         "pollIntervalSeconds": 30,
         "recoveryLogLimit": 200,
         "incidentLogLimit": 200,
+        "resourceExpiryWarningDays": 30,
+        "resourceExpiryCriticalDays": 7,
     },
     "servers": [],
     "websites": [],
+    "resources": [],
 }
 
 LABEL_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -61,10 +65,16 @@ def monitoring_options(config: dict) -> dict:
     poll_interval = max(10, int(raw.get("pollIntervalSeconds", 30)))
     recovery_log_limit = max(20, min(1000, int(raw.get("recoveryLogLimit", 200))))
     incident_log_limit = max(20, min(1000, int(raw.get("incidentLogLimit", recovery_log_limit))))
+    resource_expiry_warning_days = max(1, int(raw.get("resourceExpiryWarningDays", 30)))
+    resource_expiry_critical_days = max(0, int(raw.get("resourceExpiryCriticalDays", 7)))
+    if resource_expiry_critical_days > resource_expiry_warning_days:
+        resource_expiry_critical_days = resource_expiry_warning_days
     return {
         "pollIntervalSeconds": poll_interval,
         "recoveryLogLimit": recovery_log_limit,
         "incidentLogLimit": incident_log_limit,
+        "resourceExpiryWarningDays": resource_expiry_warning_days,
+        "resourceExpiryCriticalDays": resource_expiry_critical_days,
     }
 
 
@@ -435,6 +445,7 @@ def load_config() -> dict:
     config["monitoring"] = merged_monitoring
     config["servers"] = config.get("servers") or []
     config["websites"] = config.get("websites") or []
+    config["resources"] = config.get("resources") or []
     config["_configPath"] = str(path)
     config["_usingLocalConfig"] = path == LOCAL_CONFIG_PATH
     return config
@@ -461,6 +472,129 @@ def save_config_raw(raw_config: dict) -> None:
         json.dump(raw_config, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     os.replace(tmp_path, path)
+
+
+def parse_expiry_datetime(value: object) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), timezone.utc)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def parse_expiry_timestamp(value: object) -> float | None:
+    parsed = parse_expiry_datetime(value)
+    return None if parsed is None else parsed.timestamp()
+
+
+def resource_expiry_thresholds(config: dict, resource: dict) -> tuple[int, int]:
+    monitoring = monitoring_options(config)
+    warning_days = max(1, int(resource.get("warningDays", monitoring.get("resourceExpiryWarningDays", 30))))
+    critical_days = max(0, int(resource.get("criticalDays", monitoring.get("resourceExpiryCriticalDays", 7))))
+    if critical_days > warning_days:
+        critical_days = warning_days
+    return warning_days, critical_days
+
+
+def classify_resource_expiry(days_remaining: int | None, warning_days: int, critical_days: int) -> str:
+    if days_remaining is None:
+        return "unknown"
+    if days_remaining < 0:
+        return "expired"
+    if days_remaining <= critical_days:
+        return "critical"
+    if days_remaining <= warning_days:
+        return "warning"
+    return "ok"
+
+
+def resource_expiry_message(resource: dict, status: str, days_remaining: int | None) -> str:
+    name = resource.get("name") or resource.get("id") or "resource"
+    if status == "expired":
+        return f"{name} 已过期 {abs(days_remaining or 0)} 天，需要立即处理。"
+    if status == "critical":
+        return f"{name} 将在 {days_remaining} 天后到期，需要尽快续费或更换。"
+    if status == "warning":
+        return f"{name} 将在 {days_remaining} 天后到期，请安排续费或迁移窗口。"
+    if status == "unknown":
+        return f"{name} 的到期时间无效或未配置，无法评估风险。"
+    return f"{name} 距到期还有 {days_remaining} 天。"
+
+
+def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
+    current = time.time() if now is None else float(now)
+    current_day = datetime.fromtimestamp(current, timezone.utc).date()
+    items = []
+    for resource in config.get("resources", []):
+        expires_raw = resource.get("expiresAt") or resource.get("expiresOn") or resource.get("expiryDate")
+        expires_dt = parse_expiry_datetime(expires_raw)
+        expires_at = None if expires_dt is None else expires_dt.timestamp()
+        days_remaining = None if expires_dt is None else (expires_dt.date() - current_day).days
+        warning_days, critical_days = resource_expiry_thresholds(config, resource)
+        status = classify_resource_expiry(days_remaining, warning_days, critical_days)
+        items.append(
+            {
+                "id": str(resource.get("id") or resource.get("name") or ""),
+                "name": resource.get("name") or resource.get("id") or "",
+                "type": resource.get("type", "resource"),
+                "provider": resource.get("provider", ""),
+                "owner": resource.get("owner", ""),
+                "linkedTarget": resource.get("linkedTarget", ""),
+                "renewUrl": resource.get("renewUrl", ""),
+                "notes": resource.get("notes", ""),
+                "expiresAt": expires_raw or "",
+                "expiresAtTimestamp": expires_at,
+                "daysRemaining": days_remaining,
+                "warningDays": warning_days,
+                "criticalDays": critical_days,
+                "status": status,
+                "message": resource_expiry_message(resource, status, days_remaining),
+            }
+        )
+
+    severity_rank = {"expired": 0, "unknown": 1, "critical": 2, "warning": 3, "ok": 4}
+    return sorted(
+        items,
+        key=lambda item: (
+            severity_rank.get(item["status"], 9),
+            999999 if item["daysRemaining"] is None else item["daysRemaining"],
+            item["name"],
+        ),
+    )
+
+
+def resource_expiry_summary(items: list[dict]) -> dict:
+    summary = {
+        "total": len(items),
+        "expired": 0,
+        "critical": 0,
+        "warning": 0,
+        "ok": 0,
+        "unknown": 0,
+        "actionRequired": 0,
+    }
+    for item in items:
+        status = item.get("status", "unknown")
+        if status not in summary:
+            status = "unknown"
+        summary[status] += 1
+        if status in {"expired", "critical", "warning"}:
+            summary["actionRequired"] += 1
+    return summary
 
 
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
@@ -797,6 +931,22 @@ def public_config(config: dict) -> dict:
         "actionsRequireToken": bool(config.get("actionToken")),
         "monitoring": monitoring_options(config),
         "servers": servers,
+        "resources": [
+            {
+                "id": resource.get("id"),
+                "name": resource.get("name"),
+                "type": resource.get("type", "resource"),
+                "provider": resource.get("provider", ""),
+                "owner": resource.get("owner", ""),
+                "linkedTarget": resource.get("linkedTarget", ""),
+                "expiresAt": resource.get("expiresAt") or resource.get("expiresOn") or resource.get("expiryDate") or "",
+                "warningDays": resource.get("warningDays", ""),
+                "criticalDays": resource.get("criticalDays", ""),
+                "renewUrl": resource.get("renewUrl", ""),
+                "notes": resource.get("notes", ""),
+            }
+            for resource in config.get("resources", [])
+        ],
         "websites": [
             {
                 "id": website.get("id"),
@@ -1484,6 +1634,8 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
 def dashboard_payload(config: dict) -> dict:
     servers = config.get("servers", [])
     websites = config.get("websites", [])
+    expiry_items = resource_expiry_items(config)
+    expiry_summary = resource_expiry_summary(expiry_items)
     prometheus_message = "Prometheus 暂不可用或未启动。"
 
     prometheus_available, prometheus_error = prometheus_ready_status(config, timeout=1.5)
@@ -1558,6 +1710,8 @@ def dashboard_payload(config: dict) -> dict:
             "down": sum(1 for item in website_snapshots if item["health"] == "down"),
             "dataQuality": data_quality_summary(website_snapshots),
         },
+        "resourceExpirySummary": expiry_summary,
+        "resourceExpiryItems": expiry_items,
         "servers": snapshots,
         "websites": website_snapshots,
         "recoveryLogs": get_recent_recovery_logs(),

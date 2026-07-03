@@ -65,6 +65,14 @@ const dataQualityLabels = {
   unknown: "未知",
 };
 
+const resourceExpiryLabels = {
+  expired: "已过期",
+  critical: "即将到期",
+  warning: "到期预警",
+  ok: "正常",
+  unknown: "待核实",
+};
+
 function formatPercent(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return `${Math.max(0, value).toFixed(1)}%`;
@@ -122,6 +130,13 @@ function formatCert(value) {
 function formatTime(value) {
   if (!value) return "--";
   return new Date(value * 1000).toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatDate(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 function metricValue(metric, value) {
@@ -217,10 +232,12 @@ async function refreshDashboard() {
 function renderError(error) {
   $("#serverGrid").innerHTML = "";
   $("#websiteGrid").innerHTML = "";
+  $("#resourceExpiryList").innerHTML = "";
   $("#incidentLogList").innerHTML = "";
   $("#recoveryLogList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
   $("#websiteEmptyState").classList.add("hidden");
+  $("#resourceExpiryEmptyState").classList.add("hidden");
   $("#incidentLogEmptyState").classList.add("hidden");
   $("#recoveryLogEmptyState").classList.add("hidden");
   $("#emptyState h2").textContent = "无法读取监控数据";
@@ -230,6 +247,8 @@ function renderError(error) {
 function render() {
   const summary = state.dashboard?.summary || { total: 0, online: 0, offline: 0, unknown: 0 };
   const websiteSummary = state.dashboard?.websiteSummary || { total: 0, online: 0, offline: 0, unknown: 0 };
+  const resourceExpirySummary = state.dashboard?.resourceExpirySummary
+    || { total: 0, expired: 0, critical: 0, warning: 0, unknown: 0, actionRequired: 0 };
   $("#totalCount").textContent = summary.total;
   $("#onlineCount").textContent = summary.online;
   $("#offlineCount").textContent = summary.offline;
@@ -238,6 +257,10 @@ function render() {
   $("#websiteOnlineCount").textContent = websiteSummary.online;
   $("#websiteOfflineCount").textContent = websiteSummary.offline;
   $("#websiteUnknownCount").textContent = websiteSummary.unknown;
+  $("#resourceTotalCount").textContent = resourceExpirySummary.total;
+  $("#resourceExpiredCount").textContent = resourceExpirySummary.expired;
+  $("#resourceRiskCount").textContent = resourceExpirySummary.actionRequired;
+  $("#resourceUnknownCount").textContent = resourceExpirySummary.unknown;
   $("#lastUpdated").textContent = new Date((state.dashboard?.generatedAt || Date.now() / 1000) * 1000)
     .toLocaleTimeString("zh-CN", { hour12: false });
 
@@ -245,6 +268,7 @@ function render() {
   renderGroups();
   renderServers();
   renderWebsites();
+  renderResourceExpiry();
   renderIncidentLogs();
   renderRecoveryLogs();
 }
@@ -354,6 +378,12 @@ function renderWebsites() {
   container.querySelectorAll("[data-cert-renewal-toggle]").forEach((input) => {
     input.addEventListener("change", () => toggleCertRenewal(input.dataset.websiteId, input.checked));
   });
+}
+
+function renderResourceExpiry() {
+  const items = state.dashboard?.resourceExpiryItems || [];
+  $("#resourceExpiryEmptyState").classList.toggle("hidden", items.length !== 0);
+  $("#resourceExpiryList").innerHTML = items.map(resourceExpiryCard).join("");
 }
 
 function renderIncidentLogs() {
@@ -501,6 +531,40 @@ function incidentBlock(incident) {
     </div>
     <p class="recovery-message muted">${escapeHtml(incident.summary || incident.reason || "暂无摘要")}</p>
   </div>`;
+}
+
+function resourceExpiryCard(item) {
+  const status = item.status || "unknown";
+  const label = resourceExpiryLabels[status] || status;
+  const daysText = item.daysRemaining === null || item.daysRemaining === undefined
+    ? "--"
+    : `${item.daysRemaining} 天`;
+  const meta = [
+    item.type ? `类型 ${item.type}` : "",
+    item.provider ? `供应商 ${item.provider}` : "",
+    item.owner ? `负责人 ${item.owner}` : "",
+    item.linkedTarget ? `关联 ${item.linkedTarget}` : "",
+  ].filter(Boolean);
+  const renewLink = item.renewUrl
+    ? `<a href="${escapeHtml(item.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`
+    : "";
+  return `<article class="expiry-card ${escapeHtml(status)}">
+    <div class="expiry-head">
+      <div>
+        <h3>${escapeHtml(item.name || item.id || "未命名资源")}</h3>
+        <p class="muted">${escapeHtml(item.message || "")}</p>
+      </div>
+      <span class="expiry-badge ${escapeHtml(status)}">${escapeHtml(label)}</span>
+    </div>
+    <div class="expiry-meta">
+      <span>到期 ${escapeHtml(formatDate(item.expiresAt))}</span>
+      <span>剩余 ${escapeHtml(daysText)}</span>
+      <span>预警 ${escapeHtml(String(item.warningDays ?? 30))} 天</span>
+      <span>临界 ${escapeHtml(String(item.criticalDays ?? 7))} 天</span>
+      ${meta.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}
+    </div>
+    ${item.notes || renewLink ? `<div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${renewLink}</div>` : ""}
+  </article>`;
 }
 
 function recoveryBlock(recovery, manualRecovery, targetType, targetId) {
