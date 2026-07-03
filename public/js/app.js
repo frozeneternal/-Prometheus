@@ -330,6 +330,9 @@ function renderResourceExpiry() {
   const items = state.dashboard?.resourceExpiryItems || [];
   $("#resourceExpiryEmptyState").classList.toggle("hidden", items.length !== 0);
   $("#resourceExpiryList").innerHTML = items.map(resourceExpiryCard).join("");
+  $("#resourceExpiryList").querySelectorAll("[data-resource-ack]").forEach((button) => {
+    button.addEventListener("click", () => acknowledgeResourceExpiry(button.dataset.resourceId));
+  });
 }
 
 function renderIncidentLogs() {
@@ -494,6 +497,13 @@ function resourceExpiryCard(item) {
   const renewLink = item.renewUrl
     ? `<a href="${escapeHtml(item.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`
     : "";
+  const canAcknowledge = item.actionRequired && ["critical", "warning"].includes(status);
+  const ackText = item.acknowledged
+    ? `已确认至 ${formatDate(item.acknowledgedUntil)}`
+    : "";
+  const ackButton = canAcknowledge
+    ? `<button type="button" class="secondary recovery-trigger compact" data-resource-ack="true" data-resource-id="${escapeHtml(item.id)}">确认 7 天</button>`
+    : "";
   return `<article class="expiry-card ${escapeHtml(status)}">
     <div class="expiry-head">
       <div>
@@ -509,7 +519,7 @@ function resourceExpiryCard(item) {
       <span>临界 ${escapeHtml(String(item.criticalDays ?? 7))} 天</span>
       ${meta.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}
     </div>
-    ${item.notes || renewLink ? `<div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${renewLink}</div>` : ""}
+    ${item.notes || renewLink || ackText || ackButton ? `<div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${ackText ? `<span>${escapeHtml(ackText)}</span>` : ""}${renewLink}${ackButton}</div>` : ""}
   </article>`;
 }
 
@@ -861,6 +871,23 @@ async function toggleCertRenewal(websiteId, enabled) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ websiteId, enabled, ...authPayload() }),
+    });
+    state.dashboard = payload;
+    state.dashboard.ok = true;
+    await loadConfig();
+    render();
+  } catch (error) {
+    await refreshDashboard();
+  }
+}
+
+async function acknowledgeResourceExpiry(resourceId) {
+  const acknowledgedUntil = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+  try {
+    const payload = await getJson("/api/settings/resource-ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceId, acknowledgedUntil, ...authPayload() }),
     });
     state.dashboard = payload;
     state.dashboard.ok = true;

@@ -119,6 +119,16 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn("verifying", labels_block)
 
+    def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('data-resource-ack="true"', app_js)
+        self.assertIn('"/api/settings/resource-ack"', app_js)
+        self.assertIn('parsed.path == "/api/settings/resource-ack"', backend_py)
+        self.assertIn("persist_resource_acknowledgement", backend_py)
+        self.assertIn('authorize_operation(config, body, "operator")', backend_py)
+
 
 if __name__ == "__main__":
     unittest.main()

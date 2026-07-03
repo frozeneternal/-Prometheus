@@ -4,6 +4,7 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,6 +97,44 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(summary["unknown"], 1)
         self.assertEqual(summary["actionRequired"], 4)
 
+    def test_acknowledged_resource_expiry_is_not_action_required_until_ack_expires(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {
+                    "id": "acked-warning",
+                    "name": "Acked Warning",
+                    "expiresAt": "2026-07-20",
+                    "acknowledgedUntil": "2026-07-10T00:00:00Z",
+                },
+                {
+                    "id": "expired-even-if-acked",
+                    "name": "Expired",
+                    "expiresAt": "2026-07-01",
+                    "acknowledgedUntil": "2026-07-10T00:00:00Z",
+                },
+                {
+                    "id": "ack-expired",
+                    "name": "Ack Expired",
+                    "expiresAt": "2026-07-20",
+                    "acknowledgedUntil": "2026-07-02T00:00:00Z",
+                },
+            ]
+        }
+
+        items = app.resource_expiry_items(config, now=now)
+        by_id = {item["id"]: item for item in items}
+        summary = app.resource_expiry_summary(items)
+
+        self.assertTrue(by_id["acked-warning"]["acknowledged"])
+        self.assertFalse(by_id["acked-warning"]["actionRequired"])
+        self.assertFalse(by_id["expired-even-if-acked"]["acknowledged"])
+        self.assertTrue(by_id["expired-even-if-acked"]["actionRequired"])
+        self.assertFalse(by_id["ack-expired"]["acknowledged"])
+        self.assertTrue(by_id["ack-expired"]["actionRequired"])
+        self.assertEqual(summary["acknowledged"], 1)
+        self.assertEqual(summary["actionRequired"], 2)
+
     def test_resource_expiry_rejects_boolean_expiry_values(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {
@@ -165,6 +204,68 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(by_id["bad-resource-thresholds"]["criticalDays"], 7)
         self.assertEqual(by_id["negative-thresholds"]["warningDays"], 1)
         self.assertEqual(by_id["negative-thresholds"]["criticalDays"], 0)
+
+    def test_persist_resource_acknowledgement_updates_raw_config(self) -> None:
+        raw_config = {
+            "resources": [
+                {"id": "license-warning", "name": "Backup License", "expiresAt": "2026-07-20"},
+            ]
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+        ):
+            status, payload = app.persist_resource_acknowledgement(
+                "license-warning",
+                acknowledged_until="2026-07-10T00:00:00Z",
+                actor={"username": "ops"},
+            )
+            saved = save_config_raw.call_args.args[0]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved["resources"][0]["acknowledgedUntil"], "2026-07-10T00:00:00Z")
+        self.assertEqual(saved["resources"][0]["acknowledgedBy"], "ops")
+
+    def test_persist_resource_acknowledgement_rejects_missing_resource(self) -> None:
+        with (
+            patch.object(app, "load_config_raw", return_value={"resources": []}),
+            patch.object(app, "save_config_raw") as save_config_raw,
+        ):
+            status, payload = app.persist_resource_acknowledgement(
+                "missing",
+                acknowledged_until="2026-07-10T00:00:00Z",
+                actor={"username": "ops"},
+            )
+
+        self.assertEqual(status, 404)
+        self.assertFalse(payload["ok"])
+        save_config_raw.assert_not_called()
+
+    def test_persist_resource_acknowledgement_rejects_expired_resource(self) -> None:
+        raw_config = {
+            "resources": [
+                {"id": "expired", "name": "Expired", "expiresAt": "2026-07-01"},
+            ]
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_acknowledgement(
+                "expired",
+                acknowledged_until="2026-07-10T00:00:00Z",
+                actor={"username": "ops"},
+            )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("过期", payload["message"])
+        save_config_raw.assert_not_called()
 
 
 if __name__ == "__main__":

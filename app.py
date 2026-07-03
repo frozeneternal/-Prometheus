@@ -818,6 +818,39 @@ def persist_cert_renewal_enabled(website_id: str, enabled: bool) -> tuple[int, d
     return 200, {"ok": True, "message": "证书自动续期已更新。"}
 
 
+def find_raw_resource(config: dict, resource_id: str) -> dict | None:
+    for resource in config.get("resources", []):
+        if str(resource.get("id") or "") == resource_id:
+            return resource
+    return None
+
+
+def persist_resource_acknowledgement(
+    resource_id: str,
+    *,
+    acknowledged_until: str,
+    actor: dict | None = None,
+) -> tuple[int, dict]:
+    if parse_expiry_datetime(acknowledged_until) is None:
+        return 400, {"ok": False, "message": "确认截止时间无效。"}
+
+    raw_config = load_config_raw()
+    resource = find_raw_resource(raw_config, resource_id)
+    if resource is None:
+        return 404, {"ok": False, "message": "资源不存在。"}
+
+    current = time.time()
+    item = next((entry for entry in resource_expiry_items({"resources": [resource]}, now=current) if entry["id"] == resource_id), None)
+    if not item or item.get("status") not in {"critical", "warning"}:
+        return 400, {"ok": False, "message": "只有未过期的预警资源可以确认。"}
+
+    resource["acknowledgedUntil"] = acknowledged_until
+    resource["acknowledgedBy"] = str((actor or {}).get("username") or "operator")
+    resource["acknowledgedAt"] = datetime.fromtimestamp(current, timezone.utc).isoformat()
+    save_config_raw(raw_config)
+    return 200, {"ok": True, "message": "资源到期告警已确认。"}
+
+
 def persist_dashboard_settings(config: dict) -> dict:
     dashboard = dashboard_payload(config)
     return {"ok": True, **dashboard}
@@ -2295,6 +2328,36 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 return
 
             status, payload = persist_cert_renewal_enabled(website_id, enabled)
+            if status != 200:
+                json_response(self, status, payload)
+                return
+            status, payload = settings_response(payload["message"])
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/settings/resource-ack":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+
+            resource_id = str(body.get("resourceId") or "")
+            acknowledged_until = str(body.get("acknowledgedUntil") or "")
+            if not resource_id or not acknowledged_until:
+                json_response(self, 400, {"ok": False, "message": "资源确认参数不正确。"})
+                return
+
+            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
+            if not allowed:
+                json_response(self, auth_status, auth_payload)
+                return
+
+            status, payload = persist_resource_acknowledgement(
+                resource_id,
+                acknowledged_until=acknowledged_until,
+                actor=auth_payload.get("user"),
+            )
             if status != 200:
                 json_response(self, status, payload)
                 return

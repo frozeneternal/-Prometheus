@@ -82,6 +82,21 @@ def resource_expiry_message(resource: dict, status: str, days_remaining: int | N
     return f"{name} 距到期还有 {days_remaining} 天。"
 
 
+def resource_acknowledged_until(resource: dict, now: float) -> float | None:
+    acknowledged_until = parse_expiry_timestamp(resource.get("acknowledgedUntil"))
+    if acknowledged_until is None:
+        return None
+    return acknowledged_until if acknowledged_until > now else None
+
+
+def resource_requires_action(status: str, acknowledged: bool) -> bool:
+    if status in {"expired", "unknown"}:
+        return True
+    if status in {"critical", "warning"}:
+        return not acknowledged
+    return False
+
+
 def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
     current = time.time() if now is None else float(now)
     current_day = datetime.fromtimestamp(current, timezone.utc).date()
@@ -93,6 +108,9 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
         days_remaining = None if expires_dt is None else (expires_dt.date() - current_day).days
         warning_days, critical_days = resource_expiry_thresholds(config, resource)
         status = classify_resource_expiry(days_remaining, warning_days, critical_days)
+        acknowledged_until = resource_acknowledged_until(resource, current)
+        acknowledged = status in {"critical", "warning"} and acknowledged_until is not None
+        action_required = resource_requires_action(status, acknowledged)
         items.append(
             {
                 "id": str(resource.get("id") or resource.get("name") or ""),
@@ -110,6 +128,11 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
                 "criticalDays": critical_days,
                 "status": status,
                 "message": resource_expiry_message(resource, status, days_remaining),
+                "acknowledged": acknowledged,
+                "acknowledgedUntil": resource.get("acknowledgedUntil") or "",
+                "acknowledgedUntilTimestamp": acknowledged_until,
+                "acknowledgedBy": resource.get("acknowledgedBy", ""),
+                "actionRequired": action_required,
             }
         )
 
@@ -139,6 +162,9 @@ def resource_expiry_summary(items: list[dict]) -> dict:
         if status not in summary:
             status = "unknown"
         summary[status] += 1
-        if status in {"expired", "critical", "warning", "unknown"}:
+        if item.get("acknowledged"):
+            summary["acknowledged"] = summary.get("acknowledged", 0) + 1
+        if item.get("actionRequired", status in {"expired", "critical", "warning", "unknown"}):
             summary["actionRequired"] += 1
+    summary.setdefault("acknowledged", 0)
     return summary

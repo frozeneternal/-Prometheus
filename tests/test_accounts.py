@@ -147,6 +147,17 @@ class AccountAuthTests(unittest.TestCase):
         self.assertEqual(app.authorize_operation(config, {}, "operator")[1], 403)
         self.assertEqual(app.authorize_operation(config, {"token": "legacy-token"}, "operator")[1], 200)
 
+    def test_resource_acknowledgement_requires_operator(self) -> None:
+        config = self.config_with_users()
+        viewer = app.authenticate_user(config, "viewer", "viewer-pass")
+        token = app.create_session_token(config, viewer)
+
+        ok, status, payload = app.authorize_operation(config, {"sessionToken": token}, "operator")
+
+        self.assertFalse(ok)
+        self.assertEqual(status, 403)
+        self.assertIn("权限", payload["message"])
+
 
 if __name__ == "__main__":
     unittest.main()
