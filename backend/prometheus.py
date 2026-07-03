@@ -243,7 +243,22 @@ def series_payload(config: dict, query_params: dict[str, list[str]]) -> tuple[in
     if not server:
         return 404, {"ok": False, "message": "服务器不存在。"}
 
-    queries = build_metric_queries(server)
+    try:
+        queries = build_metric_queries(server)
+    except ValueError as exc:
+        message = str(exc)
+        return 200, {
+            "ok": True,
+            "metric": metric,
+            "values": [],
+            "dataQuality": data_quality(
+                "query_build_error",
+                message,
+                False,
+                {"error": message},
+            ),
+        }
+
     if metric not in queries:
         return 400, {"ok": False, "message": "指标不存在。"}
 

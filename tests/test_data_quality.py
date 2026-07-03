@@ -365,6 +365,32 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(float(end) - float(start), 60 * 60)
         self.assertEqual(step, "30")
 
+    def test_series_payload_returns_query_build_error_for_invalid_labels(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "labels": {"bad-label": "srv1:9100"},
+                }
+            ]
+        }
+
+        with patch.object(prometheus, "prom_query_range") as query_range:
+            status, payload = app.series_payload(
+                config,
+                {"serverId": ["srv1"], "metric": ["cpu"], "minutes": ["60"]},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["metric"], "cpu")
+        self.assertEqual(payload["values"], [])
+        self.assertEqual(payload["dataQuality"]["level"], "query_build_error")
+        self.assertFalse(payload["dataQuality"]["trusted"])
+        self.assertIn("bad-label", payload["dataQuality"]["message"])
+        query_range.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
