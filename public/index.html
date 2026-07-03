@@ -14,6 +14,16 @@
           <p id="prometheusUrl" class="muted"></p>
         </div>
         <div class="toolbar">
+          <form id="loginForm" class="account-form hidden" autocomplete="off">
+            <input id="loginUsername" name="username" autocomplete="username" placeholder="Username">
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Password">
+            <button id="loginButton" type="submit">登录</button>
+            <span id="loginError" class="login-error"></span>
+          </form>
+          <div id="accountSession" class="account-session hidden">
+            <span id="accountUserLabel"></span>
+            <button id="logoutButton" type="button">退出</button>
+          </div>
           <label class="token-field" for="tokenInput">
             <span>操作口令</span>
             <input id="tokenInput" type="password" autocomplete="off" placeholder="Token">

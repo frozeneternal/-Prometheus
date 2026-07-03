@@ -163,6 +163,37 @@ Copy-Item .\config\servers.local.template.json .\config\servers.local.json
 
 真实账号、域名、供应商入口和备注建议只写入 `config/servers.local.json`，不要提交到公开仓库。
 
+## 账号管理
+
+默认保持旧的 `actionToken` 模式，适合只在本机临时使用。要启用账号模式，在私有的 `config/servers.local.json` 中配置 `sessionSecret` 和 `users`。
+
+```json
+{
+  "sessionSecret": "replace-with-a-long-random-session-secret",
+  "users": [
+    {
+      "username": "ops",
+      "displayName": "Operations",
+      "role": "operator",
+      "passwordHash": "pbkdf2_sha256$210000$..."
+    }
+  ]
+}
+```
+
+生成密码哈希：
+
+```powershell
+python -c "import app; print(app.hash_password('replace-this-password'))"
+```
+
+角色规则：
+- `viewer`：只读，不能执行恢复、备份、证书续期，也不能修改开关。
+- `operator`：可以执行手动动作和修改自动化开关。
+- `admin`：预留给后续账号增删改和平台级设置。
+
+一旦 `users` 中存在启用的账号，面板会切换到登录模式，手动动作和设置接口必须带有效会话；旧 `actionToken` 不再作为绕过入口。
+
 ## 怎么看是否正常
 
 网页打开后看两块：

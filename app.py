@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import hmac
 import json
 import mimetypes
 import os
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -31,6 +34,7 @@ DEFAULT_CONFIG = {
     "listenPort": 8787,
     "prometheusUrl": "http://127.0.0.1:9090",
     "actionToken": "",
+    "sessionSecret": "",
     "monitoring": {
         "pollIntervalSeconds": 30,
         "recoveryLogLimit": 200,
@@ -41,6 +45,7 @@ DEFAULT_CONFIG = {
     "servers": [],
     "websites": [],
     "resources": [],
+    "users": [],
 }
 
 LABEL_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -446,6 +451,7 @@ def load_config() -> dict:
     config["servers"] = config.get("servers") or []
     config["websites"] = config.get("websites") or []
     config["resources"] = config.get("resources") or []
+    config["users"] = config.get("users") or []
     config["_configPath"] = str(path)
     config["_usingLocalConfig"] = path == LOCAL_CONFIG_PATH
     return config
@@ -595,6 +601,147 @@ def resource_expiry_summary(items: list[dict]) -> dict:
         if status in {"expired", "critical", "warning"}:
             summary["actionRequired"] += 1
     return summary
+
+
+def b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def hash_password(password: str, salt: str | None = None, iterations: int = 210_000) -> str:
+    salt_value = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_value.encode("utf-8"), iterations)
+    return f"pbkdf2_sha256${iterations}${salt_value}${digest.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt, expected = str(password_hash).split("$", 3)
+        iterations = int(iterations_text)
+    except (ValueError, TypeError):
+        return False
+    if algorithm != "pbkdf2_sha256" or iterations < 1000:
+        return False
+    actual = hash_password(password, salt=salt, iterations=iterations).rsplit("$", 1)[-1]
+    return hmac.compare_digest(expected, actual)
+
+
+ROLE_RANK = {"viewer": 0, "operator": 1, "admin": 2}
+
+
+def normalize_role(role: object) -> str:
+    value = str(role or "viewer").lower()
+    return value if value in ROLE_RANK else "viewer"
+
+
+def public_user(user: dict) -> dict:
+    return {
+        "username": user.get("username", ""),
+        "displayName": user.get("displayName") or user.get("username", ""),
+        "role": normalize_role(user.get("role")),
+    }
+
+
+def configured_users(config: dict) -> list[dict]:
+    users = []
+    for user in config.get("users", []) or []:
+        if user.get("enabled", True) is False:
+            continue
+        if not user.get("username") or not user.get("passwordHash"):
+            continue
+        users.append(user)
+    return users
+
+
+def users_enabled(config: dict) -> bool:
+    return bool(configured_users(config))
+
+
+def find_user(config: dict, username: str) -> dict | None:
+    for user in configured_users(config):
+        if str(user.get("username")) == username:
+            return user
+    return None
+
+
+def authenticate_user(config: dict, username: str, password: str) -> dict | None:
+    user = find_user(config, username)
+    if not user or not verify_password(password, str(user.get("passwordHash") or "")):
+        return None
+    return public_user(user)
+
+
+def session_signing_key(config: dict) -> str:
+    return str(config.get("sessionSecret") or config.get("actionToken") or "")
+
+
+def create_session_token(config: dict, user: dict, now: float | None = None, ttl_seconds: int = 12 * 3600) -> str:
+    secret = session_signing_key(config)
+    if not secret:
+        raise ValueError("sessionSecret or actionToken is required when users are enabled")
+    issued_at = int(time.time() if now is None else now)
+    payload = {
+        "username": user.get("username", ""),
+        "role": normalize_role(user.get("role")),
+        "iat": issued_at,
+        "exp": issued_at + max(300, int(ttl_seconds)),
+        "nonce": secrets.token_hex(8),
+    }
+    encoded_payload = b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signature = hmac.new(secret.encode("utf-8"), encoded_payload.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"v1.{encoded_payload}.{signature}"
+
+
+def verify_session_token(config: dict, token: str, now: float | None = None) -> dict | None:
+    secret = session_signing_key(config)
+    if not secret or not token:
+        return None
+    try:
+        version, encoded_payload, signature = str(token).split(".", 2)
+    except ValueError:
+        return None
+    if version != "v1":
+        return None
+    expected = hmac.new(secret.encode("utf-8"), encoded_payload.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        return None
+    try:
+        payload = json.loads(b64url_decode(encoded_payload).decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    current = time.time() if now is None else float(now)
+    if float(payload.get("exp", 0)) < current:
+        return None
+    user = find_user(config, str(payload.get("username") or ""))
+    if not user:
+        return None
+    role = normalize_role(user.get("role"))
+    if normalize_role(payload.get("role")) != role:
+        return None
+    return public_user(user)
+
+
+def role_allows(actual_role: str, required_role: str) -> bool:
+    return ROLE_RANK.get(normalize_role(actual_role), 0) >= ROLE_RANK.get(normalize_role(required_role), 0)
+
+
+def authorize_operation(config: dict, body: dict, required_role: str = "operator") -> tuple[bool, int, dict]:
+    if users_enabled(config):
+        token = str(body.get("sessionToken") or body.get("_sessionToken") or "")
+        user = verify_session_token(config, token)
+        if not user:
+            return False, 401, {"ok": False, "message": "需要登录后才能执行该操作。"}
+        if not role_allows(user.get("role", "viewer"), required_role):
+            return False, 403, {"ok": False, "message": "当前账号权限不足。", "user": user}
+        return True, 200, {"ok": True, "mode": "session", "user": user}
+
+    if verify_action_token(config, str(body.get("token") or "")):
+        return True, 200, {"ok": True, "mode": "legacy-token"}
+    return False, 403, {"ok": False, "message": "操作口令不正确。"}
 
 
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
@@ -896,6 +1043,7 @@ def server_type(server: dict) -> str:
 
 def public_config(config: dict) -> dict:
     servers = []
+    auth_mode = "users" if users_enabled(config) else ("token" if config.get("actionToken") else "open")
     for server in config.get("servers", []):
         servers.append(
             {
@@ -928,7 +1076,12 @@ def public_config(config: dict) -> dict:
         "appName": config.get("appName", DEFAULT_CONFIG["appName"]),
         "prometheusUrl": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
         **config_source_info(),
-        "actionsRequireToken": bool(config.get("actionToken")),
+        "actionsRequireToken": auth_mode == "token",
+        "auth": {
+            "mode": auth_mode,
+            "requiresLogin": auth_mode == "users",
+            "users": [public_user(user) for user in configured_users(config)],
+        },
         "monitoring": monitoring_options(config),
         "servers": servers,
         "resources": [
@@ -1791,6 +1944,7 @@ def build_log_event(
     reason: str,
     consecutive_failures: int,
     payload: dict,
+    actor: dict | None = None,
 ) -> dict:
     timestamp = time.time()
     return {
@@ -1812,6 +1966,7 @@ def build_log_event(
         "durationSeconds": payload.get("durationSeconds"),
         "stdout": payload.get("stdout", ""),
         "stderr": payload.get("stderr", ""),
+        "actor": public_user(actor or {}) if actor else {},
     }
 
 
@@ -1826,6 +1981,7 @@ def execute_server_action(
     target_name: str,
     reason: str,
     consecutive_failures: int = 0,
+    actor: dict | None = None,
 ) -> tuple[int, dict]:
     command = action.get("command")
     if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
@@ -1840,6 +1996,7 @@ def execute_server_action(
             reason=reason,
             consecutive_failures=consecutive_failures,
             payload=payload,
+            actor=actor,
         )
         append_recovery_log(config, log_event)
         payload["logId"] = log_event["id"]
@@ -1910,6 +2067,7 @@ def execute_server_action(
         reason=reason,
         consecutive_failures=consecutive_failures,
         payload=payload,
+        actor=actor,
     )
     append_recovery_log(config, log_event)
     payload["logId"] = log_event["id"]
@@ -1926,7 +2084,6 @@ def verify_action_token(config: dict, provided: str) -> bool:
 def run_action(config: dict, body: dict) -> tuple[int, dict]:
     server_id = str(body.get("serverId") or "")
     action_id = str(body.get("actionId") or "")
-    token = str(body.get("token") or "")
     confirm = str(body.get("confirm") or "")
     target_type = str(body.get("targetType") or "server")
     target_id = str(body.get("targetId") or "")
@@ -1934,8 +2091,9 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
     invocation = str(body.get("invocation") or "manual")
     reason = str(body.get("reason") or "手动执行")
 
-    if not verify_action_token(config, token):
-        return 403, {"ok": False, "message": "操作口令不正确。"}
+    allowed, status, auth_payload = authorize_operation(config, body, "operator")
+    if not allowed:
+        return status, auth_payload
 
     server = find_server(config, server_id)
     if not server:
@@ -1958,7 +2116,39 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
         target_id=target_id or server.get("id", ""),
         target_name=target_name or server.get("name", server.get("id", "")),
         reason=reason,
+        actor=auth_payload.get("user"),
     )
+
+
+def login_payload(config: dict, body: dict) -> tuple[int, dict]:
+    if not users_enabled(config):
+        return 400, {"ok": False, "message": "当前未启用账号登录模式。"}
+
+    username = str(body.get("username") or "")
+    password = str(body.get("password") or "")
+    user = authenticate_user(config, username, password)
+    if not user:
+        return 401, {"ok": False, "message": "用户名或密码不正确。"}
+
+    try:
+        token = create_session_token(config, user)
+    except ValueError as exc:
+        return 500, {"ok": False, "message": str(exc)}
+    return 200, {
+        "ok": True,
+        "sessionToken": token,
+        "user": user,
+        "expiresInSeconds": 12 * 3600,
+    }
+
+
+def session_payload(config: dict, body: dict) -> tuple[int, dict]:
+    if not users_enabled(config):
+        return 200, {"ok": True, "mode": "legacy-token", "user": None}
+    user = verify_session_token(config, str(body.get("sessionToken") or ""))
+    if not user:
+        return 401, {"ok": False, "message": "登录已失效。"}
+    return 200, {"ok": True, "mode": "session", "user": user}
 
 
 def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
@@ -2215,6 +2405,26 @@ class MonitorHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         config = load_config()
 
+        if parsed.path == "/api/auth/login":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = login_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/session":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = session_payload(config, body)
+            json_response(self, status, payload)
+            return
+
         if parsed.path == "/api/actions/run":
             try:
                 body = read_json_body(self)
@@ -2240,6 +2450,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "自动恢复参数不正确。"})
                 return
 
+            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
+            if not allowed:
+                json_response(self, auth_status, auth_payload)
+                return
+
             status, payload = persist_auto_recovery_enabled(target_type, target_id, enabled)
             if status != 200:
                 json_response(self, status, payload)
@@ -2261,6 +2476,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "自动备份参数不正确。"})
                 return
 
+            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
+            if not allowed:
+                json_response(self, auth_status, auth_payload)
+                return
+
             status, payload = persist_auto_backup_enabled(server_id, enabled)
             if status != 200:
                 json_response(self, status, payload)
@@ -2280,6 +2500,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
             enabled = bool(body.get("enabled"))
             if not website_id:
                 json_response(self, 400, {"ok": False, "message": "证书续期参数不正确。"})
+                return
+
+            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
+            if not allowed:
+                json_response(self, auth_status, auth_payload)
                 return
 
             status, payload = persist_cert_renewal_enabled(website_id, enabled)

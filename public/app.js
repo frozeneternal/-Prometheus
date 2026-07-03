@@ -5,6 +5,8 @@ const state = {
   chartMetric: "cpu",
   currentAction: null,
   refreshTimer: null,
+  sessionToken: window.localStorage.getItem("monitorSessionToken") || "",
+  currentUser: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -211,10 +213,54 @@ async function getJson(url, options) {
 async function loadConfig() {
   const payload = await getJson("/api/config");
   state.config = payload.config;
+  await refreshSession();
+  renderAuthControls();
   $("#appName").textContent = state.config.appName || "本地服务器监控台";
   $("#prometheusUrl").textContent = state.config.prometheusUrl || "";
   $("#tokenInput").classList.toggle("hidden", !state.config.actionsRequireToken);
   document.querySelector(".token-field span").classList.toggle("hidden", !state.config.actionsRequireToken);
+}
+
+async function refreshSession() {
+  const auth = state.config?.auth || {};
+  if (auth.mode !== "users") {
+    state.currentUser = null;
+    return;
+  }
+  if (!state.sessionToken) {
+    state.currentUser = null;
+    return;
+  }
+  try {
+    const payload = await getJson("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken: state.sessionToken }),
+    });
+    state.currentUser = payload.user || null;
+  } catch (error) {
+    state.sessionToken = "";
+    state.currentUser = null;
+    window.localStorage.removeItem("monitorSessionToken");
+  }
+}
+
+function renderAuthControls() {
+  const auth = state.config?.auth || {};
+  const userMode = auth.mode === "users";
+  $("#loginForm").classList.toggle("hidden", !userMode || Boolean(state.currentUser));
+  $("#accountSession").classList.toggle("hidden", !userMode || !state.currentUser);
+  document.querySelector(".token-field").classList.toggle("hidden", userMode || !state.config?.actionsRequireToken);
+  if (state.currentUser) {
+    $("#accountUserLabel").textContent = `${state.currentUser.displayName || state.currentUser.username} · ${state.currentUser.role}`;
+  }
+}
+
+function authPayload() {
+  const auth = state.config?.auth || {};
+  if (auth.mode === "users") return { sessionToken: state.sessionToken };
+  if (state.config?.actionsRequireToken) return { token: $("#tokenInput").value };
+  return {};
 }
 
 async function refreshDashboard() {
@@ -877,7 +923,7 @@ async function toggleAutoRecovery(targetType, targetId, enabled) {
     const payload = await getJson("/api/settings/auto-recovery", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetType, targetId, enabled }),
+      body: JSON.stringify({ targetType, targetId, enabled, ...authPayload() }),
     });
     state.dashboard = payload;
     state.dashboard.ok = true;
@@ -893,7 +939,7 @@ async function toggleAutoBackup(serverId, enabled) {
     const payload = await getJson("/api/settings/auto-backup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serverId, enabled }),
+      body: JSON.stringify({ serverId, enabled, ...authPayload() }),
     });
     state.dashboard = payload;
     state.dashboard.ok = true;
@@ -909,7 +955,7 @@ async function toggleCertRenewal(websiteId, enabled) {
     const payload = await getJson("/api/settings/cert-renewal", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ websiteId, enabled }),
+      body: JSON.stringify({ websiteId, enabled, ...authPayload() }),
     });
     state.dashboard = payload;
     state.dashboard.ok = true;
@@ -932,7 +978,7 @@ async function runCurrentAction() {
       body: JSON.stringify({
         serverId: server.id,
         actionId: action.id,
-        token: $("#tokenInput").value,
+        ...authPayload(),
         confirm: $("#confirmInput").value,
         targetType: meta.targetType || "server",
         targetId: meta.targetId || server.id,
@@ -972,6 +1018,39 @@ async function runCurrentAction() {
   }
 }
 
+async function loginCurrentUser(event) {
+  event.preventDefault();
+  $("#loginError").textContent = "";
+  $("#loginButton").disabled = true;
+  try {
+    const payload = await getJson("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: $("#loginUsername").value,
+        password: $("#loginPassword").value,
+      }),
+    });
+    state.sessionToken = payload.sessionToken || "";
+    state.currentUser = payload.user || null;
+    window.localStorage.setItem("monitorSessionToken", state.sessionToken);
+    $("#loginPassword").value = "";
+    renderAuthControls();
+    await refreshDashboard();
+  } catch (error) {
+    $("#loginError").textContent = error.message;
+  } finally {
+    $("#loginButton").disabled = false;
+  }
+}
+
+function logoutCurrentUser() {
+  state.sessionToken = "";
+  state.currentUser = null;
+  window.localStorage.removeItem("monitorSessionToken");
+  renderAuthControls();
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -986,6 +1065,8 @@ function camelToKebab(value) {
 }
 
 $("#refreshButton").addEventListener("click", refreshDashboard);
+$("#loginForm").addEventListener("submit", loginCurrentUser);
+$("#logoutButton").addEventListener("click", logoutCurrentUser);
 $("#actionForm").addEventListener("submit", async (event) => {
   if (event.submitter?.value !== "run") return;
   event.preventDefault();

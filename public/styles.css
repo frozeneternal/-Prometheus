@@ -96,6 +96,40 @@ h1 {
   justify-content: flex-end;
 }
 
+.account-form,
+.account-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.account-form input {
+  width: 140px;
+}
+
+.account-session {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: var(--surface);
+}
+
+.account-session span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.login-error {
+  max-width: 220px;
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .token-field,
 .input-row {
   display: grid;

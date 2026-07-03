@@ -4,6 +4,7 @@
   "listenPort": 8787,
   "prometheusUrl": "http://127.0.0.1:9090",
   "actionToken": "replace-with-a-long-random-token",
+  "sessionSecret": "replace-with-a-long-random-session-secret",
   "monitoring": {
     "pollIntervalSeconds": 30,
     "recoveryLogLimit": 200,
@@ -160,6 +161,7 @@
       "notes": "Track account, billing, contract, license, or server lease expiry here."
     }
   ],
+  "users": [],
   "websites": [
     {
       "id": "web-01-homepage",

@@ -4,6 +4,7 @@
   "listenPort": 8787,
   "prometheusUrl": "http://127.0.0.1:9090",
   "actionToken": "replace-with-a-strong-token",
+  "sessionSecret": "replace-with-a-strong-session-secret",
   "monitoring": {
     "pollIntervalSeconds": 30,
     "recoveryLogLimit": 200,
@@ -296,6 +297,7 @@
       "notes": "Verify billing owner and backup payment method."
     }
   ],
+  "users": [],
   "websites": [
     {
       "id": "external-site-a",
