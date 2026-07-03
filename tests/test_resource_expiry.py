@@ -94,7 +94,7 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(summary["warning"], 1)
         self.assertEqual(summary["ok"], 1)
         self.assertEqual(summary["unknown"], 1)
-        self.assertEqual(summary["actionRequired"], 3)
+        self.assertEqual(summary["actionRequired"], 4)
 
 
 if __name__ == "__main__":

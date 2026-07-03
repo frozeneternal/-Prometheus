@@ -122,6 +122,6 @@ def resource_expiry_summary(items: list[dict]) -> dict:
         if status not in summary:
             status = "unknown"
         summary[status] += 1
-        if status in {"expired", "critical", "warning"}:
+        if status in {"expired", "critical", "warning", "unknown"}:
             summary["actionRequired"] += 1
     return summary
