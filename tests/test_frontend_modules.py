@@ -72,6 +72,19 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderConfigValidation();", app_js)
         self.assertIn(".config-validation-panel", styles_css)
 
+    def test_config_validation_panel_uses_backend_field_contract(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        render_config_validation = app_js[
+            app_js.index("function renderConfigValidation()"):app_js.index("function renderGroups()")
+        ]
+
+        self.assertIn("validation.issues || []", render_config_validation)
+        self.assertIn("validation.errorCount ?? 0", render_config_validation)
+        self.assertIn("validation.warningCount ?? 0", render_config_validation)
+        self.assertNotIn("validation.items || []", render_config_validation)
+        self.assertNotIn("validation.error ?? 0", render_config_validation)
+        self.assertNotIn("validation.warning ?? 0", render_config_validation)
+
     def test_config_validation_panel_is_cleared_on_dashboard_error(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         render_error = app_js[app_js.index("function renderError("):app_js.index("function render()")]

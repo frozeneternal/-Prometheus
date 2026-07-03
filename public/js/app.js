@@ -207,7 +207,7 @@ function renderConfigValidation() {
   }
 
   const status = validation.status || "unknown";
-  const items = validation.items || [];
+  const items = validation.issues || [];
   const title = {
     ok: "配置健康",
     warning: "配置需要核查",
@@ -216,8 +216,8 @@ function renderConfigValidation() {
   }[status] || "配置状态未知";
   const summary = [
     `检查项 ${validation.total ?? items.length}`,
-    `错误 ${validation.error ?? 0}`,
-    `警告 ${validation.warning ?? 0}`,
+    `错误 ${validation.errorCount ?? 0}`,
+    `警告 ${validation.warningCount ?? 0}`,
   ];
 
   panel.className = `config-validation-panel ${escapeHtml(status)}`;
@@ -231,8 +231,8 @@ function renderConfigValidation() {
     </div>
     ${items.length ? `<div class="config-validation-list">
       ${items.map((item) => `
-        <div class="config-validation-item ${escapeHtml(item.level || "unknown")}">
-          <span>${escapeHtml(item.level || "unknown")}</span>
+        <div class="config-validation-item ${escapeHtml(item.severity || "unknown")}">
+          <span>${escapeHtml(item.severity || "unknown")}</span>
           <p>${escapeHtml(item.message || "")}</p>
         </div>
       `).join("")}
