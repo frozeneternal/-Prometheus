@@ -22,13 +22,14 @@ class FrontendModuleTests(unittest.TestCase):
             PUBLIC / "js" / "api.js",
             PUBLIC / "js" / "dom.js",
             PUBLIC / "js" / "format.js",
+            PUBLIC / "js" / "prometheus.js",
             PUBLIC / "js" / "state.js",
         ]
         for module_path in expected_modules:
             self.assertTrue(module_path.exists(), f"missing {module_path.relative_to(ROOT)}")
 
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        for import_path in ("./api.js", "./dom.js", "./format.js", "./state.js"):
+        for import_path in ("./api.js", "./dom.js", "./format.js", "./prometheus.js", "./state.js"):
             self.assertIn(import_path, app_js)
 
     def test_legacy_root_app_script_removed(self) -> None:
@@ -48,6 +49,16 @@ class FrontendModuleTests(unittest.TestCase):
         for module_text in (app_js, format_js, state_js):
             for bad_marker in ("\u93c8", "\u934f", "\u95b0", "\ufffd"):
                 self.assertNotIn(bad_marker, module_text)
+
+    def test_charts_skip_series_requests_when_prometheus_is_unavailable(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        prometheus_js = (PUBLIC / "js" / "prometheus.js").read_text(encoding="utf-8")
+
+        self.assertIn("canFetchSeries", prometheus_js)
+        self.assertIn('dashboard?.prometheus?.available === true', prometheus_js)
+        self.assertIn("canFetchSeries(state.dashboard)", app_js)
+        self.assertIn("Prometheus 采集层不可用，暂无趋势数据", app_js)
+        self.assertLess(app_js.index("canFetchSeries(state.dashboard)"), app_js.index("/api/series"))
 
 
 if __name__ == "__main__":

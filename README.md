@@ -226,6 +226,8 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - 异常：服务器 exporter 离线；网站探测失败或返回不符合规则。
 - 未知：Prometheus 还没有采到数据，通常是 Prometheus 没启动、配置没 reload、IP/URL 写错、网络不通。
 
+如果 Prometheus 本身不可用，页面顶部会显示采集层故障说明，趋势图只显示“暂无趋势数据”，不会继续对每台服务器刷新 `/api/series` 并制造 502 噪声。此时不要把“未知”直接当成服务器全部掉线。
+
 ## 加操作按钮
 
 在某台服务器的 `actions` 里写白名单命令：

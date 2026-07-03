@@ -2367,7 +2367,18 @@ def series_payload(config: dict, query_params: dict[str, list[str]]) -> tuple[in
     try:
         payload = prom_query_range(config, queries[metric], str(start), str(end), str(step))
     except Exception as exc:  # noqa: BLE001
-        return 502, {"ok": False, "message": str(exc)}
+        message = f"Prometheus 采集层不可用，暂无趋势数据：{exc}"
+        return 200, {
+            "ok": True,
+            "metric": metric,
+            "values": [],
+            "dataQuality": data_quality(
+                "collector_down",
+                message,
+                False,
+                {"error": str(exc)},
+            ),
+        }
 
     result = payload.get("data", {}).get("result", [])
     values = []

@@ -88,6 +88,31 @@ class DataQualityTests(unittest.TestCase):
         self.assertFalse(result["dataQuality"]["trusted"])
         upsert_incident_log.assert_not_called()
 
+    def test_series_payload_returns_empty_values_when_collector_is_unavailable(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "labels": {"job": "node", "instance": "srv1:9100"},
+                }
+            ]
+        }
+
+        with patch.object(app, "prom_query_range", side_effect=TimeoutError("timed out")):
+            status, payload = app.series_payload(
+                config,
+                {"serverId": ["srv1"], "metric": ["cpu"], "minutes": ["60"]},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["metric"], "cpu")
+        self.assertEqual(payload["values"], [])
+        self.assertEqual(payload["dataQuality"]["level"], "collector_down")
+        self.assertFalse(payload["dataQuality"]["trusted"])
+        self.assertIn("timed out", payload["dataQuality"]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

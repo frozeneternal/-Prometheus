@@ -18,6 +18,7 @@ import {
   serverTypeLabels,
   statusText,
 } from "./format.js";
+import { canFetchSeries } from "./prometheus.js";
 import { state } from "./state.js";
 function serverAddress(server) {
   const instance = server.labels?.instance || "";
@@ -630,6 +631,11 @@ function actionButton(server, action) {
 
 async function loadCharts() {
   const canvases = Array.from(document.querySelectorAll("canvas[data-chart-server]"));
+  if (!canFetchSeries(state.dashboard)) {
+    canvases.forEach((canvas) => drawChart(canvas, [], state.chartMetric, "Prometheus 采集层不可用，暂无趋势数据"));
+    return;
+  }
+
   await Promise.all(canvases.map(async (canvas) => {
     try {
       const payload = await getJson(`/api/series?serverId=${encodeURIComponent(canvas.dataset.chartServer)}&metric=${encodeURIComponent(state.chartMetric)}&minutes=60`);
