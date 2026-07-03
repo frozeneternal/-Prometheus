@@ -744,6 +744,36 @@ def authorize_operation(config: dict, body: dict, required_role: str = "operator
     return False, 403, {"ok": False, "message": "操作口令不正确。"}
 
 
+from backend.auth import (  # noqa: E402 - transitional re-export while app.py is split.
+    ROLE_RANK,
+    authenticate_user,
+    authorize_operation,
+    b64url_decode,
+    b64url_encode,
+    configured_users,
+    create_session_token,
+    find_user,
+    hash_password,
+    normalize_role,
+    public_user,
+    role_allows,
+    session_signing_key,
+    users_enabled,
+    verify_action_token,
+    verify_password,
+    verify_session_token,
+)
+from backend.expiry import (  # noqa: E402 - transitional re-export while app.py is split.
+    classify_resource_expiry,
+    parse_expiry_datetime,
+    parse_expiry_timestamp,
+    resource_expiry_items,
+    resource_expiry_message,
+    resource_expiry_summary,
+    resource_expiry_thresholds,
+)
+
+
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
     key = "servers" if target_type == "server" else "websites"
     for entity in raw_config.get(key, []):

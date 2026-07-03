@@ -194,6 +194,16 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 
 一旦 `users` 中存在启用的账号，面板会切换到登录模式，手动动作和设置接口必须带有效会话；旧 `actionToken` 不再作为绕过入口。
 
+## 代码分层
+
+后端正在从单体 `app.py` 逐步拆到 `backend/` 包：
+
+- `backend/auth.py`：账号、角色、密码哈希、会话签名、操作鉴权。
+- `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
+- `app.py`：暂时保留 HTTP 路由、Prometheus 查询、动作执行和运行时状态。
+
+迁移规则：纯业务逻辑优先放到 `backend/`，`app.py` 只做编排和兼容入口。后续前端也会按同样原则从单个 `public/app.js` 拆成模块化目录。
+
 ## 怎么看是否正常
 
 网页打开后看两块：
