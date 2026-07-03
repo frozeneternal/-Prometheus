@@ -165,6 +165,33 @@ class BackendModuleTests(unittest.TestCase):
         self.assertNotIn("backup-secret", serialized)
         self.assertNotIn("private", serialized)
 
+    def test_public_view_tolerates_invalid_auto_recovery_policy_values(self) -> None:
+        from backend import public_view
+
+        view = public_view.public_config(
+            {
+                "monitoring": {},
+                "servers": [
+                    {
+                        "id": "srv1",
+                        "autoRecovery": {
+                            "enabled": True,
+                            "minimumConsecutiveFailures": "twice",
+                            "cooldownSeconds": "soon",
+                            "triggerHealth": "down",
+                        },
+                    }
+                ],
+                "websites": [],
+                "resources": [],
+            }
+        )
+
+        recovery = view["servers"][0]["autoRecovery"]
+        self.assertEqual(recovery["minimumConsecutiveFailures"], 2)
+        self.assertEqual(recovery["cooldownSeconds"], 300)
+        self.assertEqual(recovery["triggerHealth"], ["down"])
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 

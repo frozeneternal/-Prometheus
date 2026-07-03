@@ -4,6 +4,10 @@ from .auth import ROLE_RANK
 from .expiry import parse_expiry_datetime
 
 
+AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
+AUTO_RECOVERY_MIN_COOLDOWN_SECONDS = 30
+
+
 def make_issue(
     issue_id: str,
     severity: str,
@@ -253,6 +257,76 @@ def action_definition_issues(server: dict) -> list[dict]:
     return issues
 
 
+def positive_int_value(value: object) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def auto_recovery_policy_issues(owner: dict, owner_type: str) -> list[dict]:
+    owner_id = str(owner.get("id") or "")
+    recovery = owner.get("autoRecovery") or {}
+    issues = []
+
+    trigger_health = recovery.get("triggerHealth", ["down"])
+    invalid_trigger_health = (
+        not isinstance(trigger_health, list)
+        or not trigger_health
+        or any(
+            not isinstance(item, str)
+            or item not in AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH
+            for item in trigger_health
+        )
+    )
+    if invalid_trigger_health:
+        issues.append(
+            make_issue(
+                f"auto-recovery-trigger-health-invalid:{owner_id}",
+                "error",
+                "自动恢复 triggerHealth 必须是 down/warning/unknown 组成的非空数组，不能包含 healthy 或未知状态。",
+                owner_type,
+                owner_id,
+            )
+        )
+
+    if positive_int_value(recovery.get("minimumConsecutiveFailures", 2)) is None:
+        issues.append(
+            make_issue(
+                f"auto-recovery-minimum-failures-invalid:{owner_id}",
+                "error",
+                "自动恢复 minimumConsecutiveFailures 必须是大于 0 的整数，避免误触发或运行时崩溃。",
+                owner_type,
+                owner_id,
+            )
+        )
+
+    cooldown = positive_int_value(recovery.get("cooldownSeconds", 300))
+    if cooldown is None:
+        issues.append(
+            make_issue(
+                f"auto-recovery-cooldown-invalid:{owner_id}",
+                "error",
+                "自动恢复 cooldownSeconds 必须是大于 0 的整数。",
+                owner_type,
+                owner_id,
+            )
+        )
+    elif cooldown < AUTO_RECOVERY_MIN_COOLDOWN_SECONDS:
+        issues.append(
+            make_issue(
+                f"auto-recovery-cooldown-too-low:{owner_id}",
+                "error",
+                f"自动恢复 cooldownSeconds 不能低于 {AUTO_RECOVERY_MIN_COOLDOWN_SECONDS} 秒，避免连续重复执行恢复动作。",
+                owner_type,
+                owner_id,
+            )
+        )
+
+    return issues
+
+
 def validate_action_reference(
     config: dict,
     actions: dict[tuple[str, str], dict],
@@ -369,6 +443,7 @@ def config_validation_summary(config: dict) -> dict:
 
         recovery = server.get("autoRecovery") or {}
         if recovery.get("enabled"):
+            issues.extend(auto_recovery_policy_issues(server, "server"))
             issues.extend(
                 validate_action_reference(
                     config,
@@ -428,6 +503,7 @@ def config_validation_summary(config: dict) -> dict:
 
         recovery = website.get("autoRecovery") or {}
         if recovery.get("enabled"):
+            issues.extend(auto_recovery_policy_issues(website, "website"))
             issues.extend(
                 validate_action_reference(
                     config,

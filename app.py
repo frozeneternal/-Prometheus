@@ -1654,21 +1654,54 @@ def can_trigger_recovery(entity: dict, health: str, state: dict) -> tuple[bool, 
     if not recovery.get("enabled"):
         return False, "自动恢复未启用。"
 
+    policy_message = recovery_policy_error(recovery)
+    if policy_message:
+        return False, policy_message
+
     trigger_health = recovery.get("triggerHealth") or ["down"]
     if health not in trigger_health:
         return False, f"当前状态 {health} 不在自动恢复触发条件内。"
 
-    min_failures = max(1, int(recovery.get("minimumConsecutiveFailures", 2)))
+    min_failures = int(recovery.get("minimumConsecutiveFailures", 2))
+    min_failures = max(1, min_failures)
     if state.get("consecutiveFailures", 0) < min_failures:
         return False, f"连续失败次数不足 {min_failures} 次。"
 
-    cooldown = max(30, int(recovery.get("cooldownSeconds", 300)))
+    cooldown = int(recovery.get("cooldownSeconds", 300))
+    cooldown = max(30, cooldown)
     last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
     if last_completed and time.time() - last_completed < cooldown:
         remain = int(cooldown - (time.time() - last_completed))
         return False, f"仍在冷却中，剩余约 {max(0, remain)} 秒。"
 
     return True, ""
+
+
+def recovery_policy_error(recovery: dict) -> str:
+    trigger_health = recovery.get("triggerHealth") or ["down"]
+    allowed_trigger_health = {"down", "warning", "unknown"}
+    if (
+        not isinstance(trigger_health, list)
+        or not trigger_health
+        or any(not isinstance(item, str) or item not in allowed_trigger_health for item in trigger_health)
+    ):
+        return "自动恢复 triggerHealth 必须是 down/warning/unknown 组成的非空数组。"
+
+    try:
+        min_failures = int(recovery.get("minimumConsecutiveFailures", 2))
+    except (TypeError, ValueError):
+        return "自动恢复 minimumConsecutiveFailures 必须是整数。"
+    if min_failures <= 0:
+        return "自动恢复 minimumConsecutiveFailures 必须大于 0。"
+
+    try:
+        cooldown = int(recovery.get("cooldownSeconds", 300))
+    except (TypeError, ValueError):
+        return "自动恢复 cooldownSeconds 必须是整数。"
+    if cooldown < 30:
+        return "自动恢复 cooldownSeconds 不能低于 30 秒。"
+
+    return ""
 
 
 def resolve_recovery_action(config: dict, entity: dict) -> tuple[dict | None, dict | None, str]:
@@ -1744,6 +1777,13 @@ def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapsho
     if resolve_message:
         recovery_view["status"] = "blocked"
         recovery_view["message"] = resolve_message
+        set_runtime_entity_state(target_type, target_id, state)
+        return recovery_view
+
+    policy_message = recovery_policy_error(recovery_config)
+    if policy_message:
+        recovery_view["status"] = "blocked"
+        recovery_view["message"] = policy_message
         set_runtime_entity_state(target_type, target_id, state)
         return recovery_view
 

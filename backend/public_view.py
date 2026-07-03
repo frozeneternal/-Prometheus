@@ -4,15 +4,37 @@ from backend.auth import configured_users, public_user, users_enabled
 from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
 
 
+AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
+
+
+def safe_positive_int(value: object, default: int, minimum: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= minimum else default
+
+
+def safe_trigger_health(value: object) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return ["down"]
+    normalized = [
+        item
+        for item in value
+        if isinstance(item, str) and item in AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH
+    ]
+    return normalized or ["down"]
+
+
 def public_auto_recovery(entity: dict, default_action_server_id: str = "") -> dict:
     raw = entity.get("autoRecovery") or {}
     return {
         "enabled": bool(raw.get("enabled")),
         "actionId": raw.get("actionId", ""),
         "actionServerId": raw.get("actionServerId", default_action_server_id),
-        "minimumConsecutiveFailures": int(raw.get("minimumConsecutiveFailures", 2)),
-        "cooldownSeconds": int(raw.get("cooldownSeconds", 300)),
-        "triggerHealth": raw.get("triggerHealth", ["down"]),
+        "minimumConsecutiveFailures": safe_positive_int(raw.get("minimumConsecutiveFailures", 2), 2),
+        "cooldownSeconds": safe_positive_int(raw.get("cooldownSeconds", 300), 300, 30),
+        "triggerHealth": safe_trigger_health(raw.get("triggerHealth", ["down"])),
     }
 
 

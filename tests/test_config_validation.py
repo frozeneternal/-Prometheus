@@ -286,6 +286,60 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertNotIn("auth-session-secret-weak", strong_ids)
         self.assertNotIn("auth-session-secret-placeholder", strong_ids)
 
+    def test_config_validation_reports_auto_recovery_policy_risks(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "restart",
+                            "command": ["echo", "restart"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        },
+                    ],
+                },
+                {
+                    "id": "bad-server",
+                    "autoRecovery": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "restart",
+                        "triggerHealth": ["healthy", "broken"],
+                        "minimumConsecutiveFailures": 0,
+                        "cooldownSeconds": "soon",
+                    },
+                },
+            ],
+            "websites": [
+                {
+                    "id": "bad-site",
+                    "serverId": "ops-host",
+                    "autoRecovery": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "restart",
+                        "triggerHealth": "down",
+                        "minimumConsecutiveFailures": "twice",
+                        "cooldownSeconds": 10,
+                    },
+                },
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("auto-recovery-trigger-health-invalid:bad-server", issue_ids)
+        self.assertIn("auto-recovery-minimum-failures-invalid:bad-server", issue_ids)
+        self.assertIn("auto-recovery-cooldown-invalid:bad-server", issue_ids)
+        self.assertIn("auto-recovery-trigger-health-invalid:bad-site", issue_ids)
+        self.assertIn("auto-recovery-minimum-failures-invalid:bad-site", issue_ids)
+        self.assertIn("auto-recovery-cooldown-too-low:bad-site", issue_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
