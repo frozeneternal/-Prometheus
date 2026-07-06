@@ -353,6 +353,16 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('parsed.path == "/api/auth/users/delete"', backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', account_admin_py)
 
+    def test_admin_account_form_surfaces_password_policy(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountPasswordPolicy"', index_html)
+        self.assertIn("renderAccountPasswordPolicy", accounts_js)
+        self.assertIn("state.config?.auth?.policy?.passwordMinLength", accounts_js)
+        self.assertIn("#accountPasswordPolicy", accounts_js)
+        self.assertIn("renderAccountPasswordPolicy();", accounts_js)
+
 
 if __name__ == "__main__":
     unittest.main()

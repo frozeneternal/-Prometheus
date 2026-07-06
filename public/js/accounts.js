@@ -113,11 +113,13 @@ export function renderAccountManagement() {
     panel.classList.add("hidden");
     $("#accountUserList").innerHTML = "";
     $("#accountUserSummary").textContent = "";
+    $("#accountPasswordPolicy").textContent = "";
     return;
   }
 
   const users = state.accountUsers || [];
   panel.classList.remove("hidden");
+  renderAccountPasswordPolicy();
   $("#accountUserSummary").textContent = users.length ? `${users.length} 个账号` : "当前没有账号";
   $("#accountUserList").innerHTML = users.length
     ? users.map((user) => `
@@ -147,6 +149,11 @@ export function renderAccountManagement() {
     $("#accountUserResetButton").addEventListener("click", resetAccountUserForm);
     form.dataset.bound = "true";
   }
+}
+
+function renderAccountPasswordPolicy() {
+  const minLength = state.config?.auth?.policy?.passwordMinLength || 8;
+  $("#accountPasswordPolicy").textContent = `新密码至少 ${minLength} 位`;
 }
 
 export function renderAccountLockouts() {
@@ -216,6 +223,7 @@ function resetAccountUserForm() {
   $("#accountPassword").value = "";
   $("#accountEnabled").checked = true;
   $("#accountUserError").textContent = "";
+  renderAccountPasswordPolicy();
 }
 
 function editManagedAccount(username) {
@@ -228,6 +236,7 @@ function editManagedAccount(username) {
   $("#accountPassword").value = "";
   $("#accountEnabled").checked = user.enabled !== false;
   $("#accountUserError").textContent = "";
+  renderAccountPasswordPolicy();
 }
 
 export async function saveAccountUser(event) {
