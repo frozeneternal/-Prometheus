@@ -282,6 +282,17 @@ from backend.config import (  # noqa: E402 - transitional re-export while app.py
     monitoring_options,
     save_config_raw,
 )
+from backend.certificates import (  # noqa: E402 - transitional re-export while app.py is split.
+    CertRenewalRuntime,
+    can_trigger_cert_renewal,
+    certificate_reason,
+    cert_renewal_policy_error,
+    cert_renewal_verification_timeout,
+    configure_cert_renewal_runtime,
+    maybe_finish_pending_cert_renewal,
+    maybe_trigger_cert_renewal,
+    resolve_cert_renewal_action,
+)
 from backend.dashboard import (  # noqa: E402 - transitional re-export while app.py is split.
     DashboardRuntime,
     configure_dashboard_runtime,
@@ -383,6 +394,14 @@ configure_recovery_runtime(
         ),
         execute_server_action=lambda *args, **kwargs: execute_server_action(*args, **kwargs),
         upsert_incident_log=lambda config, event: upsert_incident_log(config, event),
+    )
+)
+configure_cert_renewal_runtime(
+    CertRenewalRuntime(
+        now=lambda: time.time(),
+        get_state=get_runtime_entity_state,
+        set_state=set_runtime_entity_state,
+        execute_server_action=lambda *args, **kwargs: execute_server_action(*args, **kwargs),
     )
 )
 
@@ -574,115 +593,6 @@ def strict_positive_int_value(value: object) -> int | None:
     return parsed
 
 
-def certificate_reason(snapshot: dict) -> str:
-    cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
-    if cert_expires_in is None:
-        return "当前没有可用的证书到期数据。"
-    if cert_expires_in <= 0:
-        return "HTTPS 证书已过期。"
-    return f"HTTPS 证书将在 {max(0, int(cert_expires_in / 86400))} 天后过期。"
-
-
-def can_trigger_cert_renewal(website: dict, snapshot: dict, state: dict) -> tuple[bool, str]:
-    renewal = website.get("certRenewal") or {}
-    if not renewal.get("enabled"):
-        return False, "证书自动续期未启用。"
-
-    policy_message = cert_renewal_policy_error(renewal)
-    if policy_message:
-        return False, policy_message
-
-    cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
-    if cert_expires_in is None:
-        return False, "当前没有可用的证书到期数据。"
-
-    renew_before_days = strict_positive_int_value(renewal.get("renewBeforeDays", 14)) or 14
-    if cert_expires_in > renew_before_days * 86400:
-        return False, f"证书距到期还有 {int(cert_expires_in / 86400)} 天。"
-
-    cooldown = strict_positive_int_value(renewal.get("cooldownSeconds", 86400)) or 86400
-    last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
-    if last_completed and time.time() - last_completed < cooldown:
-        remain = int(cooldown - (time.time() - last_completed))
-        return False, f"证书续期仍在冷却中，剩余约 {max(0, remain)} 秒。"
-
-    return True, ""
-
-
-def cert_renewal_policy_error(renewal: dict) -> str:
-    renew_before_days = strict_int_value(renewal.get("renewBeforeDays", 14))
-    if renew_before_days is None:
-        return "证书自动续期 renewBeforeDays 必须是整数。"
-    if renew_before_days <= 0:
-        return "证书自动续期 renewBeforeDays 必须大于 0。"
-
-    cooldown = strict_int_value(renewal.get("cooldownSeconds", 86400))
-    if cooldown is None:
-        return "证书自动续期 cooldownSeconds 必须是整数。"
-    if cooldown < 300:
-        return "证书自动续期 cooldownSeconds 不能低于 300 秒。"
-
-    return ""
-
-
-def cert_renewal_verification_timeout(renewal: dict) -> int:
-    return safe_positive_int(renewal.get("verificationTimeoutSeconds", 1800), 1800, 300)
-
-
-def maybe_finish_pending_cert_renewal(
-    state: dict,
-    renewal: dict,
-    cert_expires_in: float | None,
-    now: float,
-) -> tuple[bool, str, str]:
-    if state.get("lastResult") != "verifying":
-        return False, "", ""
-    if cert_expires_in is None:
-        return True, "verifying", "等待证书监控返回新的到期时间。"
-
-    previous = state.get("pendingExpiresIn")
-    if isinstance(previous, (int, float)) and not isinstance(previous, bool) and cert_expires_in > previous:
-        state["lastResult"] = "success"
-        state["lastCompletedAt"] = now
-        state["verifiedExpiresIn"] = cert_expires_in
-        state.pop("pendingExpiresIn", None)
-        return True, "triggered", "证书续期已确认，监控到新的证书到期时间。"
-
-    timeout = cert_renewal_verification_timeout(renewal)
-    last_attempt = float(state.get("lastAttemptAt", 0.0) or 0.0)
-    if last_attempt and now - last_attempt >= timeout:
-        state["lastResult"] = "failed"
-        state["lastCompletedAt"] = now
-        state["verifiedExpiresIn"] = cert_expires_in
-        state.pop("pendingExpiresIn", None)
-        return True, "failed", "证书续期命令已执行，但超时后证书到期时间仍未延长。"
-
-    return True, "verifying", "续期命令已执行，等待证书监控确认新的到期时间。"
-
-
-def resolve_cert_renewal_action(config: dict, website: dict) -> tuple[dict | None, dict | None, str]:
-    renewal = website.get("certRenewal") or {}
-    action_server_id = renewal.get("actionServerId") or website.get("serverId") or ""
-    action_id = renewal.get("actionId") or ""
-    if not action_server_id or not action_id:
-        return None, None, "未配置证书续期动作。"
-
-    action_server = find_server(config, str(action_server_id))
-    if not action_server:
-        return None, None, f"找不到证书续期服务器：{action_server_id}"
-
-    action = find_action(action_server, str(action_id))
-    if not action:
-        return action_server, None, f"找不到证书续期动作：{action_id}"
-
-    if action.get("enabled", True) is False:
-        return action_server, action, "证书续期动作已禁用。"
-    if not action.get("allowAuto", False):
-        return action_server, action, "证书续期动作未允许后台自动执行。"
-
-    return action_server, action, ""
-
-
 def can_trigger_backup(server: dict, snapshot: dict, state: dict) -> tuple[bool, str]:
     backup = server.get("autoBackup") or {}
     if not backup.get("enabled"):
@@ -818,132 +728,6 @@ def settings_response(message: str) -> tuple[int, dict]:
     config = load_config()
     dashboard = dashboard_payload(config)
     return 200, {"ok": True, "message": message, **dashboard}
-
-
-def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> dict:
-    target_id = str(website.get("id") or "")
-    state = get_runtime_entity_state("website-cert", target_id)
-    reason = certificate_reason(snapshot)
-    renewal_config = website.get("certRenewal") or {}
-    enabled = bool(renewal_config.get("enabled"))
-    cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
-    quality = snapshot.get("dataQuality") or {}
-    data_trusted = quality.get("trusted") is not False
-    now = time.time()
-
-    state["lastReason"] = reason
-
-    renewal_view = {
-        "enabled": enabled,
-        "status": "idle",
-        "message": "",
-        "expiresInDays": None if cert_expires_in is None else max(0, int(cert_expires_in / 86400)),
-        "renewBeforeDays": safe_positive_int(renewal_config.get("renewBeforeDays", 14), 14),
-        "lastAttemptAt": state.get("lastAttemptAt", 0.0),
-        "lastCompletedAt": state.get("lastCompletedAt", 0.0),
-        "lastResult": state.get("lastResult", ""),
-        "lastReason": state.get("lastReason", ""),
-        "lastLogId": state.get("lastLogId", ""),
-        "dataQuality": quality,
-    }
-    if "pendingExpiresIn" in state:
-        renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
-    if "verifiedExpiresIn" in state:
-        renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
-
-    if not renewal_view["enabled"]:
-        renewal_view["message"] = "证书自动续期未启用。"
-        set_runtime_entity_state("website-cert", target_id, state)
-        return renewal_view
-
-    if not data_trusted:
-        renewal_view["status"] = "blocked"
-        renewal_view["message"] = quality.get("message") or "证书监控数据不可信，禁止执行自动续期。"
-        set_runtime_entity_state("website-cert", target_id, state)
-        return renewal_view
-
-    pending_handled, pending_status, pending_message = maybe_finish_pending_cert_renewal(
-        state,
-        renewal_config,
-        cert_expires_in,
-        now,
-    )
-    if pending_handled:
-        renewal_view.update(
-            {
-                "status": pending_status,
-                "message": pending_message,
-                "lastCompletedAt": state.get("lastCompletedAt", 0.0),
-                "lastResult": state.get("lastResult", ""),
-                "lastReason": state.get("lastReason", ""),
-                "lastLogId": state.get("lastLogId", ""),
-            }
-        )
-        if "pendingExpiresIn" in state:
-            renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
-        if "verifiedExpiresIn" in state:
-            renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
-        set_runtime_entity_state("website-cert", target_id, state)
-        return renewal_view
-
-    action_server, action, resolve_message = resolve_cert_renewal_action(config, website)
-    allowed, block_message = can_trigger_cert_renewal(website, snapshot, state)
-
-    if resolve_message:
-        renewal_view["status"] = "blocked"
-        renewal_view["message"] = resolve_message
-        set_runtime_entity_state("website-cert", target_id, state)
-        return renewal_view
-
-    policy_message = cert_renewal_policy_error(renewal_config)
-    if policy_message:
-        renewal_view["status"] = "blocked"
-        renewal_view["message"] = policy_message
-        set_runtime_entity_state("website-cert", target_id, state)
-        return renewal_view
-
-    if not allowed:
-        renewal_view["status"] = "waiting" if cert_expires_in is not None and cert_expires_in <= renewal_view["renewBeforeDays"] * 86400 else "idle"
-        renewal_view["message"] = block_message
-        set_runtime_entity_state("website-cert", target_id, state)
-        return renewal_view
-
-    state["lastAttemptAt"] = now
-    http_status, payload = execute_server_action(
-        config,
-        action_server,
-        action,
-        invocation="auto-cert",
-        target_type="website-cert",
-        target_id=target_id,
-        target_name=f"{website.get('name', target_id)} 证书",
-        reason=reason,
-    )
-    if payload.get("ok"):
-        state["lastResult"] = "verifying"
-        state["pendingExpiresIn"] = cert_expires_in
-        state.pop("verifiedExpiresIn", None)
-    else:
-        state["lastResult"] = "failed"
-        state["lastCompletedAt"] = time.time()
-    state["lastLogId"] = payload.get("logId", "")
-
-    renewal_view.update(
-        {
-            "status": "verifying" if payload.get("ok") else "failed",
-            "message": "续期命令已执行，等待证书监控确认新的到期时间。" if payload.get("ok") else payload.get("message", ""),
-            "lastAttemptAt": state["lastAttemptAt"],
-            "lastCompletedAt": state.get("lastCompletedAt", 0.0),
-            "lastResult": state["lastResult"],
-            "lastReason": reason,
-            "lastLogId": state["lastLogId"],
-            "lastHttpStatus": http_status,
-        }
-    )
-    if "pendingExpiresIn" in state:
-        renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
-    set_runtime_entity_state("website-cert", target_id, state)
-    return renewal_view
 
 
 def monitor_loop() -> None:
