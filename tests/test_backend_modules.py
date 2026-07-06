@@ -670,6 +670,7 @@ class BackendModuleTests(unittest.TestCase):
             "srv1",
             True,
             actor={"username": "ops", "role": "operator"},
+            source_ip="10.0.0.8",
             runtime=runtime,
         )
 
@@ -689,6 +690,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(logs[0]["targetType"], "server")
         self.assertEqual(logs[0]["targetId"], "srv1")
         self.assertEqual(logs[0]["actor"]["username"], "ops")
+        self.assertEqual(logs[0]["sourceIp"], "10.0.0.8")
         self.assertIn("启用", logs[0]["message"])
 
     def test_settings_module_parses_enabled_flags_strictly(self) -> None:
@@ -732,6 +734,7 @@ class BackendModuleTests(unittest.TestCase):
             "srv1",
             True,
             actor={"username": "ops", "role": "operator"},
+            source_ip="10.0.0.9",
             runtime=runtime,
         )
 
@@ -745,6 +748,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(logs[0]["targetType"], "server-backup")
         self.assertEqual(logs[0]["targetId"], "srv1")
         self.assertEqual(logs[0]["actor"]["username"], "ops")
+        self.assertEqual(logs[0]["sourceIp"], "10.0.0.9")
         self.assertIn("启用", logs[0]["message"])
 
     def test_settings_module_enables_cert_renewal_without_app_import(self) -> None:
@@ -781,6 +785,7 @@ class BackendModuleTests(unittest.TestCase):
             "site1",
             True,
             actor={"username": "ops", "role": "operator"},
+            source_ip="10.0.0.10",
             runtime=runtime,
         )
 
@@ -801,6 +806,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(logs[0]["targetType"], "website-cert")
         self.assertEqual(logs[0]["targetId"], "site1")
         self.assertEqual(logs[0]["actor"]["username"], "ops")
+        self.assertEqual(logs[0]["sourceIp"], "10.0.0.10")
         self.assertIn("启用", logs[0]["message"])
 
     def test_emergency_module_builds_runbook_items_without_app_import(self) -> None:
@@ -1416,6 +1422,43 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(appended[0]["id"], "log-fixed")
         self.assertEqual(appended[0]["actor"], {"username": "ops"})
         self.assertEqual(normalize_success_codes({"successReturnCodes": [0, 2]}), {0, 2})
+
+    def test_actions_module_records_source_ip_in_recovery_log(self) -> None:
+        from backend.actions import ActionRuntime, execute_server_action
+
+        appended: list[dict] = []
+
+        class Completed:
+            returncode = 0
+            stdout = "restarted"
+            stderr = ""
+
+        runtime = ActionRuntime(
+            now=lambda: 100.0,
+            runner=lambda _command, **_kwargs: Completed(),
+            append_recovery_log=lambda _config, event: appended.append(event),
+            public_user=lambda user: {"username": user.get("username")},
+            id_factory=lambda: "source-ip-log",
+            cwd="C:\\ops-console",
+        )
+
+        status, payload = execute_server_action(
+            {},
+            {"id": "srv1", "name": "Server 1"},
+            {"id": "restart", "name": "Restart", "command": ["restart"]},
+            invocation="manual-recovery",
+            target_type="server",
+            target_id="srv1",
+            target_name="Server 1",
+            reason="manual",
+            actor={"username": "ops"},
+            source_ip="10.0.0.8",
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(appended[0]["sourceIp"], "10.0.0.8")
 
     def test_actions_module_rejects_invalid_success_codes_before_runner(self) -> None:
         from backend.actions import ActionRuntime, execute_server_action

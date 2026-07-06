@@ -44,6 +44,7 @@ def resource_ack_log_event(
     *,
     acknowledged_until: str,
     actor: dict | None,
+    source_ip: str = "",
     now: float,
 ) -> dict:
     resource_id = str(resource.get("id") or item.get("id") or "")
@@ -68,6 +69,7 @@ def resource_ack_log_event(
         "stdout": "",
         "stderr": "",
         "actor": public_user(actor or {}) if actor else {},
+        "sourceIp": str(source_ip or ""),
         "acknowledgedUntil": acknowledged_until,
         "resourceStatus": item.get("status", ""),
     }
@@ -78,6 +80,7 @@ def persist_resource_acknowledgement(
     *,
     acknowledged_until: str,
     actor: dict | None = None,
+    source_ip: str = "",
     runtime: ResourceRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -126,6 +129,7 @@ def persist_resource_acknowledgement(
         item,
         acknowledged_until=acknowledged_until,
         actor=actor,
+        source_ip=source_ip,
         now=current,
     )
     try:

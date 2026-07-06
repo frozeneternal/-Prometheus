@@ -250,6 +250,7 @@ class ResourceExpiryTests(unittest.TestCase):
                 "license-warning",
                 acknowledged_until="2026-07-10T00:00:00Z",
                 actor={"username": "ops"},
+                source_ip="10.0.0.11",
             )
             saved = save_config_raw.call_args.args[0]
             append_recovery_log.assert_called_once()
@@ -264,6 +265,7 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(log_event["targetType"], "resource")
         self.assertEqual(log_event["targetId"], "license-warning")
         self.assertEqual(log_event["actor"]["username"], "ops")
+        self.assertEqual(log_event["sourceIp"], "10.0.0.11")
         self.assertIn("2026-07-10T00:00:00Z", log_event["message"])
 
     def test_settings_response_preserves_resource_ack_log_id(self) -> None:

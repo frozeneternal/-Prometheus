@@ -94,6 +94,7 @@ def build_log_event(
     consecutive_failures: int,
     payload: dict,
     actor: dict | None = None,
+    source_ip: str = "",
     runtime: ActionRuntime | None = None,
 ) -> dict:
     active_runtime = runtime or _runtime
@@ -119,6 +120,7 @@ def build_log_event(
         "stdout": payload.get("stdout", ""),
         "stderr": payload.get("stderr", ""),
         "actor": active_runtime.public_user(actor or {}) if actor else {},
+        "sourceIp": str(source_ip or ""),
     }
 
 
@@ -136,6 +138,7 @@ def _log_and_return(
     payload: dict,
     http_status: int,
     actor: dict | None,
+    source_ip: str = "",
     runtime: ActionRuntime,
 ) -> tuple[int, dict]:
     log_event = build_log_event(
@@ -149,6 +152,7 @@ def _log_and_return(
         consecutive_failures=consecutive_failures,
         payload=payload,
         actor=actor,
+        source_ip=source_ip,
         runtime=runtime,
     )
     runtime.append_recovery_log(config, log_event)
@@ -168,6 +172,7 @@ def execute_server_action(
     reason: str,
     consecutive_failures: int = 0,
     actor: dict | None = None,
+    source_ip: str = "",
     runtime: ActionRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -186,6 +191,7 @@ def execute_server_action(
             payload={"ok": False, "message": "操作命令必须是字符串数组。", "stdout": "", "stderr": ""},
             http_status=400,
             actor=actor,
+            source_ip=source_ip,
             runtime=active_runtime,
         )
 
@@ -204,6 +210,7 @@ def execute_server_action(
             payload={"ok": False, "message": "动作 timeoutSeconds 必须是大于 0 的整数。", "stdout": "", "stderr": ""},
             http_status=400,
             actor=actor,
+            source_ip=source_ip,
             runtime=active_runtime,
         )
 
@@ -223,6 +230,7 @@ def execute_server_action(
             payload={"ok": False, "message": "动作 timeoutSeconds 必须是大于 0 的整数。", "stdout": "", "stderr": ""},
             http_status=400,
             actor=actor,
+            source_ip=source_ip,
             runtime=active_runtime,
         )
 
@@ -240,6 +248,7 @@ def execute_server_action(
             payload={"ok": False, "message": "动作 timeoutSeconds 必须是大于 0 的整数。", "stdout": "", "stderr": ""},
             http_status=400,
             actor=actor,
+            source_ip=source_ip,
             runtime=active_runtime,
         )
 
@@ -258,6 +267,7 @@ def execute_server_action(
             payload={"ok": False, "message": success_codes_error, "stdout": "", "stderr": ""},
             http_status=400,
             actor=actor,
+            source_ip=source_ip,
             runtime=active_runtime,
         )
 
@@ -328,5 +338,6 @@ def execute_server_action(
         payload=payload,
         http_status=http_status,
         actor=actor,
+        source_ip=source_ip,
         runtime=active_runtime,
     )

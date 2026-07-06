@@ -407,11 +407,16 @@ class AccountAuthTests(unittest.TestCase):
         token = app.create_session_token(config, operator)
 
         with patch.object(app, "execute_server_action", return_value=(200, {"ok": True, "message": "done"})) as execute:
-            status, payload = app.run_action(config, {"serverId": "srv1", "actionId": "restart", "sessionToken": token})
+            status, payload = app.run_action(
+                config,
+                {"serverId": "srv1", "actionId": "restart", "sessionToken": token, "sourceIp": "203.0.113.200"},
+                source_ip="10.0.0.12",
+            )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(execute.call_args.kwargs["actor"]["username"], "ops")
+        self.assertEqual(execute.call_args.kwargs["source_ip"], "10.0.0.12")
 
     def test_high_danger_action_without_confirm_is_blocked(self) -> None:
         config = self.config_with_users()

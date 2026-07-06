@@ -744,6 +744,7 @@ function recoveryLogCard(log) {
     `动作: ${log.actionName || log.actionId || "--"}`,
     `方式: ${invocationText}`,
     `操作者: ${actorText}`,
+    `来源 IP: ${log.sourceIp || "--"}`,
     `执行时间: ${formatTime(log.timestamp)}`,
     `退出码: ${log.returnCode ?? "-"}`,
     `耗时: ${log.durationSeconds ?? "-"}s`,

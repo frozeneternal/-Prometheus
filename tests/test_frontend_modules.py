@@ -315,6 +315,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("log.actor?.role", recovery_log_block)
         self.assertIn("操作者", recovery_log_block)
 
+    def test_recovery_log_card_surfaces_source_ip(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function recoveryLogCard(")
+        end = app_js.index("function incidentLogCard(", start)
+        recovery_log_block = app_js[start:end]
+
+        self.assertIn("log.sourceIp", recovery_log_block)
+        self.assertIn("来源 IP", recovery_log_block)
+
     def test_resource_expiry_card_surfaces_missing_handling_path(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function resourceExpiryCard(")

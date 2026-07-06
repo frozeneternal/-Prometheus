@@ -561,7 +561,7 @@ def bootstrap_runtime_state() -> None:
         RUNTIME_STATE["authAuditLogs"] = auth_audit_logs
 
 
-def run_action(config: dict, body: dict) -> tuple[int, dict]:
+def run_action(config: dict, body: dict, *, source_ip: str = "") -> tuple[int, dict]:
     server_id = str(body.get("serverId") or "")
     action_id = str(body.get("actionId") or "")
     confirm = str(body.get("confirm") or "")
@@ -600,6 +600,7 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
         target_name=target_name or server.get("name", server.get("id", "")),
         reason=reason,
         actor=auth_payload.get("user"),
+        source_ip=source_ip,
     )
     if invocation == "manual-cert" and target_type == "website-cert" and target_id:
         record_manual_cert_renewal_result(
@@ -622,6 +623,13 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
             payload=payload,
         )
     return status, payload
+
+
+def request_source_ip(handler: BaseHTTPRequestHandler) -> str:
+    try:
+        return str(handler.client_address[0] or "")
+    except (AttributeError, IndexError, TypeError):
+        return ""
 
 
 def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
@@ -810,7 +818,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
 
-            status, payload = run_action(config, body)
+            status, payload = run_action(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 
@@ -841,6 +849,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 target_id,
                 enabled,
                 actor=auth_payload.get("user"),
+                source_ip=request_source_ip(self),
             )
             if status != 200:
                 json_response(self, status, payload)
@@ -874,6 +883,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 server_id,
                 enabled,
                 actor=auth_payload.get("user"),
+                source_ip=request_source_ip(self),
             )
             if status != 200:
                 json_response(self, status, payload)
@@ -903,7 +913,12 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, auth_status, auth_payload)
                 return
 
-            status, payload = persist_cert_renewal_enabled(website_id, enabled, actor=auth_payload.get("user"))
+            status, payload = persist_cert_renewal_enabled(
+                website_id,
+                enabled,
+                actor=auth_payload.get("user"),
+                source_ip=request_source_ip(self),
+            )
             if status != 200:
                 json_response(self, status, payload)
                 return
@@ -933,6 +948,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 resource_id,
                 acknowledged_until=acknowledged_until,
                 actor=auth_payload.get("user"),
+                source_ip=request_source_ip(self),
             )
             if status != 200:
                 json_response(self, status, payload)

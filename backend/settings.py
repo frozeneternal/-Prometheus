@@ -71,6 +71,7 @@ def cert_renewal_toggle_log_event(
     *,
     enabled: bool,
     actor: dict | None,
+    source_ip: str = "",
     now: float,
 ) -> dict:
     website_id = str(website.get("id") or "")
@@ -96,6 +97,7 @@ def cert_renewal_toggle_log_event(
         "stdout": "",
         "stderr": "",
         "actor": public_user(actor or {}) if actor else {},
+        "sourceIp": str(source_ip or ""),
         "enabled": bool(enabled),
     }
 
@@ -107,6 +109,7 @@ def auto_recovery_toggle_log_event(
     *,
     enabled: bool,
     actor: dict | None,
+    source_ip: str = "",
     now: float,
 ) -> dict:
     target_name = str(entity.get("name") or target_id)
@@ -131,6 +134,7 @@ def auto_recovery_toggle_log_event(
         "stdout": "",
         "stderr": "",
         "actor": public_user(actor or {}) if actor else {},
+        "sourceIp": str(source_ip or ""),
         "enabled": bool(enabled),
     }
 
@@ -140,6 +144,7 @@ def auto_backup_toggle_log_event(
     *,
     enabled: bool,
     actor: dict | None,
+    source_ip: str = "",
     now: float,
 ) -> dict:
     server_id = str(server.get("id") or "")
@@ -165,6 +170,7 @@ def auto_backup_toggle_log_event(
         "stdout": "",
         "stderr": "",
         "actor": public_user(actor or {}) if actor else {},
+        "sourceIp": str(source_ip or ""),
         "enabled": bool(enabled),
     }
 
@@ -175,6 +181,7 @@ def persist_auto_recovery_enabled(
     enabled: bool,
     *,
     actor: dict | None = None,
+    source_ip: str = "",
     runtime: SettingsRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -214,6 +221,7 @@ def persist_auto_recovery_enabled(
         target_id,
         enabled=enabled,
         actor=actor,
+        source_ip=source_ip,
         now=active_runtime.now(),
     )
     try:
@@ -228,6 +236,7 @@ def persist_auto_backup_enabled(
     enabled: bool,
     *,
     actor: dict | None = None,
+    source_ip: str = "",
     runtime: SettingsRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -251,6 +260,7 @@ def persist_auto_backup_enabled(
         server,
         enabled=enabled,
         actor=actor,
+        source_ip=source_ip,
         now=active_runtime.now(),
     )
     try:
@@ -265,6 +275,7 @@ def persist_cert_renewal_enabled(
     enabled: bool,
     *,
     actor: dict | None = None,
+    source_ip: str = "",
     runtime: SettingsRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -304,6 +315,7 @@ def persist_cert_renewal_enabled(
         website,
         enabled=enabled,
         actor=actor,
+        source_ip=source_ip,
         now=active_runtime.now(),
     )
     try:
