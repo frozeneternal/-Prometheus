@@ -123,6 +123,8 @@ function renderError(error) {
   $("#recoveryLogList").innerHTML = "";
   $("#configValidationPanel").innerHTML = "";
   $("#configValidationPanel").classList.add("hidden");
+  $("#emergencyRunbookPanel").classList.add("hidden");
+  $("#emergencyRunbookList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
   $("#websiteEmptyState").classList.add("hidden");
   $("#resourceExpiryEmptyState").classList.add("hidden");
@@ -154,6 +156,7 @@ function render() {
 
   renderSystemNotice();
   renderConfigValidation();
+  renderEmergencyRunbook();
   renderGroups();
   renderServers();
   renderWebsites();
@@ -224,6 +227,35 @@ function renderConfigValidation() {
       `).join("")}
     </div>` : ""}
   `;
+}
+
+function renderEmergencyRunbook() {
+  const panel = $("#emergencyRunbookPanel");
+  const items = state.dashboard?.emergencyItems || [];
+  const summary = state.dashboard?.emergencySummary || { total: 0, critical: 0, warning: 0, info: 0 };
+  if (!items.length) {
+    panel.classList.add("hidden");
+    $("#emergencyRunbookList").innerHTML = "";
+    return;
+  }
+
+  const badgeStatus = summary.critical ? "critical" : summary.warning ? "warning" : "info";
+  panel.className = `emergency-runbook-panel ${badgeStatus}`;
+  $("#emergencyRunbookSummary").textContent = `共 ${summary.total || items.length} 项 · 严重 ${summary.critical || 0} · 预警 ${summary.warning || 0}`;
+  $("#emergencyRunbookBadge").className = `emergency-badge ${badgeStatus}`;
+  $("#emergencyRunbookBadge").textContent = String(summary.critical || summary.warning || summary.total || items.length);
+  $("#emergencyRunbookList").innerHTML = items.map((item) => `
+    <article class="emergency-item ${escapeHtml(item.severity || "info")}">
+      <div class="emergency-item-head">
+        <strong>${escapeHtml(item.title || item.id || "应急项")}</strong>
+        <span class="emergency-badge ${escapeHtml(item.severity || "info")}">${escapeHtml(item.severity || "info")}</span>
+      </div>
+      <p>${escapeHtml(item.message || "")}</p>
+      <ol>
+        ${(item.nextSteps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+      </ol>
+    </article>
+  `).join("");
 }
 
 function renderGroups() {

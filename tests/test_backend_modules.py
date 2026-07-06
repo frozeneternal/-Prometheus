@@ -449,6 +449,112 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(action["allowAuto"])
         self.assertEqual(resets, [("website-cert", "site1", "证书自动续期已启用，等待下一次证书检查。")])
 
+    def test_emergency_module_builds_runbook_items_without_app_import(self) -> None:
+        from backend.emergency import emergency_items, emergency_summary
+
+        items = emergency_items(
+            prometheus={
+                "available": False,
+                "message": "Prometheus 暂不可用或未启动。",
+                "error": "connection refused",
+            },
+            config_validation={
+                "status": "error",
+                "errorCount": 1,
+                "warningCount": 0,
+                "issues": [{"severity": "error", "message": "自动恢复动作引用不存在。"}],
+            },
+            servers=[
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "health": "down",
+                    "status": "offline",
+                    "issues": ["node exporter down"],
+                    "autoRecovery": {
+                        "enabled": True,
+                        "status": "triggered",
+                        "lastLogId": "log-1",
+                    },
+                }
+            ],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "warning",
+                    "issues": ["cert expires soon"],
+                    "certRenewal": {"enabled": True, "status": "idle"},
+                }
+            ],
+            resources=[
+                {
+                    "id": "domain-main",
+                    "name": "Main Domain",
+                    "status": "expired",
+                    "message": "Main Domain 已过期 2 天。",
+                    "actionRequired": True,
+                }
+            ],
+        )
+
+        item_ids = [item["id"] for item in items]
+        self.assertIn("prometheus-unavailable", item_ids)
+        self.assertIn("config-validation-error", item_ids)
+        self.assertIn("server:srv1:down", item_ids)
+        self.assertIn("website:site1:warning", item_ids)
+        self.assertIn("resource:domain-main:expired", item_ids)
+        self.assertEqual(items[0]["severity"], "critical")
+        self.assertTrue(all(item["nextSteps"] for item in items))
+        self.assertIn("scripts/monitor-status.ps1", items[0]["nextSteps"][0])
+        summary = emergency_summary(items)
+        self.assertEqual(summary["total"], 5)
+        self.assertEqual(summary["critical"], 4)
+        self.assertEqual(summary["warning"], 1)
+
+    def test_emergency_module_flags_untrusted_unknown_monitoring_data_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "health": "unknown",
+                    "status": "unknown",
+                    "issues": ["Prometheus 暂无这台服务器的数据。"],
+                    "dataQuality": {
+                        "level": "no_series",
+                        "trusted": False,
+                        "message": "Prometheus 可用，但没有 up 时间序列。",
+                    },
+                }
+            ],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "unknown",
+                    "status": "unknown",
+                    "issues": ["Prometheus 暂无这个网站的探测数据。"],
+                    "dataQuality": {
+                        "level": "no_series",
+                        "trusted": False,
+                        "message": "Prometheus 可用，但没有 blackbox 时间序列。",
+                    },
+                }
+            ],
+            resources=[],
+        )
+
+        item_ids = [item["id"] for item in items]
+        self.assertIn("server:srv1:data-quality", item_ids)
+        self.assertIn("website:site1:data-quality", item_ids)
+        self.assertEqual(items[0]["severity"], "warning")
+        self.assertIn("Prometheus target", " ".join(items[0]["nextSteps"]))
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 
@@ -625,6 +731,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["servers"][0]["autoRecovery"]["status"], "idle")
         self.assertEqual(payload["servers"][0]["autoBackup"]["status"], "idle")
         self.assertEqual(payload["websites"][0]["certRenewal"]["status"], "idle")
+        self.assertEqual(payload["emergencySummary"]["total"], len(payload["emergencyItems"]))
+        self.assertTrue(payload["emergencyItems"])
+        self.assertEqual(payload["emergencyItems"][0]["id"], "prometheus-unavailable")
         self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
         self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
 

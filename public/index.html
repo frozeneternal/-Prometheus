@@ -37,6 +37,16 @@
       <main>
         <section id="systemNotice" class="system-notice hidden" aria-live="polite"></section>
         <section id="configValidationPanel" class="config-validation-panel hidden" aria-live="polite"></section>
+        <section id="emergencyRunbookPanel" class="emergency-runbook-panel hidden" aria-live="polite">
+          <div class="emergency-runbook-head">
+            <div>
+              <strong>应急处置</strong>
+              <p id="emergencyRunbookSummary" class="muted"></p>
+            </div>
+            <span id="emergencyRunbookBadge" class="emergency-badge info">0</span>
+          </div>
+          <div id="emergencyRunbookList" class="emergency-runbook-list"></div>
+        </section>
         <section id="accountLockoutPanel" class="account-lockout-panel hidden" aria-live="polite">
           <div id="accountManagementPanel" class="account-management-panel hidden">
             <div class="account-lockout-head">

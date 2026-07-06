@@ -153,6 +153,19 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderConfigValidation();", app_js)
         self.assertIn(".config-validation-panel", styles_css)
 
+    def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="emergencyRunbookPanel"', index_html)
+        self.assertIn('id="emergencyRunbookList"', index_html)
+        self.assertIn("function renderEmergencyRunbook()", app_js)
+        self.assertIn("state.dashboard?.emergencyItems", app_js)
+        self.assertIn("state.dashboard?.emergencySummary", app_js)
+        self.assertIn("renderEmergencyRunbook();", app_js)
+        self.assertIn(".emergency-runbook-panel", styles_css)
+
     def test_config_validation_panel_uses_backend_field_contract(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         render_config_validation = app_js[
@@ -172,6 +185,7 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn('$("#configValidationPanel").innerHTML = "";', render_error)
         self.assertIn('$("#configValidationPanel").classList.add("hidden");', render_error)
+        self.assertIn('$("#emergencyRunbookPanel").classList.add("hidden");', render_error)
 
     def test_metric_formatters_reject_non_finite_values(self) -> None:
         format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")

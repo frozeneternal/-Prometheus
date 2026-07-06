@@ -6,6 +6,7 @@ from typing import Callable
 
 from backend.config import DEFAULT_CONFIG, config_source_info
 from backend.expiry import resource_expiry_items, resource_expiry_summary
+from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
 from backend.prometheus import prometheus_ready_status
 from backend.public_view import server_type
@@ -151,16 +152,28 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         for snapshot in website_snapshots
     ]
 
+    prometheus = {
+        "available": prometheus_available,
+        "url": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
+        "message": "" if prometheus_available else PROMETHEUS_UNAVAILABLE_MESSAGE,
+        "error": prometheus_error,
+    }
+    config_validation = active_runtime.config_validation(config)
+    runbook_items = emergency_items(
+        prometheus=prometheus,
+        config_validation=config_validation,
+        servers=snapshots,
+        websites=website_snapshots,
+        resources=expiry_items,
+    )
+
     payload = {
         "generatedAt": active_runtime.now(),
-        "prometheus": {
-            "available": prometheus_available,
-            "url": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
-            "message": "" if prometheus_available else PROMETHEUS_UNAVAILABLE_MESSAGE,
-            "error": prometheus_error,
-        },
+        "prometheus": prometheus,
         "configSource": active_runtime.config_source(),
-        "configValidation": active_runtime.config_validation(config),
+        "configValidation": config_validation,
+        "emergencySummary": emergency_summary(runbook_items),
+        "emergencyItems": runbook_items,
         "summary": _summary(snapshots),
         "websiteSummary": _summary(website_snapshots),
         "resourceExpirySummary": expiry_summary,

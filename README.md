@@ -6,6 +6,7 @@
 
 - 自动恢复：服务器或网站连续异常后，自动执行你配置好的恢复动作。
 - 恢复日志：每次自动恢复或手动执行，都会把原因、时间、stdout、stderr 记到面板。
+- 应急处置：面板会把采集层故障、配置错误、服务器/网站异常、资源到期风险汇总成可执行的处置步骤。
 
 ## 你要改哪几个文件
 
@@ -163,6 +164,17 @@ Copy-Item .\config\servers.local.template.json .\config\servers.local.json
 
 真实账号、域名、供应商入口和备注建议只写入 `config/servers.local.json`，不要提交到公开仓库。
 
+## 应急处置面板
+
+页面顶部的“应急处置”会根据当前 dashboard 数据自动生成 runbook 项，不会直接执行任何命令：
+
+- Prometheus 不可用：提示先运行 `scripts/monitor-status.ps1`，区分采集层故障和真实业务中断。
+- 配置校验错误：提示先修复动作引用、`allowAuto`、高危确认文本和资源字段。
+- 服务器或网站异常：提示查看数据质量、中断事件、恢复日志，并按需使用手动恢复或续期动作。
+- 资源到期风险：提示续费、更新 `expiresAt` 或短期确认消警。
+
+应急项只来自后端 `backend/emergency.py` 的只读汇总逻辑，自动执行仍然只由已配置的自动恢复、自动备份和证书续期模块触发。
+
 ## 账号管理
 
 默认保持旧的 `actionToken` 模式，适合只在本机临时使用。要启用账号模式，在私有的 `config/servers.local.json` 中配置 `sessionSecret` 和 `users`。
@@ -209,6 +221,7 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - `backend/auth.py`：账号、角色、密码哈希、会话签名、操作鉴权。
 - `backend/auth_api.py`：登录、会话、登出、锁定列表、解锁和账号审计 API 载荷。
 - `backend/accounts_admin.py`：管理员账号增删改、禁用、密码重置和账号管理审计。
+- `backend/emergency.py`：只读应急处置建议和 dashboard runbook 汇总。
 - `backend/config.py`：公开/私有配置选择、默认配置合并、监控参数规范化和目标查找。
 - `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
 - `backend/prometheus.py`：Prometheus ready 检查、查询封装、PromQL 构造、数据质量分级和趋势数据接口载荷。
