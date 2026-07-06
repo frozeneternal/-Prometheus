@@ -1181,6 +1181,49 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(executed[0]["target_type"], "website-cert")
         self.assertEqual(states["website-cert:site1"]["lastLogId"], "log-1")
 
+    def test_certificates_module_blocks_invalid_verification_timeout_without_app_import(self) -> None:
+        from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
+
+        runtime = CertRenewalRuntime(
+            now=lambda: 1000.0,
+            execute_server_action=lambda *_args, **_kwargs: self.fail("invalid verification timeout must block renewal"),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "renew-cert", "command": ["renew"], "allowAuto": True}],
+                }
+            ]
+        }
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "serverId": "ops-host",
+            "certRenewal": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "renew-cert",
+                "renewBeforeDays": 14,
+                "cooldownSeconds": 86400,
+                "verificationTimeoutSeconds": True,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert expires soon"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_cert_renewal(config, website, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("verificationTimeoutSeconds", result["message"])
+
     def test_certificates_module_marks_success_only_after_expiry_extends_without_app_import(self) -> None:
         from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
 

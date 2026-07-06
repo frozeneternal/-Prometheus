@@ -78,6 +78,12 @@ def cert_renewal_policy_error(renewal: dict) -> str:
     if cooldown < 300:
         return "证书自动续期 cooldownSeconds 不能低于 300 秒。"
 
+    verification_timeout = strict_int_value(renewal.get("verificationTimeoutSeconds", 1800))
+    if verification_timeout is None:
+        return "证书自动续期 verificationTimeoutSeconds 必须是整数。"
+    if verification_timeout < 300:
+        return "证书自动续期 verificationTimeoutSeconds 不能低于 300 秒。"
+
     return ""
 
 
