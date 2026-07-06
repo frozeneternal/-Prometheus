@@ -215,6 +215,88 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
         self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
 
+    def test_actions_module_executes_actions_with_injected_runtime_without_app_import(self) -> None:
+        from backend.actions import ActionRuntime, execute_server_action, normalize_success_codes
+
+        appended: list[dict] = []
+
+        class Completed:
+            returncode = 2
+            stdout = "created backup"
+            stderr = ""
+
+        def fake_runner(command: list[str], **_kwargs: object) -> Completed:
+            self.assertEqual(command, ["backup"])
+            return Completed()
+
+        runtime = ActionRuntime(
+            now=lambda: 100.0,
+            runner=fake_runner,
+            append_recovery_log=lambda _config, event: appended.append(event),
+            public_user=lambda user: {"username": user.get("username")},
+            id_factory=lambda: "log-fixed",
+            cwd="C:\\ops-console",
+        )
+
+        status, payload = execute_server_action(
+            {},
+            {"id": "srv1", "name": "Server 1"},
+            {"id": "backup", "name": "Backup", "command": ["backup"], "successReturnCodes": [0, 2]},
+            invocation="manual-backup",
+            target_type="server-backup",
+            target_id="srv1",
+            target_name="Server 1 backup",
+            reason="manual",
+            actor={"username": "ops"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["returnCode"], 2)
+        self.assertEqual(payload["logId"], "log-fixed")
+        self.assertEqual(appended[0]["id"], "log-fixed")
+        self.assertEqual(appended[0]["actor"], {"username": "ops"})
+        self.assertEqual(normalize_success_codes({"successReturnCodes": [0, 2]}), {0, 2})
+
+    def test_actions_module_rejects_invalid_success_codes_before_runner(self) -> None:
+        from backend.actions import ActionRuntime, execute_server_action
+
+        appended: list[dict] = []
+        runner_called = False
+
+        def runner(_command: list[str], **_kwargs: object) -> object:
+            nonlocal runner_called
+            runner_called = True
+            return object()
+
+        runtime = ActionRuntime(
+            now=lambda: 100.0,
+            runner=runner,
+            append_recovery_log=lambda _config, event: appended.append(event),
+            public_user=lambda _user: {},
+            id_factory=lambda: "invalid-codes",
+            cwd="C:\\ops-console",
+        )
+
+        status, payload = execute_server_action(
+            {},
+            {"id": "srv1"},
+            {"id": "bad", "command": ["bad"], "successReturnCodes": ["ok"]},
+            invocation="manual",
+            target_type="server",
+            target_id="srv1",
+            target_name="Server 1",
+            reason="manual",
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertFalse(runner_called)
+        self.assertEqual(appended[0]["id"], "invalid-codes")
+        self.assertIn("successReturnCodes", payload["message"])
+
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
 
@@ -499,6 +581,22 @@ class BackendModuleTests(unittest.TestCase):
 
         self.assertNotIn("def dashboard_payload(", app_source)
 
+    def test_app_does_not_define_action_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "find_action",
+            "trim_output",
+            "normalize_success_codes",
+            "success_return_codes_error",
+            "build_log_event",
+            "execute_server_action",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -518,6 +616,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.metric_snapshot.__module__, "backend.snapshots")
         self.assertEqual(app.website_snapshot.__module__, "backend.snapshots")
         self.assertEqual(app.dashboard_payload.__module__, "backend.dashboard")
+        self.assertEqual(app.execute_server_action.__module__, "backend.actions")
 
 
 if __name__ == "__main__":

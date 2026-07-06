@@ -23,6 +23,16 @@ from backend.auth_state import (
     save_login_attempts_to_disk as save_login_attempt_state,
     save_revoked_sessions_to_disk as save_revoked_session_state,
 )
+from backend.actions import (
+    ActionRuntime,
+    build_log_event,
+    configure_action_runtime,
+    execute_server_action,
+    find_action,
+    normalize_success_codes,
+    success_return_codes_error,
+    trim_output,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,7 +44,6 @@ SESSION_REVOCATION_PATH = DATA_DIR / "revoked_sessions.json"
 LOGIN_ATTEMPT_PATH = DATA_DIR / "login_attempts.json"
 AUTH_AUDIT_LOG_PATH = DATA_DIR / "auth_audit_logs.json"
 
-MAX_OUTPUT_CHARS = 20000
 SERVER_METRICS = ("up", "cpu", "memory", "disk", "rx", "tx", "load", "uptime")
 WEBSITE_METRICS = ("success", "statusCode", "duration", "certExpiresIn")
 RUNTIME_LOCK = threading.Lock()
@@ -529,6 +538,16 @@ from backend.public_view import (  # noqa: E402 - transitional re-export while a
     server_type,
 )
 from backend.validation import config_validation_summary  # noqa: E402 - transitional re-export while app.py is split.
+
+
+configure_action_runtime(
+    ActionRuntime(
+        runner=lambda command, **kwargs: subprocess.run(command, **kwargs),
+        append_recovery_log=append_recovery_log,
+        public_user=public_user,
+        cwd=str(BASE_DIR),
+    )
+)
 
 
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
@@ -1113,255 +1132,6 @@ def bootstrap_runtime_state() -> None:
         RUNTIME_STATE["recoveryLogs"] = logs
         RUNTIME_STATE["incidentLogs"] = incident_logs
         RUNTIME_STATE["authAuditLogs"] = auth_audit_logs
-
-
-def find_action(server: dict, action_id: str) -> dict | None:
-    for action in server.get("actions", []):
-        if action.get("id") == action_id:
-            return action
-    return None
-
-
-def trim_output(value: str | None) -> str:
-    return (value or "")[:MAX_OUTPUT_CHARS]
-
-
-def normalize_success_codes(action: dict) -> set[int]:
-    raw = action.get("successReturnCodes")
-    if not isinstance(raw, list) or not raw:
-        return {0}
-
-    return set(raw)
-
-
-def is_success_return_code(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
-def success_return_codes_error(action: dict) -> str:
-    if "successReturnCodes" not in action:
-        return ""
-
-    raw = action.get("successReturnCodes")
-    if not isinstance(raw, list) or not raw:
-        return "动作 successReturnCodes 必须是非空整数数组。"
-
-    for item in raw:
-        if not is_success_return_code(item):
-            return "动作 successReturnCodes 必须是非空整数数组。"
-    return ""
-
-
-def build_log_event(
-    *,
-    invocation: str,
-    target_type: str,
-    target_id: str,
-    target_name: str,
-    action_server: dict,
-    action: dict,
-    reason: str,
-    consecutive_failures: int,
-    payload: dict,
-    actor: dict | None = None,
-) -> dict:
-    timestamp = time.time()
-    return {
-        "id": f"{int(timestamp * 1000)}-{target_type}-{target_id}-{action.get('id')}",
-        "timestamp": timestamp,
-        "invocation": invocation,
-        "targetType": target_type,
-        "targetId": target_id,
-        "targetName": target_name,
-        "actionServerId": action_server.get("id"),
-        "actionServerName": action_server.get("name"),
-        "actionId": action.get("id"),
-        "actionName": action.get("name"),
-        "reason": reason,
-        "consecutiveFailures": consecutive_failures,
-        "ok": payload.get("ok", False),
-        "message": payload.get("message", ""),
-        "returnCode": payload.get("returnCode"),
-        "durationSeconds": payload.get("durationSeconds"),
-        "stdout": payload.get("stdout", ""),
-        "stderr": payload.get("stderr", ""),
-        "actor": public_user(actor or {}) if actor else {},
-    }
-
-
-def execute_server_action(
-    config: dict,
-    action_server: dict,
-    action: dict,
-    *,
-    invocation: str,
-    target_type: str,
-    target_id: str,
-    target_name: str,
-    reason: str,
-    consecutive_failures: int = 0,
-    actor: dict | None = None,
-) -> tuple[int, dict]:
-    command = action.get("command")
-    if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
-        payload = {"ok": False, "message": "操作命令必须是字符串数组。", "stdout": "", "stderr": ""}
-        log_event = build_log_event(
-            invocation=invocation,
-            target_type=target_type,
-            target_id=target_id,
-            target_name=target_name,
-            action_server=action_server,
-            action=action,
-            reason=reason,
-            consecutive_failures=consecutive_failures,
-            payload=payload,
-            actor=actor,
-        )
-        append_recovery_log(config, log_event)
-        payload["logId"] = log_event["id"]
-        return 400, payload
-
-    try:
-        timeout_seconds = int(action.get("timeoutSeconds", 30))
-    except (TypeError, ValueError):
-        payload = {
-            "ok": False,
-            "message": "动作 timeoutSeconds 必须是大于 0 的整数。",
-            "stdout": "",
-            "stderr": "",
-        }
-        log_event = build_log_event(
-            invocation=invocation,
-            target_type=target_type,
-            target_id=target_id,
-            target_name=target_name,
-            action_server=action_server,
-            action=action,
-            reason=reason,
-            consecutive_failures=consecutive_failures,
-            payload=payload,
-            actor=actor,
-        )
-        append_recovery_log(config, log_event)
-        payload["logId"] = log_event["id"]
-        return 400, payload
-
-    if timeout_seconds <= 0:
-        payload = {
-            "ok": False,
-            "message": "动作 timeoutSeconds 必须是大于 0 的整数。",
-            "stdout": "",
-            "stderr": "",
-        }
-        log_event = build_log_event(
-            invocation=invocation,
-            target_type=target_type,
-            target_id=target_id,
-            target_name=target_name,
-            action_server=action_server,
-            action=action,
-            reason=reason,
-            consecutive_failures=consecutive_failures,
-            payload=payload,
-            actor=actor,
-        )
-        append_recovery_log(config, log_event)
-        payload["logId"] = log_event["id"]
-        return 400, payload
-
-    success_codes_error = success_return_codes_error(action)
-    if success_codes_error:
-        payload = {
-            "ok": False,
-            "message": success_codes_error,
-            "stdout": "",
-            "stderr": "",
-        }
-        log_event = build_log_event(
-            invocation=invocation,
-            target_type=target_type,
-            target_id=target_id,
-            target_name=target_name,
-            action_server=action_server,
-            action=action,
-            reason=reason,
-            consecutive_failures=consecutive_failures,
-            payload=payload,
-            actor=actor,
-        )
-        append_recovery_log(config, log_event)
-        payload["logId"] = log_event["id"]
-        return 400, payload
-
-    timeout_seconds = max(1, min(timeout_seconds, 300))
-    success_codes = normalize_success_codes(action)
-    started = time.time()
-
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=str(BASE_DIR),
-            shell=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
-        ok = completed.returncode in success_codes
-        payload = {
-            "ok": ok,
-            "message": "操作完成。" if ok else "操作返回了非零退出码。",
-            "returnCode": completed.returncode,
-            "durationSeconds": round(time.time() - started, 2),
-            "stdout": trim_output(completed.stdout),
-            "stderr": trim_output(completed.stderr),
-        }
-        http_status = 200 if ok else 500
-    except subprocess.TimeoutExpired as exc:
-        payload = {
-            "ok": False,
-            "message": "操作超时。",
-            "returnCode": None,
-            "durationSeconds": round(time.time() - started, 2),
-            "stdout": trim_output(exc.stdout),
-            "stderr": trim_output(exc.stderr),
-        }
-        http_status = 504
-    except FileNotFoundError as exc:
-        payload = {
-            "ok": False,
-            "message": f"找不到命令：{exc.filename}",
-            "returnCode": None,
-            "durationSeconds": round(time.time() - started, 2),
-            "stdout": "",
-            "stderr": "",
-        }
-        http_status = 500
-    except Exception as exc:  # noqa: BLE001 - keep action endpoint diagnosable.
-        payload = {
-            "ok": False,
-            "message": str(exc),
-            "returnCode": None,
-            "durationSeconds": round(time.time() - started, 2),
-            "stdout": "",
-            "stderr": "",
-        }
-        http_status = 500
-
-    log_event = build_log_event(
-        invocation=invocation,
-        target_type=target_type,
-        target_id=target_id,
-        target_name=target_name,
-        action_server=action_server,
-        action=action,
-        reason=reason,
-        consecutive_failures=consecutive_failures,
-        payload=payload,
-        actor=actor,
-    )
-    append_recovery_log(config, log_event)
-    payload["logId"] = log_event["id"]
-    return http_status, payload
 
 
 def run_action(config: dict, body: dict) -> tuple[int, dict]:
