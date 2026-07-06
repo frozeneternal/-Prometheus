@@ -281,6 +281,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("关联日志", recovery_block)
         self.assertIn("recovery.lastLogId", recovery_block)
 
+    def test_auto_backup_card_surfaces_attempt_and_log_context(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function backupBlock(")
+        end = app_js.index("\nfunction certRenewalBlock", start)
+        backup_block = app_js[start:end]
+
+        self.assertIn("最近尝试", backup_block)
+        self.assertIn("autoBackup.lastAttemptAt", backup_block)
+        self.assertIn("关联日志", backup_block)
+        self.assertIn("autoBackup.lastLogId", backup_block)
+
     def test_incident_log_card_surfaces_last_recovery_action_result(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function incidentLogCard(")

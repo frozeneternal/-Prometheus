@@ -582,6 +582,7 @@ function backupBlock(autoBackup, manualBackup, server) {
   const status = autoBackup.status || "idle";
   const statusText = autoBackup.enabled ? (backupLabels[status] || status) : "未启用";
   const intervalHours = Math.max(1, Math.round((autoBackup.intervalSeconds || 86400) / 3600));
+  const logText = autoBackup.lastLogId || "--";
   return `<div class="recovery-block">
     <div class="recovery-head">
       <div class="block-title-row">
@@ -592,7 +593,9 @@ function backupBlock(autoBackup, manualBackup, server) {
     </div>
     <div class="recovery-meta">
       <span>周期 ${escapeHtml(String(intervalHours))} 小时</span>
+      <span>最近尝试 ${escapeHtml(formatTime(autoBackup.lastAttemptAt))}</span>
       <span>最近备份 ${escapeHtml(formatTime(autoBackup.lastCompletedAt))}</span>
+      <span>关联日志 ${escapeHtml(logText)}</span>
     </div>
     <p class="recovery-message muted">${escapeHtml(autoBackup.message || autoBackup.lastReason || "暂无自动备份记录")}</p>
     ${manualButton ? `<div class="recovery-actions">${manualButton}</div>` : ""}
