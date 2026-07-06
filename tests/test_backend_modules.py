@@ -366,6 +366,67 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIsNone(verify_session_token(saved[0], ops_token, now=1011))
         self.assertIsNotNone(authenticate_user(saved[0], "ops", "ops-pass-2"))
 
+    def test_accounts_admin_module_keeps_old_session_revoked_after_disable_and_reenable_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+        from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].append(
+            {
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "passwordHash": hash_password("ops-pass-1", salt="ops-salt", iterations=1000),
+            }
+        )
+        config = json.loads(json.dumps(raw_config))
+        ops_user = authenticate_user(config, "ops", "ops-pass-1")
+        ops_token = create_session_token(config, ops_user, now=1000)
+        saved: list[dict] = []
+
+        self.assertEqual(verify_session_token(config, ops_token, now=1005)["username"], "ops")
+
+        disable_runtime = AccountsAdminRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+        disable_status, disable_payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "enabled": False,
+            },
+            runtime=disable_runtime,
+        )
+
+        disabled_config = saved[-1]
+        reenable_runtime = AccountsAdminRuntime(
+            now=lambda: 1020.0,
+            load_config_raw=lambda: disabled_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+        reenable_status, reenable_payload = upsert_account_user_payload(
+            disabled_config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "enabled": True,
+            },
+            runtime=reenable_runtime,
+        )
+
+        self.assertEqual(disable_status, 200)
+        self.assertTrue(disable_payload["ok"])
+        self.assertEqual(reenable_status, 200)
+        self.assertTrue(reenable_payload["ok"])
+        self.assertIsNone(verify_session_token(saved[-1], ops_token, now=1021))
+
     def test_accounts_admin_module_blocks_last_admin_disable_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
 
