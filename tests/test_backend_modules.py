@@ -119,6 +119,35 @@ class BackendModuleTests(unittest.TestCase):
                     prometheus.first_value({"data": {"result": [{"value": [0, sample]}]}})
                 )
 
+    def test_health_module_classifies_thresholds_without_app_import(self) -> None:
+        from backend import health
+
+        server_status, server_issues = health.server_health(
+            {"id": "srv1", "thresholds": {"cpu": "hot", "memory": True, "disk": "full"}},
+            "online",
+            {"cpu": 95.0, "memory": 50.0, "disk": 95.0},
+        )
+        website_status, website_issues = health.website_health(
+            {"id": "site1", "thresholds": {"duration": "slow", "certDays": "soon"}},
+            "online",
+            {"duration": 4.0, "certExpiresIn": 10 * 86400},
+        )
+        summary = health.data_quality_summary(
+            [
+                {"dataQuality": {"level": "ok", "trusted": True}},
+                {"dataQuality": {"level": "no_series", "trusted": False}},
+            ]
+        )
+
+        self.assertEqual(server_status, "warning")
+        self.assertEqual(len(server_issues), 2)
+        self.assertEqual(website_status, "warning")
+        self.assertEqual(len(website_issues), 2)
+        self.assertEqual(summary["trusted"], 1)
+        self.assertEqual(summary["untrusted"], 1)
+        self.assertEqual(summary["levels"]["ok"], 1)
+        self.assertEqual(summary["levels"]["no_series"], 1)
+
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
 
@@ -368,6 +397,21 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_health_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "safe_positive_float",
+            "metric_thresholds",
+            "data_quality_summary",
+            "server_health",
+            "website_health",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -382,6 +426,8 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.public_config.__module__, "backend.public_view")
         self.assertEqual(app.auth_audit_event.__module__, "backend.auth_audit")
         self.assertEqual(app.verify_action_token.__module__, "backend.auth")
+        self.assertEqual(app.server_health.__module__, "backend.health")
+        self.assertEqual(app.data_quality_summary.__module__, "backend.health")
 
 
 if __name__ == "__main__":
