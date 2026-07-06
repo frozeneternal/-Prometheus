@@ -559,6 +559,95 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(result["verifiedExpiresIn"], 40 * 86400)
         self.assertNotIn("pendingExpiresIn", states["website-cert:site1"])
 
+    def test_backups_module_triggers_backup_action_without_app_import(self) -> None:
+        from backend.backups import BackupRuntime, maybe_trigger_backup
+
+        states: dict[str, dict] = {}
+        executed: list[dict] = []
+        runtime = BackupRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **kwargs: executed.append(kwargs)
+            or (200, {"ok": True, "message": "backup completed", "logId": "backup-log-1"}),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "autoBackup": {
+                        "enabled": True,
+                        "actionServerId": "srv1",
+                        "actionId": "backup",
+                        "intervalSeconds": 86400,
+                    },
+                    "actions": [{"id": "backup", "command": ["backup"], "allowAuto": True}],
+                }
+            ]
+        }
+        server = config["servers"][0]
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "online",
+            "health": "healthy",
+            "issues": [],
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_backup(config, server, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "triggered")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertEqual(result["lastAttemptAt"], 1000.0)
+        self.assertEqual(result["lastCompletedAt"], 1000.0)
+        self.assertEqual(result["lastLogId"], "backup-log-1")
+        self.assertEqual(executed[0]["invocation"], "auto-backup")
+        self.assertEqual(executed[0]["target_type"], "server-backup")
+        self.assertEqual(states["server-backup:srv1"]["lastLogId"], "backup-log-1")
+
+    def test_backups_module_respects_interval_without_app_import(self) -> None:
+        from backend.backups import BackupRuntime, maybe_trigger_backup
+
+        states = {"server-backup:srv1": {"lastCompletedAt": 900.0, "lastResult": "success"}}
+        runtime = BackupRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **_kwargs: self.fail("backup interval should block action"),
+        )
+        server = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoBackup": {
+                "enabled": True,
+                "actionServerId": "srv1",
+                "actionId": "backup",
+                "intervalSeconds": 300,
+            },
+            "actions": [{"id": "backup", "command": ["backup"], "allowAuto": True}],
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "online",
+            "health": "healthy",
+            "issues": [],
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_backup({"servers": [server]}, server, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertIn("200", result["message"])
+        self.assertEqual(states["server-backup:srv1"]["lastReason"], "定时自动备份")
+
     def test_incidents_module_tracks_active_and_recovered_incidents_without_app_import(self) -> None:
         from backend.incidents import IncidentRuntime, summarize_incident_reason, target_display_type, update_incident_state
 
@@ -979,6 +1068,20 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_backup_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "can_trigger_backup",
+            "backup_policy_error",
+            "resolve_backup_action",
+            "maybe_trigger_backup",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -1009,6 +1112,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.maybe_trigger_cert_renewal.__module__, "backend.certificates")
         self.assertEqual(app.cert_renewal_policy_error.__module__, "backend.certificates")
         self.assertEqual(app.resolve_cert_renewal_action.__module__, "backend.certificates")
+        self.assertEqual(app.maybe_trigger_backup.__module__, "backend.backups")
+        self.assertEqual(app.backup_policy_error.__module__, "backend.backups")
+        self.assertEqual(app.resolve_backup_action.__module__, "backend.backups")
 
 
 if __name__ == "__main__":
