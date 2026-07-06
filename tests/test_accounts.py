@@ -21,6 +21,7 @@ from backend import auth as auth_backend  # noqa: E402
 class AccountAuthTests(unittest.TestCase):
     def setUp(self) -> None:
         auth_backend.REVOKED_SESSION_IDS.clear()
+        auth_backend.LOGIN_ATTEMPTS.clear()
 
     def config_with_users(self) -> dict:
         return {
@@ -146,6 +147,67 @@ class AccountAuthTests(unittest.TestCase):
                 app.bootstrap_runtime_state()
 
         self.assertIsNone(app.verify_session_token(config, token))
+
+    def test_login_payload_locks_user_after_repeated_failures(self) -> None:
+        config = self.config_with_users()
+        config["authPolicy"] = {
+            "maxLoginFailures": 3,
+            "failureWindowSeconds": 60,
+            "lockoutSeconds": 120,
+        }
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "login_attempts.json"
+            with (
+                patch.object(app, "LOGIN_ATTEMPT_PATH", path, create=True),
+                patch.object(app.time, "time", side_effect=[1000, 1010, 1020, 1030]),
+            ):
+                self.assertEqual(app.login_payload(config, {"username": "ops", "password": "wrong"})[0], 401)
+                self.assertEqual(app.login_payload(config, {"username": "ops", "password": "wrong"})[0], 401)
+
+                status, payload = app.login_payload(config, {"username": "ops", "password": "wrong"})
+                locked_status, locked_payload = app.login_payload(
+                    config,
+                    {"username": "ops", "password": "ops-pass"},
+                )
+
+        self.assertEqual(status, 429)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["lockedUntil"], 1140)
+        self.assertEqual(locked_status, 429)
+        self.assertNotIn("sessionToken", locked_payload)
+
+    def test_login_lockout_is_persisted_across_restart(self) -> None:
+        config = self.config_with_users()
+        config["authPolicy"] = {
+            "maxLoginFailures": 2,
+            "failureWindowSeconds": 60,
+            "lockoutSeconds": 120,
+        }
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "login_attempts.json"
+            with (
+                patch.object(app, "LOGIN_ATTEMPT_PATH", path, create=True),
+                patch.object(app, "load_recovery_logs_from_disk", return_value=[]),
+                patch.object(app, "load_incident_logs_from_disk", return_value=[]),
+                patch.object(app, "load_revoked_sessions_from_disk", return_value={}),
+                patch.object(app.time, "time", side_effect=[1000, 1010, 1020, 1030]),
+            ):
+                app.login_payload(config, {"username": "ops", "password": "wrong"})
+                status, payload = app.login_payload(config, {"username": "ops", "password": "wrong"})
+                getattr(auth_backend, "LOGIN_ATTEMPTS", {}).clear()
+
+                self.assertEqual(status, 429)
+                self.assertTrue(payload["lockedUntil"] > 1010)
+                app.bootstrap_runtime_state()
+                locked_status, locked_payload = app.login_payload(
+                    config,
+                    {"username": "ops", "password": "ops-pass"},
+                )
+
+        self.assertEqual(locked_status, 429)
+        self.assertNotIn("sessionToken", locked_payload)
 
     def test_legacy_action_token_still_authorizes_without_users(self) -> None:
         config = {"actionToken": "legacy-token", "users": []}

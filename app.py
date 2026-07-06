@@ -23,6 +23,7 @@ DATA_DIR = BASE_DIR / "data"
 RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
 INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
 SESSION_REVOCATION_PATH = DATA_DIR / "revoked_sessions.json"
+LOGIN_ATTEMPT_PATH = DATA_DIR / "login_attempts.json"
 
 MAX_OUTPUT_CHARS = 20000
 SERVER_METRICS = ("up", "cpu", "memory", "disk", "rx", "tx", "load", "uptime")
@@ -116,6 +117,27 @@ def save_revoked_sessions_to_disk(session_ids: dict[str, float]) -> None:
     ensure_data_dir()
     with SESSION_REVOCATION_PATH.open("w", encoding="utf-8") as fh:
         json.dump({"revokedSessionIds": session_ids}, fh, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def load_login_attempts_from_disk() -> dict:
+    ensure_data_dir()
+    if not LOGIN_ATTEMPT_PATH.exists():
+        return {}
+
+    try:
+        with LOGIN_ATTEMPT_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    attempts = data.get("loginAttempts", data) if isinstance(data, dict) else {}
+    return attempts if isinstance(attempts, dict) else {}
+
+
+def save_login_attempts_to_disk(attempts: dict) -> None:
+    ensure_data_dir()
+    with LOGIN_ATTEMPT_PATH.open("w", encoding="utf-8") as fh:
+        json.dump({"loginAttempts": attempts}, fh, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 def get_recent_incident_logs(limit: int = 50) -> list[dict]:
@@ -664,6 +686,7 @@ def authorize_operation(config: dict, body: dict, required_role: str = "operator
 from backend.auth import (  # noqa: E402 - transitional re-export while app.py is split.
     ROLE_RANK,
     authenticate_user,
+    auth_policy,
     authorize_operation,
     b64url_decode,
     b64url_encode,
@@ -671,9 +694,14 @@ from backend.auth import (  # noqa: E402 - transitional re-export while app.py i
     create_session_token,
     find_user,
     hash_password,
+    load_login_attempts,
     load_revoked_sessions,
+    login_attempt_snapshot,
+    login_lockout_until,
     normalize_role,
     public_user,
+    record_login_failure,
+    record_login_success,
     revoke_session_token,
     revoked_session_snapshot,
     role_allows,
@@ -1656,7 +1684,9 @@ def monitor_loop() -> None:
 def bootstrap_runtime_state() -> None:
     logs = load_recovery_logs_from_disk()
     incident_logs = load_incident_logs_from_disk()
-    load_revoked_sessions(load_revoked_sessions_from_disk())
+    current = time.time()
+    load_revoked_sessions(load_revoked_sessions_from_disk(), now=current)
+    load_login_attempts(load_login_attempts_from_disk(), now=current)
     with RUNTIME_LOCK:
         RUNTIME_STATE["recoveryLogs"] = logs
         RUNTIME_STATE["incidentLogs"] = incident_logs
@@ -1965,19 +1995,46 @@ def login_payload(config: dict, body: dict) -> tuple[int, dict]:
 
     username = str(body.get("username") or "")
     password = str(body.get("password") or "")
+    current = time.time()
+    locked_until = login_lockout_until(config, username, now=current)
+    if locked_until > current:
+        return 429, {
+            "ok": False,
+            "message": "登录失败次数过多，账号已临时锁定。",
+            "lockedUntil": int(locked_until),
+        }
+
     user = authenticate_user(config, username, password)
     if not user:
+        locked_until = record_login_failure(config, username, now=current)
+        try:
+            save_login_attempts_to_disk(login_attempt_snapshot(now=current))
+        except OSError as exc:
+            return 500, {"ok": False, "message": f"登录失败状态保存失败：{exc}"}
+        if locked_until > current:
+            return 429, {
+                "ok": False,
+                "message": "登录失败次数过多，账号已临时锁定。",
+                "lockedUntil": int(locked_until),
+                "retryAfterSeconds": max(1, int(locked_until - current)),
+            }
         return 401, {"ok": False, "message": "用户名或密码不正确。"}
 
     try:
         token = create_session_token(config, user)
     except ValueError as exc:
         return 500, {"ok": False, "message": str(exc)}
+    record_login_success(username)
+    try:
+        save_login_attempts_to_disk(login_attempt_snapshot(now=current))
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"登录状态保存失败：{exc}"}
     return 200, {
         "ok": True,
         "sessionToken": token,
         "user": user,
         "expiresInSeconds": 12 * 3600,
+        "authPolicy": auth_policy(config),
     }
 
 

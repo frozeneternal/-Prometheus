@@ -87,6 +87,54 @@ def success_return_codes_valid(value: object) -> bool:
     return all(isinstance(item, int) and not isinstance(item, bool) for item in value)
 
 
+def bounded_int_config_valid(value: object, minimum: int, maximum: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and minimum <= value <= maximum
+
+
+def auth_policy_issues(config: dict) -> list[dict]:
+    raw = config.get("authPolicy") or {}
+    if not raw:
+        return []
+    if not isinstance(raw, dict):
+        return [
+            make_issue(
+                "auth-policy-invalid",
+                "warning",
+                "authPolicy 必须是对象；当前配置将使用默认登录锁定策略。",
+                "auth",
+            )
+        ]
+
+    checks = [
+        (
+            "maxLoginFailures",
+            "auth-policy-max-login-failures-invalid",
+            1,
+            50,
+            "authPolicy.maxLoginFailures 必须是 1 到 50 之间的整数。",
+        ),
+        (
+            "failureWindowSeconds",
+            "auth-policy-failure-window-invalid",
+            30,
+            86400,
+            "authPolicy.failureWindowSeconds 必须是 30 到 86400 秒之间的整数。",
+        ),
+        (
+            "lockoutSeconds",
+            "auth-policy-lockout-invalid",
+            60,
+            86400,
+            "authPolicy.lockoutSeconds 必须是 60 到 86400 秒之间的整数。",
+        ),
+    ]
+    issues = []
+    for key, issue_id, minimum, maximum, message in checks:
+        if key in raw and not bounded_int_config_valid(raw.get(key), minimum, maximum):
+            issues.append(make_issue(issue_id, "warning", message, "auth"))
+    return issues
+
+
 def account_configuration_issues(config: dict) -> list[dict]:
     users = config.get("users", []) or []
     has_actions = any((server.get("actions") or []) for server in config.get("servers", []) or [])
@@ -149,6 +197,8 @@ def account_configuration_issues(config: dict) -> list[dict]:
                 "auth",
             )
         )
+
+    issues.extend(auth_policy_issues(config))
 
     seen: set[str] = set()
     for index, user in enumerate(users):

@@ -11,6 +11,12 @@ import time
 ROLE_RANK = {"viewer": 0, "operator": 1, "admin": 2}
 # Values are token expiration timestamps. Keys may be sid:<sid>, token:<sha256>, or legacy raw sid.
 REVOKED_SESSION_IDS: dict[str, float] = {}
+LOGIN_ATTEMPTS: dict[str, dict] = {}
+DEFAULT_AUTH_POLICY = {
+    "maxLoginFailures": 5,
+    "failureWindowSeconds": 300,
+    "lockoutSeconds": 900,
+}
 
 
 def b64url_encode(raw: bytes) -> str:
@@ -66,6 +72,132 @@ def configured_users(config: dict) -> list[dict]:
 
 def users_enabled(config: dict) -> bool:
     return bool(configured_users(config))
+
+
+def safe_positive_int(value: object, default: int, minimum: int = 1, maximum: int | None = None) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if isinstance(value, bool):
+        parsed = default
+    parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def auth_policy(config: dict) -> dict:
+    raw = config.get("authPolicy") or {}
+    return {
+        "maxLoginFailures": safe_positive_int(
+            raw.get("maxLoginFailures"),
+            DEFAULT_AUTH_POLICY["maxLoginFailures"],
+            minimum=1,
+            maximum=50,
+        ),
+        "failureWindowSeconds": safe_positive_int(
+            raw.get("failureWindowSeconds"),
+            DEFAULT_AUTH_POLICY["failureWindowSeconds"],
+            minimum=30,
+            maximum=86400,
+        ),
+        "lockoutSeconds": safe_positive_int(
+            raw.get("lockoutSeconds"),
+            DEFAULT_AUTH_POLICY["lockoutSeconds"],
+            minimum=60,
+            maximum=86400,
+        ),
+    }
+
+
+def login_attempt_key(username: str) -> str:
+    return str(username or "").strip().lower()
+
+
+def clean_login_attempt_state(state: dict, now: float, failure_window_seconds: int) -> dict:
+    failures = []
+    for value in state.get("failures", []) or []:
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError):
+            continue
+        if timestamp >= now - failure_window_seconds:
+            failures.append(timestamp)
+    try:
+        locked_until = float(state.get("lockedUntil", 0) or 0)
+    except (TypeError, ValueError):
+        locked_until = 0.0
+    if locked_until <= now:
+        locked_until = 0.0
+    return {"failures": failures, "lockedUntil": locked_until}
+
+
+def login_lockout_until(config: dict, username: str, now: float | None = None) -> float:
+    key = login_attempt_key(username)
+    if not key:
+        return 0.0
+    current = time.time() if now is None else float(now)
+    policy = auth_policy(config)
+    state = clean_login_attempt_state(
+        LOGIN_ATTEMPTS.get(key, {}),
+        current,
+        policy["failureWindowSeconds"],
+    )
+    LOGIN_ATTEMPTS[key] = state
+    return float(state.get("lockedUntil", 0.0) or 0.0)
+
+
+def record_login_failure(config: dict, username: str, now: float | None = None) -> float:
+    key = login_attempt_key(username)
+    if not key:
+        return 0.0
+    current = time.time() if now is None else float(now)
+    policy = auth_policy(config)
+    state = clean_login_attempt_state(
+        LOGIN_ATTEMPTS.get(key, {}),
+        current,
+        policy["failureWindowSeconds"],
+    )
+    locked_until = float(state.get("lockedUntil", 0.0) or 0.0)
+    if locked_until > current:
+        LOGIN_ATTEMPTS[key] = state
+        return locked_until
+
+    failures = list(state.get("failures", []))
+    failures.append(current)
+    if len(failures) >= policy["maxLoginFailures"]:
+        locked_until = current + policy["lockoutSeconds"]
+    LOGIN_ATTEMPTS[key] = {"failures": failures, "lockedUntil": locked_until}
+    return locked_until
+
+
+def record_login_success(username: str) -> None:
+    LOGIN_ATTEMPTS.pop(login_attempt_key(username), None)
+
+
+def load_login_attempts(attempts: dict, now: float | None = None) -> None:
+    current = time.time() if now is None else float(now)
+    LOGIN_ATTEMPTS.clear()
+    for username, state in (attempts or {}).items():
+        key = login_attempt_key(str(username or ""))
+        if not key or not isinstance(state, dict):
+            continue
+        cleaned = clean_login_attempt_state(state, current, 86400)
+        if cleaned["failures"] or cleaned["lockedUntil"] > current:
+            LOGIN_ATTEMPTS[key] = cleaned
+
+
+def login_attempt_snapshot(now: float | None = None) -> dict:
+    current = time.time() if now is None else float(now)
+    snapshot = {}
+    for username, state in list(LOGIN_ATTEMPTS.items()):
+        cleaned = clean_login_attempt_state(state, current, 86400)
+        if cleaned["failures"] or cleaned["lockedUntil"] > current:
+            snapshot[username] = cleaned
+        else:
+            LOGIN_ATTEMPTS.pop(username, None)
+    return snapshot
 
 
 def find_user(config: dict, username: str) -> dict | None:

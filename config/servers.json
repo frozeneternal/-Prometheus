@@ -5,6 +5,11 @@
   "prometheusUrl": "http://127.0.0.1:9090",
   "actionToken": "replace-with-a-strong-token",
   "sessionSecret": "replace-with-a-strong-session-secret",
+  "authPolicy": {
+    "maxLoginFailures": 5,
+    "failureWindowSeconds": 300,
+    "lockoutSeconds": 900
+  },
   "monitoring": {
     "pollIntervalSeconds": 30,
     "recoveryLogLimit": 200,

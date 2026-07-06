@@ -125,11 +125,16 @@ class BackendModuleTests(unittest.TestCase):
         config = {
             "appName": "Ops",
             "prometheusUrl": "http://prometheus.local",
-            "actionToken": "secret-token",
-            "sessionSecret": "secret-session",
+            "actionToken": "sample-action-token-for-redaction",
+            "sessionSecret": "sample-session-key-for-redaction",
             "monitoring": {},
+            "authPolicy": {
+                "maxLoginFailures": 4,
+                "failureWindowSeconds": 120,
+                "lockoutSeconds": 600,
+            },
             "users": [
-                {"username": "admin", "role": "admin", "passwordHash": "secret-hash", "enabled": True}
+                {"username": "admin", "role": "admin", "passwordHash": "sample-password-hash-for-redaction", "enabled": True}
             ],
             "servers": [
                 {
@@ -181,6 +186,9 @@ class BackendModuleTests(unittest.TestCase):
 
         self.assertEqual(public_view.public_config.__module__, "backend.public_view")
         self.assertEqual(view["auth"]["mode"], "users")
+        self.assertEqual(view["auth"]["policy"]["maxLoginFailures"], 4)
+        self.assertEqual(view["auth"]["policy"]["failureWindowSeconds"], 120)
+        self.assertEqual(view["auth"]["policy"]["lockoutSeconds"], 600)
         self.assertEqual(view["auth"]["users"][0]["username"], "admin")
         self.assertEqual(view["auth"]["users"][0]["role"], "admin")
         self.assertNotIn("passwordHash", view["auth"]["users"][0])
@@ -188,9 +196,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(view["servers"][0]["manualRecovery"]["available"])
         self.assertTrue(view["servers"][0]["manualBackup"]["available"])
         self.assertTrue(view["websites"][0]["manualCertRenewal"]["available"])
-        self.assertNotIn("secret-token", serialized)
-        self.assertNotIn("secret-session", serialized)
-        self.assertNotIn("secret-hash", serialized)
+        self.assertNotIn("sample-action-token-for-redaction", serialized)
+        self.assertNotIn("sample-session-key-for-redaction", serialized)
+        self.assertNotIn("sample-password-hash-for-redaction", serialized)
         self.assertNotIn("systemctl", serialized)
         self.assertNotIn("backup-secret", serialized)
         self.assertNotIn("private", serialized)

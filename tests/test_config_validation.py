@@ -312,6 +312,34 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("auth-operator-missing", viewer_issue_ids)
         self.assertNotIn("auth-operator-missing", operator_issue_ids)
 
+    def test_config_validation_reports_invalid_auth_policy(self) -> None:
+        config = {
+            "sessionSecret": "a-secure-session-secret-value-32",
+            "authPolicy": {
+                "maxLoginFailures": True,
+                "failureWindowSeconds": 0,
+                "lockoutSeconds": "soon",
+            },
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [
+                {
+                    "username": "ops",
+                    "role": "operator",
+                    "passwordHash": app.hash_password("ops-pass", salt="ops-salt", iterations=1000),
+                }
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "warning")
+        self.assertIn("auth-policy-max-login-failures-invalid", issue_ids)
+        self.assertIn("auth-policy-failure-window-invalid", issue_ids)
+        self.assertIn("auth-policy-lockout-invalid", issue_ids)
+
     def test_config_validation_reports_actions_without_authentication(self) -> None:
         config = {
             "servers": [
@@ -351,7 +379,7 @@ class ConfigValidationTests(unittest.TestCase):
             "users": [base_user],
         }
         strong_config = {
-            "sessionSecret": "prod-session-secret-0123456789abcdef",
+            "sessionSecret": "valid-test-session-key-0123456789abcdef",
             "servers": [],
             "websites": [],
             "resources": [],

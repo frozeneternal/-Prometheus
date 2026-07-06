@@ -16,6 +16,11 @@ DEFAULT_CONFIG = {
     "prometheusUrl": "http://127.0.0.1:9090",
     "actionToken": "",
     "sessionSecret": "",
+    "authPolicy": {
+        "maxLoginFailures": 5,
+        "failureWindowSeconds": 300,
+        "lockoutSeconds": 900,
+    },
     "monitoring": {
         "pollIntervalSeconds": 30,
         "recoveryLogLimit": 200,

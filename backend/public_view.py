@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.auth import configured_users, public_user, users_enabled
+from backend.auth import auth_policy, configured_users, public_user, users_enabled
 from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
 
 
@@ -253,6 +253,7 @@ def public_config(config: dict) -> dict:
         "auth": {
             "mode": auth_mode,
             "requiresLogin": auth_mode == "users",
+            "policy": auth_policy(config),
             "users": [public_user(user) for user in configured_users(config)],
         },
         "monitoring": monitoring_options(config),
