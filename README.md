@@ -171,6 +171,7 @@ Copy-Item .\config\servers.local.template.json .\config\servers.local.json
 - Prometheus 不可用：提示先运行 `scripts/monitor-status.ps1`，区分采集层故障和真实业务中断。
 - 配置校验错误：提示先修复动作引用、`allowAuto`、高危确认文本和资源字段。
 - 服务器或网站异常：提示查看数据质量、中断事件、恢复日志，并按需使用手动恢复或续期动作。
+- 自动恢复失败：提示打开关联恢复日志，检查 `returnCode`、`stdout/stderr` 和超时信息，并先暂停自动恢复或提高冷却时间。
 - 资源到期风险：提示续费、更新 `expiresAt` 或短期确认消警。
 
 应急项只来自后端 `backend/emergency.py` 的只读汇总逻辑，自动执行仍然只由已配置的自动恢复、自动备份和证书续期模块触发。

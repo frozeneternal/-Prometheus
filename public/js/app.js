@@ -548,6 +548,7 @@ function recoveryBlock(recovery, manualRecovery, targetType, targetId) {
     : "";
   const status = recovery.status || "idle";
   const statusText = recovery.enabled ? (recoveryLabels[status] || status) : "未启用";
+  const logText = recovery.lastLogId || "--";
   return `<div class="recovery-block">
     <div class="recovery-head">
       <div class="block-title-row">
@@ -558,7 +559,9 @@ function recoveryBlock(recovery, manualRecovery, targetType, targetId) {
     </div>
     <div class="recovery-meta">
       <span>连续失败 ${escapeHtml(String(recovery.consecutiveFailures ?? 0))} 次</span>
+      <span>最近尝试 ${escapeHtml(formatTime(recovery.lastAttemptAt))}</span>
       <span>最近执行 ${escapeHtml(formatTime(recovery.lastCompletedAt))}</span>
+      <span>关联日志 ${escapeHtml(logText)}</span>
     </div>
     <p class="recovery-message muted">${escapeHtml(recovery.message || recovery.lastReason || "暂无自动恢复记录")}</p>
     ${manualButton ? `<div class="recovery-actions">${manualButton}</div>` : ""}

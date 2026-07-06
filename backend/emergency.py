@@ -115,6 +115,14 @@ def _server_item(server: dict) -> dict | None:
     ]
     if recovery.get("enabled"):
         next_steps.append(f"自动恢复当前状态：{recovery_status}；如已触发，核对日志 ID {recovery.get('lastLogId') or '未记录'}。")
+        if recovery_status == "failed":
+            next_steps.extend(
+                [
+                    f"打开恢复日志 {recovery.get('lastLogId') or '未记录'}，检查 returnCode、stdout/stderr 和超时信息。",
+                    "暂停自动恢复或临时提高冷却时间，避免同一失败动作连续重复执行。",
+                    "改用已验证的手动恢复动作或登录目标服务器处理，再观察下一轮监控是否恢复。",
+                ]
+            )
     else:
         next_steps.append("如需自动处置，先配置并启用该服务器的 autoRecovery。")
     next_steps.append("必要时使用页面上的手动恢复动作，执行前核对确认文本和目标。")
