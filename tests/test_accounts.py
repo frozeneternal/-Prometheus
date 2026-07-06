@@ -103,6 +103,14 @@ class AccountAuthTests(unittest.TestCase):
         self.assertTrue(revoked)
         self.assertIsNone(app.verify_session_token(config, token, now=1011))
 
+    def test_session_token_issued_at_account_revocation_time_is_rejected(self) -> None:
+        config = self.config_with_users()
+        user = app.authenticate_user(config, "ops", "ops-pass")
+        token = app.create_session_token(config, user, now=1000, ttl_seconds=600)
+        config["users"][1]["sessionsRevokedBefore"] = 1000.0
+
+        self.assertIsNone(app.verify_session_token(config, token, now=1001))
+
     def test_legacy_session_token_without_sid_can_be_revoked_by_fingerprint(self) -> None:
         config = self.config_with_users()
         user = app.authenticate_user(config, "ops", "ops-pass")

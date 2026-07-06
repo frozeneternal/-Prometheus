@@ -370,7 +370,7 @@ def verify_session_token(config: dict, token: str, now: float | None = None) -> 
     except (TypeError, ValueError):
         return None
     revoked_before = sessions_revoked_before(user)
-    if revoked_before and issued_at < revoked_before:
+    if revoked_before and issued_at <= revoked_before:
         return None
     role = normalize_role(user.get("role"))
     if normalize_role(payload.get("role")) != role:
