@@ -358,6 +358,82 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(action["id"], "restart")
         self.assertEqual(message, "")
 
+    def test_incidents_module_tracks_active_and_recovered_incidents_without_app_import(self) -> None:
+        from backend.incidents import IncidentRuntime, summarize_incident_reason, target_display_type, update_incident_state
+
+        upserts: list[dict] = []
+        current_time = 1000.0
+
+        def now() -> float:
+            return current_time
+
+        runtime = IncidentRuntime(now=now, upsert_incident_log=lambda _config, event: upserts.append(event))
+        state: dict = {}
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {"triggerHealth": ["down"]},
+        }
+        bad_snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["node exporter down"],
+            "dataQuality": {"trusted": True},
+        }
+
+        active = update_incident_state({}, "server", entity, bad_snapshot, state, runtime=runtime)
+
+        self.assertTrue(active["active"])
+        self.assertEqual(active["durationSeconds"], 0)
+        self.assertEqual(active["reason"], "node exporter down")
+        self.assertEqual(state["activeIncidentId"], "1000000-server-srv1")
+        self.assertEqual(upserts[0]["status"], "active")
+        self.assertEqual(upserts[0]["targetKind"], target_display_type("server"))
+        self.assertEqual(summarize_incident_reason("server", bad_snapshot), "node exporter down")
+
+        current_time = 1045.0
+        recovered = update_incident_state(
+            {},
+            "server",
+            entity,
+            {"id": "srv1", "name": "Server 1", "status": "online", "health": "ok", "dataQuality": {"trusted": True}},
+            state,
+            runtime=runtime,
+        )
+
+        self.assertFalse(recovered["active"])
+        self.assertEqual(recovered["id"], "1000000-server-srv1")
+        self.assertEqual(recovered["durationSeconds"], 45)
+        self.assertEqual(state["activeIncidentId"], "")
+        self.assertEqual(upserts[-1]["status"], "recovered")
+        self.assertEqual(upserts[-1]["durationSeconds"], 45)
+
+    def test_incidents_module_does_not_create_new_incident_for_untrusted_data(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+
+        upserts: list[dict] = []
+        runtime = IncidentRuntime(now=lambda: 1000.0, upsert_incident_log=lambda _config, event: upserts.append(event))
+        view = update_incident_state(
+            {},
+            "server",
+            {"id": "srv1", "name": "Server 1", "autoRecovery": {"triggerHealth": ["unknown"]}},
+            {
+                "id": "srv1",
+                "name": "Server 1",
+                "status": "unknown",
+                "health": "unknown",
+                "dataQuality": {"trusted": False, "message": "No Prometheus series."},
+            },
+            {},
+            runtime=runtime,
+        )
+
+        self.assertFalse(view["active"])
+        self.assertIn("No Prometheus series.", view["summary"])
+        self.assertEqual(upserts, [])
+
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
 
@@ -671,6 +747,19 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_incident_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "target_display_type",
+            "summarize_incident_reason",
+            "update_incident_state",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -694,6 +783,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.can_trigger_recovery.__module__, "backend.recovery")
         self.assertEqual(app.recovery_policy_error.__module__, "backend.recovery")
         self.assertEqual(app.resolve_recovery_action.__module__, "backend.recovery")
+        self.assertEqual(app.target_display_type.__module__, "backend.incidents")
+        self.assertEqual(app.summarize_incident_reason.__module__, "backend.incidents")
+        self.assertEqual(app.update_incident_state.__module__, "backend.incidents")
 
 
 if __name__ == "__main__":
