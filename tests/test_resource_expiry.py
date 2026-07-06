@@ -230,7 +230,12 @@ class ResourceExpiryTests(unittest.TestCase):
     def test_persist_resource_acknowledgement_updates_raw_config(self) -> None:
         raw_config = {
             "resources": [
-                {"id": "license-warning", "name": "Backup License", "expiresAt": "2026-07-20"},
+                {
+                    "id": "license-warning",
+                    "name": "Backup License",
+                    "expiresAt": "2026-07-20",
+                    "renewUrl": "https://billing.example.com/license",
+                },
             ]
         }
 
@@ -337,6 +342,36 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn("过期", payload["message"])
         save_config_raw.assert_not_called()
+
+
+    def test_persist_resource_acknowledgement_rejects_resource_without_handling_path(self) -> None:
+        raw_config = {
+            "monitoring": {"resourceExpiryWarningDays": 30, "resourceExpiryCriticalDays": 7},
+            "resources": [
+                {"id": "unhandled", "name": "Unhandled", "expiresAt": "2026-07-20"},
+            ],
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log") as append_recovery_log,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_acknowledgement(
+                "unhandled",
+                acknowledged_until="2026-07-10T00:00:00Z",
+                actor={"username": "ops"},
+            )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("renewUrl", payload["message"])
+        self.assertIn("owner", payload["message"])
+        self.assertIn("provider", payload["message"])
+        save_config_raw.assert_not_called()
+        append_recovery_log.assert_not_called()
 
 
 if __name__ == "__main__":

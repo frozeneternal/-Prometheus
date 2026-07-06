@@ -582,7 +582,12 @@ class BackendModuleTests(unittest.TestCase):
         raw_config = {
             "monitoring": {"resourceExpiryWarningDays": 30, "resourceExpiryCriticalDays": 7},
             "resources": [
-                {"id": "license-warning", "name": "Backup License", "expiresAt": "2026-07-20"},
+                {
+                    "id": "license-warning",
+                    "name": "Backup License",
+                    "expiresAt": "2026-07-20",
+                    "renewUrl": "https://billing.example.com/license",
+                },
             ],
         }
         saved: list[dict] = []

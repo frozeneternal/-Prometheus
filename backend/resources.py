@@ -105,6 +105,18 @@ def persist_resource_acknowledgement(
     if not item or item.get("status") not in {"critical", "warning"}:
         return 400, {"ok": False, "message": "只有未过期的预警资源可以确认。"}
 
+    if item.get("handlingReady") is False:
+        raw_missing_fields = item.get("missingHandlingFields")
+        missing_fields = raw_missing_fields if isinstance(raw_missing_fields, list) else []
+        missing_text = "、".join(str(field) for field in missing_fields if str(field or "").strip())
+        return 400, {
+            "ok": False,
+            "message": (
+                f"{item.get('handlingMessage') or '资源缺少明确处置路径。'} "
+                f"请先补充 {missing_text or 'renewUrl、owner、provider'} 后再确认。"
+            ),
+        }
+
     resource["acknowledgedUntil"] = acknowledged_until
     resource["acknowledgedBy"] = str((actor or {}).get("username") or "operator")
     resource["acknowledgedAt"] = datetime.fromtimestamp(current, timezone.utc).isoformat()
