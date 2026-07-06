@@ -53,6 +53,14 @@ def _user_key(username: object) -> str:
     return str(username or "").strip().lower()
 
 
+def _username_error(username: str) -> str:
+    if not username:
+        return "缺少 username。"
+    if any(char.isspace() for char in username):
+        return "username 不能包含空白字符。"
+    return ""
+
+
 def _find_user_index(users: list[dict], username: str) -> int | None:
     key = _user_key(username)
     for index, user in enumerate(users):
@@ -121,8 +129,9 @@ def upsert_account_user_payload(
         return status, auth_payload
 
     username = str(body.get("username") or "").strip()
-    if not username:
-        return 400, {"ok": False, "message": "缺少账号名。"}
+    username_error = _username_error(username)
+    if username_error:
+        return 400, {"ok": False, "message": username_error}
 
     raw_config = _copy_config(active_runtime.load_config_raw())
     users = list(raw_config.get("users", []) or [])

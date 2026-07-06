@@ -228,6 +228,68 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(saved, [])
         self.assertEqual(audit_events, [])
 
+    def test_accounts_admin_module_rejects_unsafe_username_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        for username in ("ops root", "ops\nroot"):
+            with self.subTest(username=username):
+                status, payload = upsert_account_user_payload(
+                    config,
+                    {
+                        "sessionToken": token,
+                        "username": username,
+                        "displayName": "Operations",
+                        "role": "operator",
+                        "password": "ops-pass-1",
+                        "enabled": True,
+                    },
+                    runtime=runtime,
+                )
+
+                self.assertEqual(status, 400)
+                self.assertFalse(payload["ok"])
+                self.assertIn("username", payload["message"])
+        self.assertEqual(saved, [])
+        self.assertEqual(audit_events, [])
+
+    def test_accounts_admin_module_trims_safe_username_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        saved: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": " ops ",
+                "displayName": "",
+                "role": "operator",
+                "password": "ops-pass-1",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        saved_user = next(user for user in saved[0]["users"] if user["username"] == "ops")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved_user["displayName"], "ops")
+        self.assertEqual(payload["users"][1]["username"], "ops")
+
     def test_accounts_admin_module_revokes_existing_sessions_when_password_changes_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
         from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
