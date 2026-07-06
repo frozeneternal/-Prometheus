@@ -283,6 +283,51 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(payload["logId"], "resource-log-1")
         self.assertTrue(payload["dashboard"])
 
+    def test_resource_ack_route_returns_operation_log_id(self) -> None:
+        responses: list[tuple[int, dict]] = []
+        body = {"resourceId": "license-warning", "acknowledgedUntil": "2026-07-10T00:00:00Z"}
+        handler = type(
+            "RouteHarness",
+            (),
+            {
+                "path": "/api/settings/resource-ack",
+                "client_address": ("10.0.0.30", 52100),
+            },
+        )()
+
+        with (
+            patch.object(app, "load_config", return_value={"resources": []}),
+            patch.object(app, "read_json_body", return_value=body),
+            patch.object(
+                app,
+                "authorize_operation",
+                return_value=(True, 200, {"user": {"username": "ops"}}),
+            ),
+            patch.object(
+                app,
+                "persist_resource_acknowledgement",
+                return_value=(
+                    200,
+                    {"ok": True, "message": "资源到期告警已确认。", "logId": "resource-log-1"},
+                ),
+            ),
+            patch.object(app, "dashboard_payload", return_value={"dashboard": True}),
+            patch.object(
+                app,
+                "json_response",
+                side_effect=lambda _handler, status, payload: responses.append((status, payload)),
+            ),
+        ):
+            app.MonitorHandler.do_POST(handler)
+
+        expected_payload = {
+            "ok": True,
+            "message": "资源到期告警已确认。",
+            "dashboard": True,
+            "logId": "resource-log-1",
+        }
+        self.assertEqual(responses, [(200, expected_payload)])
+
     def test_persist_resource_acknowledgement_rejects_missing_resource(self) -> None:
         with (
             patch.object(app, "load_config_raw", return_value={"resources": []}),

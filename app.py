@@ -953,7 +953,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             if status != 200:
                 json_response(self, status, payload)
                 return
-            status, payload = settings_response(payload["message"])
+            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
             json_response(self, status, payload)
             return
 
