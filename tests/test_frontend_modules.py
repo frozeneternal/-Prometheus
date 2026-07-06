@@ -200,6 +200,19 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("manualRecovery?.available", runbook_block)
         self.assertIn("openManualRecoveryDialog(button.dataset.targetType, button.dataset.targetId)", runbook_block)
 
+    def test_emergency_runbook_resource_items_offer_renewal_and_acknowledgement_actions(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderEmergencyRunbook()")
+        end = app_js.index("\nfunction renderGroups()", start)
+        runbook_block = app_js[start:end]
+
+        self.assertIn('item.targetType === "resource"', runbook_block)
+        self.assertIn("state.dashboard?.resourceExpiryItems", runbook_block)
+        self.assertIn('data-emergency-resource-ack="true"', runbook_block)
+        self.assertIn("acknowledgeResourceExpiry(button.dataset.resourceId)", runbook_block)
+        self.assertIn("resource.renewUrl", runbook_block)
+        self.assertIn('rel="noreferrer"', runbook_block)
+
     def test_config_validation_panel_uses_backend_field_contract(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         render_config_validation = app_js[

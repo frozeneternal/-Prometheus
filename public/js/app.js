@@ -269,6 +269,9 @@ function renderEmergencyRunbook() {
   $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-recovery]").forEach((button) => {
     button.addEventListener("click", () => openManualRecoveryDialog(button.dataset.targetType, button.dataset.targetId));
   });
+  $("#emergencyRunbookList").querySelectorAll("[data-emergency-resource-ack]").forEach((button) => {
+    button.addEventListener("click", () => acknowledgeResourceExpiry(button.dataset.resourceId));
+  });
 }
 
 function emergencyActionButton(item) {
@@ -293,6 +296,19 @@ function emergencyActionButton(item) {
     if (manualBackup?.available) {
       return `<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-backup="true" data-server-id="${escapeHtml(server.id)}">${escapeHtml(manualBackup.label || "立即备份")}</button>`;
     }
+  }
+  if (item.targetType === "resource") {
+    const resource = (state.dashboard?.resourceExpiryItems || []).find((candidate) => candidate.id === item.targetId);
+    if (!resource) return "";
+
+    const actions = [];
+    if (resource.renewUrl) {
+      actions.push(`<a class="secondary recovery-trigger compact" href="${escapeHtml(resource.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`);
+    }
+    if (resource.actionRequired && ["critical", "warning"].includes(resource.status || "")) {
+      actions.push(`<button type="button" class="secondary recovery-trigger compact" data-emergency-resource-ack="true" data-resource-id="${escapeHtml(resource.id)}">确认 7 天</button>`);
+    }
+    return actions.join("");
   }
   return "";
 }
