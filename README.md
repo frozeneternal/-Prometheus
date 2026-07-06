@@ -194,11 +194,21 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 
 一旦 `users` 中存在启用的账号，面板会切换到登录模式，手动动作和设置接口必须带有效会话；旧 `actionToken` 不再作为绕过入口。
 
+管理员登录后可以在面板里管理账号：
+
+- 新增账号：填写账号、显示名、角色和初始密码。
+- 修改账号：可以调整显示名、角色、启用状态，也可以填写新密码完成重置。
+- 删除账号：只能删除非当前登录账号。
+- 安全限制：不能停用、降级或删除当前登录账号；系统也会阻止把管理员账号全部移除。
+- 审计：新增、修改、删除、锁定和解锁都会写入账号审计日志，日志不会记录明文密码或会话令牌。
+
 ## 代码分层
 
 后端正在从单体 `app.py` 逐步拆到 `backend/` 包：
 
 - `backend/auth.py`：账号、角色、密码哈希、会话签名、操作鉴权。
+- `backend/auth_api.py`：登录、会话、登出、锁定列表、解锁和账号审计 API 载荷。
+- `backend/accounts_admin.py`：管理员账号增删改、禁用、密码重置和账号管理审计。
 - `backend/config.py`：公开/私有配置选择、默认配置合并、监控参数规范化和目标查找。
 - `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
 - `backend/prometheus.py`：Prometheus ready 检查、查询封装、PromQL 构造、数据质量分级和趋势数据接口载荷。

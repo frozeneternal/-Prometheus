@@ -1,0 +1,246 @@
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import dataclass
+from typing import Callable
+
+from backend.auth import authorize_operation, hash_password, normalize_role
+from backend.auth_audit import auth_audit_event
+from backend.config import load_config_raw as default_load_config_raw
+from backend.config import save_config_raw as default_save_config_raw
+
+
+def _return_auth_audit_event(_config: dict, event: dict) -> dict:
+    return event
+
+
+@dataclass(frozen=True)
+class AccountsAdminRuntime:
+    now: Callable[[], float] = time.time
+    load_config_raw: Callable[[], dict] = default_load_config_raw
+    save_config_raw: Callable[[dict], None] = default_save_config_raw
+    append_auth_audit: Callable[[dict, dict], dict] = _return_auth_audit_event
+
+
+_runtime = AccountsAdminRuntime()
+
+
+def configure_accounts_admin_runtime(runtime: AccountsAdminRuntime) -> None:
+    global _runtime
+    _runtime = runtime
+
+
+def account_user_view(user: dict) -> dict:
+    return {
+        "username": str(user.get("username") or ""),
+        "displayName": str(user.get("displayName") or user.get("username") or ""),
+        "role": normalize_role(user.get("role")),
+        "enabled": user.get("enabled", True) is not False,
+        "hasPassword": bool(user.get("passwordHash")),
+    }
+
+
+def account_user_views(config: dict) -> list[dict]:
+    return [account_user_view(user) for user in config.get("users", []) or [] if user.get("username")]
+
+
+def _copy_config(config: dict) -> dict:
+    return json.loads(json.dumps(config or {}))
+
+
+def _user_key(username: object) -> str:
+    return str(username or "").strip().lower()
+
+
+def _find_user_index(users: list[dict], username: str) -> int | None:
+    key = _user_key(username)
+    for index, user in enumerate(users):
+        if _user_key(user.get("username")) == key:
+            return index
+    return None
+
+
+def _bool_from_body(value: object, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"false", "0", "no", "off", "disabled"}:
+            return False
+        if normalized in {"true", "1", "yes", "on", "enabled"}:
+            return True
+    return bool(value)
+
+
+def _enabled_admin_count(users: list[dict]) -> int:
+    count = 0
+    for user in users:
+        if user.get("enabled", True) is False:
+            continue
+        if normalize_role(user.get("role")) != "admin":
+            continue
+        if not user.get("username") or not user.get("passwordHash"):
+            continue
+        count += 1
+    return count
+
+
+def _auth_username(auth_payload: dict) -> str:
+    return _user_key((auth_payload.get("user") or {}).get("username"))
+
+
+def _authorized_admin(config: dict, body: dict) -> tuple[bool, int, dict]:
+    return authorize_operation(config, body, "admin")
+
+
+def account_users_payload(
+    config: dict,
+    body: dict,
+    *,
+    runtime: AccountsAdminRuntime | None = None,
+) -> tuple[int, dict]:
+    active_runtime = runtime or _runtime
+    allowed, status, auth_payload = _authorized_admin(config, body)
+    if not allowed:
+        return status, auth_payload
+
+    raw_config = active_runtime.load_config_raw()
+    return 200, {
+        "ok": True,
+        "users": account_user_views(raw_config),
+        "user": auth_payload.get("user"),
+    }
+
+
+def upsert_account_user_payload(
+    config: dict,
+    body: dict,
+    *,
+    runtime: AccountsAdminRuntime | None = None,
+) -> tuple[int, dict]:
+    active_runtime = runtime or _runtime
+    allowed, status, auth_payload = _authorized_admin(config, body)
+    if not allowed:
+        return status, auth_payload
+
+    username = str(body.get("username") or "").strip()
+    if not username:
+        return 400, {"ok": False, "message": "缺少账号名。"}
+
+    raw_config = _copy_config(active_runtime.load_config_raw())
+    users = list(raw_config.get("users", []) or [])
+    index = _find_user_index(users, username)
+    existing = users[index] if index is not None else {}
+    password = str(body.get("password") or "")
+    password_provided = bool(password)
+    if index is None and not password_provided:
+        return 400, {"ok": False, "message": "新账号必须设置密码。"}
+    if password_provided and len(password) < 8:
+        return 400, {"ok": False, "message": "密码至少 8 位。"}
+
+    next_user = dict(existing)
+    next_user["username"] = username
+    next_user["displayName"] = str(body.get("displayName") or username).strip() or username
+    next_user["role"] = normalize_role(body.get("role"))
+    next_user["enabled"] = _bool_from_body(body.get("enabled"), existing.get("enabled", True) is not False)
+    if password_provided:
+        next_user["passwordHash"] = hash_password(password)
+
+    if _user_key(username) == _auth_username(auth_payload):
+        if next_user.get("enabled", True) is False:
+            return 400, {"ok": False, "message": "不能停用当前登录账号。"}
+        if normalize_role(next_user.get("role")) != "admin":
+            return 400, {"ok": False, "message": "不能降低当前登录账号的管理员权限。"}
+
+    next_users = list(users)
+    if index is None:
+        next_users.append(next_user)
+    else:
+        next_users[index] = next_user
+    if _enabled_admin_count(next_users) < 1:
+        return 400, {"ok": False, "message": "至少保留一个启用的管理员账号。"}
+
+    raw_config["users"] = next_users
+    try:
+        active_runtime.save_config_raw(raw_config)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号配置保存失败：{exc}"}
+
+    try:
+        active_runtime.append_auth_audit(
+            config,
+            auth_audit_event(
+                "account-upsert",
+                username,
+                "管理员已更新账号。",
+                actor=auth_payload.get("user"),
+                now=active_runtime.now(),
+            ),
+        )
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号已更新，但审计日志保存失败：{exc}"}
+
+    return 200, {
+        "ok": True,
+        "message": "账号已保存。",
+        "users": account_user_views(raw_config),
+        "user": auth_payload.get("user"),
+    }
+
+
+def delete_account_user_payload(
+    config: dict,
+    body: dict,
+    *,
+    runtime: AccountsAdminRuntime | None = None,
+) -> tuple[int, dict]:
+    active_runtime = runtime or _runtime
+    allowed, status, auth_payload = _authorized_admin(config, body)
+    if not allowed:
+        return status, auth_payload
+
+    username = str(body.get("username") or "").strip()
+    if not username:
+        return 400, {"ok": False, "message": "缺少账号名。"}
+
+    raw_config = _copy_config(active_runtime.load_config_raw())
+    users = list(raw_config.get("users", []) or [])
+    index = _find_user_index(users, username)
+    if index is None:
+        return 404, {"ok": False, "message": "账号不存在。"}
+    if _user_key(username) == _auth_username(auth_payload):
+        return 400, {"ok": False, "message": "不能删除当前登录账号。"}
+
+    next_users = [user for user_index, user in enumerate(users) if user_index != index]
+    if _enabled_admin_count(next_users) < 1:
+        return 400, {"ok": False, "message": "至少保留一个启用的管理员账号。"}
+
+    raw_config["users"] = next_users
+    try:
+        active_runtime.save_config_raw(raw_config)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号配置保存失败：{exc}"}
+
+    try:
+        active_runtime.append_auth_audit(
+            config,
+            auth_audit_event(
+                "account-delete",
+                username,
+                "管理员已删除账号。",
+                actor=auth_payload.get("user"),
+                now=active_runtime.now(),
+            ),
+        )
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号已删除，但审计日志保存失败：{exc}"}
+
+    return 200, {
+        "ok": True,
+        "message": "账号已删除。",
+        "users": account_user_views(raw_config),
+        "user": auth_payload.get("user"),
+    }

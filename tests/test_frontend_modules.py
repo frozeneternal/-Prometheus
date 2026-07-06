@@ -52,10 +52,14 @@ class FrontendModuleTests(unittest.TestCase):
             "refreshSession",
             "renderAuthControls",
             "authPayload",
+            "loadAccountUsers",
             "loadAccountLockouts",
             "loadAccountAudit",
+            "renderAccountManagement",
             "renderAccountLockouts",
             "renderAccountAudit",
+            "saveAccountUser",
+            "deleteManagedAccount",
             "loginCurrentUser",
             "logoutCurrentUser",
         ]
@@ -248,6 +252,30 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('parsed.path == "/api/auth/audit"', backend_py)
         self.assertIn("auth_audit_payload", backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', auth_api_py)
+
+    def test_admin_account_management_has_frontend_and_backend_routes(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+        state_js = (PUBLIC / "js" / "state.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+        account_admin_py = (ROOT / "backend" / "accounts_admin.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountManagementPanel"', index_html)
+        self.assertIn('id="accountUserForm"', index_html)
+        self.assertIn('id="accountUserList"', index_html)
+        self.assertIn("accountUsers", state_js)
+        self.assertIn("loadAccountUsers", accounts_js)
+        self.assertIn("renderAccountManagement", accounts_js)
+        self.assertIn("saveAccountUser", accounts_js)
+        self.assertIn("deleteManagedAccount", accounts_js)
+        self.assertIn('"/api/auth/users"', client_js)
+        self.assertIn('"/api/auth/users/upsert"', client_js)
+        self.assertIn('"/api/auth/users/delete"', client_js)
+        self.assertIn('parsed.path == "/api/auth/users"', backend_py)
+        self.assertIn('parsed.path == "/api/auth/users/upsert"', backend_py)
+        self.assertIn('parsed.path == "/api/auth/users/delete"', backend_py)
+        self.assertIn('authorize_operation(config, body, "admin")', account_admin_py)
 
 
 if __name__ == "__main__":

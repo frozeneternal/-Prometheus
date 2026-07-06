@@ -47,6 +47,18 @@ export function fetchAccountAudit(sessionToken) {
   return postJson("/api/auth/audit", { sessionToken });
 }
 
+export function fetchAccountUsers(sessionToken) {
+  return postJson("/api/auth/users", { sessionToken });
+}
+
+export function saveAccountUser({ user, auth }) {
+  return postJson("/api/auth/users/upsert", { ...user, ...auth });
+}
+
+export function removeAccountUser({ username, auth }) {
+  return postJson("/api/auth/users/delete", { username, ...auth });
+}
+
 export function unlockAccount({ username, auth }) {
   return postJson("/api/auth/unlock", { username, ...auth });
 }

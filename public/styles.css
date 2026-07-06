@@ -139,7 +139,8 @@ h1 {
   font-weight: 700;
 }
 
-input {
+input,
+select {
   min-height: 38px;
   width: 180px;
   border: 1px solid var(--line);
@@ -216,6 +217,63 @@ input {
 .account-audit-list {
   display: grid;
   gap: 8px;
+}
+
+.account-management-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.account-user-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 120px minmax(130px, 1fr) auto auto auto minmax(120px, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.account-user-form input,
+.account-user-form select {
+  width: 100%;
+}
+
+.account-enabled-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.account-enabled-field input {
+  width: auto;
+  min-height: auto;
+}
+
+.account-user-list {
+  display: grid;
+  gap: 8px;
+}
+
+.account-user-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #edd48d;
+  padding-top: 8px;
+}
+
+.account-user-item.disabled {
+  opacity: 0.62;
+}
+
+.account-user-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .account-lockout-item {
@@ -1127,7 +1185,12 @@ button.secondary:hover,
     grid-template-columns: 1fr;
   }
 
-  input {
+  input,
+  select {
     width: min(100%, 240px);
+  }
+
+  .account-user-form {
+    grid-template-columns: 1fr;
   }
 }

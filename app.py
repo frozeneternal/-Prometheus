@@ -280,6 +280,13 @@ from backend.auth_api import (  # noqa: E402 - transitional re-export while app.
     session_payload,
     unlock_login_payload,
 )
+from backend.accounts_admin import (  # noqa: E402 - transitional re-export while app.py is split.
+    AccountsAdminRuntime,
+    account_users_payload,
+    configure_accounts_admin_runtime,
+    delete_account_user_payload,
+    upsert_account_user_payload,
+)
 from backend.config import (  # noqa: E402 - transitional re-export while app.py is split.
     DEFAULT_CONFIG,
     active_config_path,
@@ -468,6 +475,14 @@ configure_auth_api_runtime(
         save_revoked_sessions=lambda session_ids: save_revoked_sessions_to_disk(session_ids),
         append_auth_audit=lambda config, event: append_auth_audit_log(config, event),
         get_auth_audit_logs=lambda: get_recent_auth_audit_logs(),
+    )
+)
+configure_accounts_admin_runtime(
+    AccountsAdminRuntime(
+        now=lambda: time.time(),
+        load_config_raw=lambda: load_config_raw(),
+        save_config_raw=lambda raw_config: save_config_raw(raw_config),
+        append_auth_audit=lambda config, event: append_auth_audit_log(config, event),
     )
 )
 
@@ -689,6 +704,36 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
             status, payload = logout_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/users":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = account_users_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/users/upsert":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = upsert_account_user_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/users/delete":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = delete_account_user_payload(config, body)
             json_response(self, status, payload)
             return
 

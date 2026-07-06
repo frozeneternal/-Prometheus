@@ -7,6 +7,7 @@ export const state = {
   refreshTimer: null,
   sessionToken: window.localStorage.getItem("monitorSessionToken") || "",
   currentUser: null,
+  accountUsers: [],
   accountLockouts: [],
   accountAuditLogs: [],
 };

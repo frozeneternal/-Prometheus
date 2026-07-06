@@ -9,6 +9,25 @@ from unittest.mock import patch
 
 
 class BackendModuleTests(unittest.TestCase):
+    def account_admin_fixture(self) -> tuple[dict, dict, str]:
+        from backend.auth import authenticate_user, create_session_token, hash_password
+
+        raw_config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": "admin",
+                    "displayName": "Admin",
+                    "role": "admin",
+                    "passwordHash": hash_password("admin-pass", salt="admin-salt", iterations=1000),
+                }
+            ],
+        }
+        config = json.loads(json.dumps(raw_config))
+        admin = authenticate_user(config, "admin", "admin-pass")
+        token = create_session_token(config, admin)
+        return config, raw_config, token
+
     def test_auth_module_hashes_and_verifies_passwords(self) -> None:
         from backend.auth import hash_password, verify_password
 
@@ -86,6 +105,173 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertIsNone(revoked_user)
         self.assertTrue(saved_revocations[0])
+
+    def test_accounts_admin_module_creates_user_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "password": "ops-pass-1",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        saved_user = next(user for user in saved[0]["users"] if user["username"] == "ops")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved_user["displayName"], "Operations")
+        self.assertEqual(saved_user["role"], "operator")
+        self.assertTrue(saved_user["passwordHash"].startswith("pbkdf2_sha256$"))
+        self.assertNotIn("ops-pass-1", json.dumps(saved[0], ensure_ascii=False))
+        self.assertNotIn("passwordHash", json.dumps(payload["users"], ensure_ascii=False))
+        self.assertEqual(payload["users"][1]["username"], "ops")
+        self.assertEqual(audit_events[0]["event"], "account-upsert")
+        self.assertEqual(audit_events[0]["actor"]["username"], "admin")
+
+    def test_accounts_admin_module_blocks_last_admin_disable_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        saved: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "viewer",
+                "enabled": False,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("当前登录账号", payload["message"])
+        self.assertEqual(saved, [])
+
+    def test_accounts_admin_module_deletes_non_admin_user_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, delete_account_user_payload
+        from backend.auth import hash_password
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].append(
+            {
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "passwordHash": hash_password("ops-pass-1", salt="ops-salt", iterations=1000),
+            }
+        )
+        config = json.loads(json.dumps(raw_config))
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = delete_account_user_payload(
+            config,
+            {"sessionToken": token, "username": "ops"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual([user["username"] for user in saved[0]["users"]], ["admin"])
+        self.assertEqual([user["username"] for user in payload["users"]], ["admin"])
+        self.assertEqual(audit_events[0]["event"], "account-delete")
+
+    def test_accounts_admin_module_blocks_current_admin_self_lockout_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, delete_account_user_payload, upsert_account_user_payload
+        from backend.auth import hash_password
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].append(
+            {
+                "username": "admin2",
+                "displayName": "Admin 2",
+                "role": "admin",
+                "passwordHash": hash_password("admin-pass-2", salt="admin2-salt", iterations=1000),
+            }
+        )
+        config = json.loads(json.dumps(raw_config))
+        saved: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+
+        disable_status, disable_payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "enabled": False,
+            },
+            runtime=runtime,
+        )
+        delete_status, delete_payload = delete_account_user_payload(
+            config,
+            {"sessionToken": token, "username": "admin"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(disable_status, 400)
+        self.assertIn("不能停用当前登录账号", disable_payload["message"])
+        self.assertEqual(delete_status, 400)
+        self.assertIn("不能删除当前登录账号", delete_payload["message"])
+        self.assertEqual(saved, [])
+
+    def test_accounts_admin_module_rejects_non_admin_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, account_users_payload
+        from backend.auth import authenticate_user, create_session_token, hash_password
+
+        config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": "ops",
+                    "displayName": "Operations",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass-1", salt="ops-salt", iterations=1000),
+                }
+            ],
+        }
+        user = authenticate_user(config, "ops", "ops-pass-1")
+        token = create_session_token(config, user)
+        runtime = AccountsAdminRuntime(load_config_raw=lambda: config)
+
+        status, payload = account_users_payload(config, {"sessionToken": token}, runtime=runtime)
+
+        self.assertEqual(status, 403)
+        self.assertFalse(payload["ok"])
 
     def test_expiry_module_classifies_resources_without_app_import(self) -> None:
         from backend.expiry import resource_expiry_items, resource_expiry_summary
@@ -1352,6 +1538,19 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_account_admin_payload_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "account_users_payload",
+            "upsert_account_user_payload",
+            "delete_account_user_payload",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -1362,6 +1561,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.login_lockouts_payload.__module__, "backend.auth_api")
         self.assertEqual(app.auth_audit_payload.__module__, "backend.auth_api")
         self.assertEqual(app.unlock_login_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.account_users_payload.__module__, "backend.accounts_admin")
+        self.assertEqual(app.upsert_account_user_payload.__module__, "backend.accounts_admin")
+        self.assertEqual(app.delete_account_user_payload.__module__, "backend.accounts_admin")
         self.assertEqual(app.resource_expiry_items.__module__, "backend.expiry")
         self.assertEqual(app.parse_expiry_datetime.__module__, "backend.expiry")
         self.assertEqual(app.resource_expiry_summary.__module__, "backend.expiry")

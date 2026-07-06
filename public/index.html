@@ -38,6 +38,30 @@
         <section id="systemNotice" class="system-notice hidden" aria-live="polite"></section>
         <section id="configValidationPanel" class="config-validation-panel hidden" aria-live="polite"></section>
         <section id="accountLockoutPanel" class="account-lockout-panel hidden" aria-live="polite">
+          <div id="accountManagementPanel" class="account-management-panel hidden">
+            <div class="account-lockout-head">
+              <strong>账号管理</strong>
+              <span id="accountUserSummary" class="muted"></span>
+            </div>
+            <form id="accountUserForm" class="account-user-form" autocomplete="off">
+              <input id="accountUsername" name="accountUsername" autocomplete="off" placeholder="账号">
+              <input id="accountDisplayName" name="accountDisplayName" autocomplete="off" placeholder="显示名">
+              <select id="accountRole" name="accountRole">
+                <option value="viewer">viewer</option>
+                <option value="operator" selected>operator</option>
+                <option value="admin">admin</option>
+              </select>
+              <input id="accountPassword" name="accountPassword" type="password" autocomplete="new-password" placeholder="新密码">
+              <label class="account-enabled-field" for="accountEnabled">
+                <input id="accountEnabled" type="checkbox" checked>
+                <span>启用</span>
+              </label>
+              <button id="accountUserSubmitButton" type="submit">保存</button>
+              <button id="accountUserResetButton" class="secondary" type="button">清空</button>
+              <span id="accountUserError" class="login-error"></span>
+            </form>
+            <div id="accountUserList" class="account-user-list"></div>
+          </div>
           <div class="account-lockout-head">
             <strong>账号锁定</strong>
             <span id="accountLockoutSummary" class="muted"></span>

@@ -1,9 +1,12 @@
 import {
   fetchAccountAudit,
   fetchAccountLockouts,
+  fetchAccountUsers,
   fetchSession,
   loginUser,
   logoutSession,
+  removeAccountUser,
+  saveAccountUser as saveAccountUserRequest,
   unlockAccount,
 } from "./client.js";
 import { $, escapeHtml } from "./dom.js";
@@ -39,6 +42,7 @@ export function renderAuthControls() {
   if (state.currentUser) {
     $("#accountUserLabel").textContent = `${state.currentUser.displayName || state.currentUser.username} · ${state.currentUser.role}`;
   }
+  renderAccountManagement();
   renderAccountLockouts();
 }
 
@@ -67,6 +71,20 @@ export async function loadAccountLockouts() {
   }
 }
 
+export async function loadAccountUsers() {
+  if (!state.sessionToken || !isAdminUser()) {
+    state.accountUsers = [];
+    return;
+  }
+
+  try {
+    const payload = await fetchAccountUsers(state.sessionToken);
+    state.accountUsers = payload.users || [];
+  } catch (error) {
+    state.accountUsers = [];
+  }
+}
+
 export async function loadAccountAudit() {
   if (!state.sessionToken || !isAdminUser()) {
     state.accountAuditLogs = [];
@@ -81,10 +99,55 @@ export async function loadAccountAudit() {
   }
 }
 
+export function renderAccountManagement() {
+  const panel = $("#accountManagementPanel");
+  if (!isAdminUser()) {
+    panel.classList.add("hidden");
+    $("#accountUserList").innerHTML = "";
+    $("#accountUserSummary").textContent = "";
+    return;
+  }
+
+  const users = state.accountUsers || [];
+  panel.classList.remove("hidden");
+  $("#accountUserSummary").textContent = users.length ? `${users.length} 个账号` : "当前没有账号";
+  $("#accountUserList").innerHTML = users.length
+    ? users.map((user) => `
+      <div class="account-user-item ${user.enabled ? "" : "disabled"}">
+        <div>
+          <strong>${escapeHtml(user.displayName || user.username || "")}</strong>
+          <span class="muted">${escapeHtml(user.username || "")} · ${escapeHtml(user.role || "viewer")}${user.enabled ? "" : " · 已停用"}</span>
+        </div>
+        <div class="account-user-actions">
+          <button type="button" class="secondary compact" data-edit-user="${escapeHtml(user.username || "")}">编辑</button>
+          <button type="button" class="secondary compact" data-delete-user="${escapeHtml(user.username || "")}">删除</button>
+        </div>
+      </div>
+    `).join("")
+    : '<p class="muted">暂无账号。</p>';
+
+  $("#accountUserList").querySelectorAll("[data-edit-user]").forEach((button) => {
+    button.addEventListener("click", () => editManagedAccount(button.dataset.editUser));
+  });
+  $("#accountUserList").querySelectorAll("[data-delete-user]").forEach((button) => {
+    button.addEventListener("click", () => deleteManagedAccount(button.dataset.deleteUser));
+  });
+
+  const form = $("#accountUserForm");
+  if (!form.dataset.bound) {
+    form.addEventListener("submit", saveAccountUser);
+    $("#accountUserResetButton").addEventListener("click", resetAccountUserForm);
+    form.dataset.bound = "true";
+  }
+}
+
 export function renderAccountLockouts() {
   const panel = $("#accountLockoutPanel");
   if (!isAdminUser()) {
     panel.classList.add("hidden");
+    $("#accountManagementPanel").classList.add("hidden");
+    $("#accountUserList").innerHTML = "";
+    $("#accountUserSummary").textContent = "";
     $("#accountLockoutList").innerHTML = "";
     $("#accountLockoutSummary").textContent = "";
     $("#accountAuditList").innerHTML = "";
@@ -132,6 +195,68 @@ export function renderAccountAudit() {
     : '<p class="muted">暂无账号审计事件。</p>';
 }
 
+function resetAccountUserForm() {
+  $("#accountUsername").value = "";
+  $("#accountUsername").disabled = false;
+  $("#accountDisplayName").value = "";
+  $("#accountRole").value = "operator";
+  $("#accountPassword").value = "";
+  $("#accountEnabled").checked = true;
+  $("#accountUserError").textContent = "";
+}
+
+function editManagedAccount(username) {
+  const user = (state.accountUsers || []).find((item) => item.username === username);
+  if (!user) return;
+  $("#accountUsername").value = user.username || "";
+  $("#accountUsername").disabled = true;
+  $("#accountDisplayName").value = user.displayName || user.username || "";
+  $("#accountRole").value = user.role || "viewer";
+  $("#accountPassword").value = "";
+  $("#accountEnabled").checked = user.enabled !== false;
+  $("#accountUserError").textContent = "";
+}
+
+export async function saveAccountUser(event) {
+  event.preventDefault();
+  $("#accountUserError").textContent = "";
+  $("#accountUserSubmitButton").disabled = true;
+  try {
+    const payload = await saveAccountUserRequest({
+      user: {
+        username: $("#accountUsername").value,
+        displayName: $("#accountDisplayName").value,
+        role: $("#accountRole").value,
+        password: $("#accountPassword").value,
+        enabled: $("#accountEnabled").checked,
+      },
+      auth: { sessionToken: state.sessionToken },
+    });
+    state.accountUsers = payload.users || [];
+    if (state.config?.auth) state.config.auth.users = state.accountUsers;
+    resetAccountUserForm();
+    await loadAccountAudit();
+    renderAuthControls();
+  } catch (error) {
+    $("#accountUserError").textContent = error.message;
+  } finally {
+    $("#accountUserSubmitButton").disabled = false;
+  }
+}
+
+export async function deleteManagedAccount(username) {
+  if (!username || !window.confirm(`删除账号 ${username}？`)) return;
+  try {
+    const payload = await removeAccountUser({ username, auth: { sessionToken: state.sessionToken } });
+    state.accountUsers = payload.users || [];
+    if (state.config?.auth) state.config.auth.users = state.accountUsers;
+    await loadAccountAudit();
+    renderAuthControls();
+  } catch (error) {
+    $("#accountUserError").textContent = error.message;
+  }
+}
+
 async function unlockLoginAccount(username) {
   try {
     const payload = await unlockAccount({ username, auth: { sessionToken: state.sessionToken } });
@@ -158,6 +283,7 @@ export async function loginCurrentUser(event, options = {}) {
     state.currentUser = payload.user || null;
     window.localStorage.setItem("monitorSessionToken", state.sessionToken);
     $("#loginPassword").value = "";
+    await loadAccountUsers();
     await loadAccountLockouts();
     await loadAccountAudit();
     renderAuthControls();
@@ -180,6 +306,7 @@ export async function logoutCurrentUser() {
   } finally {
     state.sessionToken = "";
     state.currentUser = null;
+    state.accountUsers = [];
     state.accountLockouts = [];
     state.accountAuditLogs = [];
     window.localStorage.removeItem("monitorSessionToken");

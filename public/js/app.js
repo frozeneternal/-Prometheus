@@ -1,6 +1,7 @@
 import {
   loadAccountAudit,
   loadAccountLockouts,
+  loadAccountUsers,
   loginCurrentUser,
   logoutCurrentUser,
   refreshSession,
@@ -92,6 +93,7 @@ async function loadConfig() {
   const payload = await fetchConfig();
   state.config = payload.config;
   await refreshSession();
+  await loadAccountUsers();
   await loadAccountLockouts();
   await loadAccountAudit();
   renderAuthControls();
