@@ -324,6 +324,33 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(missing_attempts, {})
         self.assertEqual(missing_revoked, {})
 
+    def test_app_does_not_define_auth_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "b64url_encode",
+            "b64url_decode",
+            "hash_password",
+            "verify_password",
+            "normalize_role",
+            "public_user",
+            "configured_users",
+            "users_enabled",
+            "find_user",
+            "authenticate_user",
+            "session_signing_key",
+            "create_session_token",
+            "verify_session_token",
+            "role_allows",
+            "authorize_operation",
+            "verify_action_token",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+        self.assertNotIn("ROLE_RANK = {", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -335,6 +362,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.find_server.__module__, "backend.config")
         self.assertEqual(app.public_config.__module__, "backend.public_view")
         self.assertEqual(app.auth_audit_event.__module__, "backend.auth_audit")
+        self.assertEqual(app.verify_action_token.__module__, "backend.auth")
 
 
 if __name__ == "__main__":
