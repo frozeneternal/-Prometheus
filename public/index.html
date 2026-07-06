@@ -37,6 +37,13 @@
       <main>
         <section id="systemNotice" class="system-notice hidden" aria-live="polite"></section>
         <section id="configValidationPanel" class="config-validation-panel hidden" aria-live="polite"></section>
+        <section id="accountLockoutPanel" class="account-lockout-panel hidden" aria-live="polite">
+          <div class="account-lockout-head">
+            <strong>账号锁定</strong>
+            <span id="accountLockoutSummary" class="muted"></span>
+          </div>
+          <div id="accountLockoutList" class="account-lockout-list"></div>
+        </section>
 
         <section class="summary-grid" aria-label="状态汇总">
           <article class="summary-card">

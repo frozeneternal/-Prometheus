@@ -137,6 +137,19 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('parsed.path == "/api/auth/logout"', backend_py)
         self.assertIn("revoke_session_token", backend_py)
 
+    def test_admin_account_lockouts_have_frontend_and_backend_routes(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountLockoutPanel"', index_html)
+        self.assertIn('"/api/auth/lockouts"', app_js)
+        self.assertIn('"/api/auth/unlock"', app_js)
+        self.assertIn("renderAccountLockouts", app_js)
+        self.assertIn('parsed.path == "/api/auth/lockouts"', backend_py)
+        self.assertIn('parsed.path == "/api/auth/unlock"', backend_py)
+        self.assertIn('authorize_operation(config, body, "admin")', backend_py)
+
 
 if __name__ == "__main__":
     unittest.main()

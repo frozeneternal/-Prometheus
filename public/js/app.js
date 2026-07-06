@@ -68,6 +68,7 @@ async function loadConfig() {
   const payload = await getJson("/api/config");
   state.config = payload.config;
   await refreshSession();
+  await loadAccountLockouts();
   renderAuthControls();
   $("#appName").textContent = state.config.appName || "本地服务器监控台";
   $("#prometheusUrl").textContent = state.config.prometheusUrl || "";
@@ -108,6 +109,7 @@ function renderAuthControls() {
   if (state.currentUser) {
     $("#accountUserLabel").textContent = `${state.currentUser.displayName || state.currentUser.username} · ${state.currentUser.role}`;
   }
+  renderAccountLockouts();
 }
 
 function authPayload() {
@@ -115,6 +117,74 @@ function authPayload() {
   if (auth.mode === "users") return { sessionToken: state.sessionToken };
   if (state.config?.actionsRequireToken) return { token: $("#tokenInput").value };
   return {};
+}
+
+function isAdminUser() {
+  return state.currentUser?.role === "admin";
+}
+
+async function loadAccountLockouts() {
+  if (!state.sessionToken || !isAdminUser()) {
+    state.accountLockouts = [];
+    return;
+  }
+
+  try {
+    const payload = await getJson("/api/auth/lockouts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken: state.sessionToken }),
+    });
+    state.accountLockouts = payload.lockouts || [];
+  } catch (error) {
+    state.accountLockouts = [];
+  }
+}
+
+function renderAccountLockouts() {
+  const panel = $("#accountLockoutPanel");
+  if (!isAdminUser()) {
+    panel.classList.add("hidden");
+    $("#accountLockoutList").innerHTML = "";
+    $("#accountLockoutSummary").textContent = "";
+    return;
+  }
+
+  const lockouts = state.accountLockouts || [];
+  panel.classList.remove("hidden");
+  $("#accountLockoutSummary").textContent = lockouts.length
+    ? `${lockouts.length} 个账号需要处理`
+    : "当前没有锁定账号";
+  $("#accountLockoutList").innerHTML = lockouts.length
+    ? lockouts.map((item) => `
+      <div class="account-lockout-item">
+        <div>
+          <strong>${escapeHtml(item.username || "")}</strong>
+          <span class="muted">剩余 ${formatElapsed(item.secondsRemaining || 0)} · 失败 ${escapeHtml(String(item.failureCount || 0))} 次</span>
+        </div>
+        <button type="button" class="secondary compact" data-unlock-user="${escapeHtml(item.username || "")}">解锁</button>
+      </div>
+    `).join("")
+    : '<p class="muted">没有账号处于临时锁定状态。</p>';
+
+  $("#accountLockoutList").querySelectorAll("[data-unlock-user]").forEach((button) => {
+    button.addEventListener("click", () => unlockLoginAccount(button.dataset.unlockUser));
+  });
+}
+
+async function unlockLoginAccount(username) {
+  try {
+    const payload = await getJson("/api/auth/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, sessionToken: state.sessionToken }),
+    });
+    state.accountLockouts = payload.lockouts || [];
+    renderAccountLockouts();
+  } catch (error) {
+    await loadAccountLockouts();
+    renderAccountLockouts();
+  }
 }
 
 async function refreshDashboard() {
@@ -967,6 +1037,7 @@ async function loginCurrentUser(event) {
     state.currentUser = payload.user || null;
     window.localStorage.setItem("monitorSessionToken", state.sessionToken);
     $("#loginPassword").value = "";
+    await loadAccountLockouts();
     renderAuthControls();
     await refreshDashboard();
   } catch (error) {
@@ -991,6 +1062,7 @@ async function logoutCurrentUser() {
   } finally {
     state.sessionToken = "";
     state.currentUser = null;
+    state.accountLockouts = [];
     window.localStorage.removeItem("monitorSessionToken");
     renderAuthControls();
   }

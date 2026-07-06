@@ -209,6 +209,64 @@ class AccountAuthTests(unittest.TestCase):
         self.assertEqual(locked_status, 429)
         self.assertNotIn("sessionToken", locked_payload)
 
+    def test_admin_can_list_active_login_lockouts(self) -> None:
+        config = self.config_with_users()
+        config["users"].append(
+            {
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+            }
+        )
+        admin = app.authenticate_user(config, "admin", "admin-pass")
+        token = app.create_session_token(config, admin)
+        app.record_login_failure(config, "ops", now=1000)
+        app.record_login_failure(config, "ops", now=1001)
+        app.record_login_failure(config, "ops", now=1002)
+        app.record_login_failure(config, "ops", now=1003)
+        app.record_login_failure(config, "ops", now=1004)
+
+        status, payload = app.login_lockouts_payload(config, {"sessionToken": token}, now=1010)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["lockouts"][0]["username"], "ops")
+        self.assertGreater(payload["lockouts"][0]["lockedUntil"], 1010)
+
+    def test_admin_can_unlock_login_lockout_and_persist_state(self) -> None:
+        config = self.config_with_users()
+        config["users"].append(
+            {
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+            }
+        )
+        admin = app.authenticate_user(config, "admin", "admin-pass")
+        token = app.create_session_token(config, admin)
+        app.record_login_failure(config, "ops", now=1000)
+        app.record_login_failure(config, "ops", now=1001)
+        app.record_login_failure(config, "ops", now=1002)
+        app.record_login_failure(config, "ops", now=1003)
+        app.record_login_failure(config, "ops", now=1004)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "login_attempts.json"
+            with patch.object(app, "LOGIN_ATTEMPT_PATH", path):
+                status, payload = app.unlock_login_payload(
+                    config,
+                    {"sessionToken": token, "username": "ops"},
+                    now=1010,
+                )
+                auth_backend.LOGIN_ATTEMPTS.clear()
+                app.load_login_attempts(app.load_login_attempts_from_disk(), now=1011)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(app.login_lockout_until(config, "ops", now=1011), 0)
+
     def test_legacy_action_token_still_authorizes_without_users(self) -> None:
         config = {"actionToken": "legacy-token", "users": []}
 

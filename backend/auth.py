@@ -176,6 +176,32 @@ def record_login_success(username: str) -> None:
     LOGIN_ATTEMPTS.pop(login_attempt_key(username), None)
 
 
+def clear_login_attempt(username: str) -> bool:
+    return LOGIN_ATTEMPTS.pop(login_attempt_key(username), None) is not None
+
+
+def active_login_lockouts(now: float | None = None) -> list[dict]:
+    current = time.time() if now is None else float(now)
+    lockouts = []
+    for username, state in list(LOGIN_ATTEMPTS.items()):
+        cleaned = clean_login_attempt_state(state, current, 86400)
+        if cleaned["lockedUntil"] > current:
+            LOGIN_ATTEMPTS[username] = cleaned
+            lockouts.append(
+                {
+                    "username": username,
+                    "lockedUntil": int(cleaned["lockedUntil"]),
+                    "secondsRemaining": max(1, int(cleaned["lockedUntil"] - current)),
+                    "failureCount": len(cleaned["failures"]),
+                }
+            )
+        elif cleaned["failures"]:
+            LOGIN_ATTEMPTS[username] = cleaned
+        else:
+            LOGIN_ATTEMPTS.pop(username, None)
+    return sorted(lockouts, key=lambda item: item["username"])
+
+
 def load_login_attempts(attempts: dict, now: float | None = None) -> None:
     current = time.time() if now is None else float(now)
     LOGIN_ATTEMPTS.clear()

@@ -685,6 +685,7 @@ def authorize_operation(config: dict, body: dict, required_role: str = "operator
 
 from backend.auth import (  # noqa: E402 - transitional re-export while app.py is split.
     ROLE_RANK,
+    active_login_lockouts,
     authenticate_user,
     auth_policy,
     authorize_operation,
@@ -694,6 +695,7 @@ from backend.auth import (  # noqa: E402 - transitional re-export while app.py i
     create_session_token,
     find_user,
     hash_password,
+    clear_login_attempt,
     load_login_attempts,
     load_revoked_sessions,
     login_attempt_snapshot,
@@ -2063,6 +2065,42 @@ def logout_payload(config: dict, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True, "mode": "session", "message": "已退出登录。"}
 
 
+def login_lockouts_payload(config: dict, body: dict, now: float | None = None) -> tuple[int, dict]:
+    allowed, status, auth_payload = authorize_operation(config, body, "admin")
+    if not allowed:
+        return status, auth_payload
+    return 200, {
+        "ok": True,
+        "lockouts": active_login_lockouts(now=now),
+        "user": auth_payload.get("user"),
+    }
+
+
+def unlock_login_payload(config: dict, body: dict, now: float | None = None) -> tuple[int, dict]:
+    allowed, status, auth_payload = authorize_operation(config, body, "admin")
+    if not allowed:
+        return status, auth_payload
+
+    username = str(body.get("username") or "").strip()
+    if not username:
+        return 400, {"ok": False, "message": "缺少要解锁的账号。"}
+
+    unlocked = clear_login_attempt(username)
+    try:
+        save_login_attempts_to_disk(login_attempt_snapshot(now=now))
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号锁定状态保存失败：{exc}"}
+    if not unlocked:
+        return 404, {"ok": False, "message": "该账号当前没有锁定记录。"}
+    return 200, {
+        "ok": True,
+        "message": "账号已解锁。",
+        "username": username,
+        "lockouts": active_login_lockouts(now=now),
+        "user": auth_payload.get("user"),
+    }
+
+
 def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
     state = get_runtime_entity_state(target_type, target_id)
     return {
@@ -2351,6 +2389,26 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
             status, payload = logout_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/lockouts":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = login_lockouts_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/unlock":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = unlock_login_payload(config, body)
             json_response(self, status, payload)
             return
 

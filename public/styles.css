@@ -184,6 +184,46 @@ input {
   font-weight: 700;
 }
 
+.account-lockout-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #edd48d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--warn-bg);
+  box-shadow: var(--shadow);
+}
+
+.account-lockout-head,
+.account-lockout-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-lockout-list {
+  display: grid;
+  gap: 8px;
+}
+
+.account-lockout-item {
+  min-height: 44px;
+  border-top: 1px solid #edd48d;
+  padding-top: 8px;
+}
+
+.account-lockout-item div {
+  display: grid;
+  gap: 2px;
+}
+
+.compact {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
 .config-validation-panel {
   display: grid;
   gap: 10px;
