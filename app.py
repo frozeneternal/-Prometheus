@@ -537,6 +537,11 @@ from backend.public_view import (  # noqa: E402 - transitional re-export while a
     renew_action_label,
     server_type,
 )
+from backend.recovery import (  # noqa: E402 - transitional re-export while app.py is split.
+    can_trigger_recovery,
+    recovery_policy_error,
+    resolve_recovery_action,
+)
 from backend.validation import config_validation_summary  # noqa: E402 - transitional re-export while app.py is split.
 
 
@@ -1331,82 +1336,6 @@ def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
         "lastReason": state.get("lastReason", ""),
         "lastLogId": state.get("lastLogId", ""),
     }
-
-
-def can_trigger_recovery(entity: dict, health: str, state: dict) -> tuple[bool, str]:
-    recovery = entity.get("autoRecovery") or {}
-    if not recovery.get("enabled"):
-        return False, "自动恢复未启用。"
-
-    policy_message = recovery_policy_error(recovery)
-    if policy_message:
-        return False, policy_message
-
-    trigger_health = recovery.get("triggerHealth") or ["down"]
-    if health not in trigger_health:
-        return False, f"当前状态 {health} 不在自动恢复触发条件内。"
-
-    min_failures = strict_positive_int_value(recovery.get("minimumConsecutiveFailures", 2)) or 2
-    min_failures = max(1, min_failures)
-    if state.get("consecutiveFailures", 0) < min_failures:
-        return False, f"连续失败次数不足 {min_failures} 次。"
-
-    cooldown = strict_positive_int_value(recovery.get("cooldownSeconds", 300)) or 300
-    cooldown = max(30, cooldown)
-    last_completed = float(state.get("lastCompletedAt", 0.0) or 0.0)
-    if last_completed and time.time() - last_completed < cooldown:
-        remain = int(cooldown - (time.time() - last_completed))
-        return False, f"仍在冷却中，剩余约 {max(0, remain)} 秒。"
-
-    return True, ""
-
-
-def recovery_policy_error(recovery: dict) -> str:
-    trigger_health = recovery.get("triggerHealth") or ["down"]
-    allowed_trigger_health = {"down", "warning", "unknown"}
-    if (
-        not isinstance(trigger_health, list)
-        or not trigger_health
-        or any(not isinstance(item, str) or item not in allowed_trigger_health for item in trigger_health)
-    ):
-        return "自动恢复 triggerHealth 必须是 down/warning/unknown 组成的非空数组。"
-
-    min_failures = strict_int_value(recovery.get("minimumConsecutiveFailures", 2))
-    if min_failures is None:
-        return "自动恢复 minimumConsecutiveFailures 必须是整数。"
-    if min_failures <= 0:
-        return "自动恢复 minimumConsecutiveFailures 必须大于 0。"
-
-    cooldown = strict_int_value(recovery.get("cooldownSeconds", 300))
-    if cooldown is None:
-        return "自动恢复 cooldownSeconds 必须是整数。"
-    if cooldown < 30:
-        return "自动恢复 cooldownSeconds 不能低于 30 秒。"
-
-    return ""
-
-
-def resolve_recovery_action(config: dict, entity: dict) -> tuple[dict | None, dict | None, str]:
-    recovery = entity.get("autoRecovery") or {}
-    action_server_id = recovery.get("actionServerId") or entity.get("id") or entity.get("serverId") or ""
-    action_id = recovery.get("actionId") or ""
-    if not action_server_id or not action_id:
-        return None, None, "未配置自动恢复动作。"
-
-    action_server = find_server(config, str(action_server_id))
-    if not action_server:
-        return None, None, f"找不到自动恢复服务器：{action_server_id}"
-
-    action = find_action(action_server, str(action_id))
-    if not action:
-        return action_server, None, f"找不到自动恢复动作：{action_id}"
-
-    if action.get("enabled", True) is False:
-        return action_server, action, "自动恢复动作已禁用。"
-    if not action.get("allowAuto", False):
-        return action_server, action, "自动恢复动作未允许后台自动执行。"
-
-    return action_server, action, ""
 
 
 def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapshot: dict) -> dict:

@@ -297,6 +297,67 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(appended[0]["id"], "invalid-codes")
         self.assertIn("successReturnCodes", payload["message"])
 
+    def test_recovery_module_blocks_until_min_failures_and_cooldown_without_app_import(self) -> None:
+        from backend.recovery import can_trigger_recovery, recovery_policy_error
+
+        entity = {
+            "id": "srv1",
+            "autoRecovery": {
+                "enabled": True,
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 2,
+                "cooldownSeconds": 300,
+            },
+        }
+
+        self.assertEqual(recovery_policy_error(entity["autoRecovery"]), "")
+
+        allowed, message = can_trigger_recovery(entity, "down", {"consecutiveFailures": 1}, now=1000.0)
+        self.assertFalse(allowed)
+        self.assertIn("2", message)
+
+        allowed, message = can_trigger_recovery(
+            entity,
+            "down",
+            {"consecutiveFailures": 2, "lastCompletedAt": 800.0},
+            now=1000.0,
+        )
+        self.assertFalse(allowed)
+        self.assertIn("100", message)
+
+        allowed, message = can_trigger_recovery(
+            entity,
+            "down",
+            {"consecutiveFailures": 2, "lastCompletedAt": 600.0},
+            now=1000.0,
+        )
+        self.assertTrue(allowed)
+        self.assertEqual(message, "")
+
+    def test_recovery_module_resolves_auto_action_without_app_import(self) -> None:
+        from backend.recovery import resolve_recovery_action
+
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {"id": "restart", "name": "Restart service", "command": ["restart"], "allowAuto": True}
+                    ],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "autoRecovery": {"enabled": True, "actionServerId": "ops-host", "actionId": "restart"},
+        }
+
+        action_server, action, message = resolve_recovery_action(config, entity)
+
+        self.assertEqual(action_server["id"], "ops-host")
+        self.assertEqual(action["id"], "restart")
+        self.assertEqual(message, "")
+
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
 
@@ -597,6 +658,19 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_recovery_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "can_trigger_recovery",
+            "recovery_policy_error",
+            "resolve_recovery_action",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -617,6 +691,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.website_snapshot.__module__, "backend.snapshots")
         self.assertEqual(app.dashboard_payload.__module__, "backend.dashboard")
         self.assertEqual(app.execute_server_action.__module__, "backend.actions")
+        self.assertEqual(app.can_trigger_recovery.__module__, "backend.recovery")
+        self.assertEqual(app.recovery_policy_error.__module__, "backend.recovery")
+        self.assertEqual(app.resolve_recovery_action.__module__, "backend.recovery")
 
 
 if __name__ == "__main__":
