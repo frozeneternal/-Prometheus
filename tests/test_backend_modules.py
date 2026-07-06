@@ -464,17 +464,27 @@ class BackendModuleTests(unittest.TestCase):
         }
         saved: list[dict] = []
         resets: list[tuple[str, str, str]] = []
+        logs: list[dict] = []
         runtime = SettingsRuntime(
+            now=lambda: 1000.0,
             load_config_raw=lambda: raw_config,
             save_config_raw=lambda config: saved.append(config),
             reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+            append_recovery_log=lambda _config, event: logs.append(event),
         )
 
-        status, payload = persist_auto_recovery_enabled("server", "srv1", True, runtime=runtime)
+        status, payload = persist_auto_recovery_enabled(
+            "server",
+            "srv1",
+            True,
+            actor={"username": "ops", "role": "operator"},
+            runtime=runtime,
+        )
 
         server = saved[0]["servers"][0]
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["logId"], logs[0]["id"])
         self.assertTrue(server["autoRecovery"]["enabled"])
         self.assertEqual(server["autoRecovery"]["actionId"], "restart")
         self.assertEqual(server["autoRecovery"]["minimumConsecutiveFailures"], 2)
@@ -483,6 +493,11 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(server["actions"][0]["enabled"])
         self.assertTrue(server["actions"][0]["allowAuto"])
         self.assertEqual(resets, [("server", "srv1", "自动恢复开关已更新。")])
+        self.assertEqual(logs[0]["invocation"], "auto-recovery-toggle")
+        self.assertEqual(logs[0]["targetType"], "server")
+        self.assertEqual(logs[0]["targetId"], "srv1")
+        self.assertEqual(logs[0]["actor"]["username"], "ops")
+        self.assertIn("启用", logs[0]["message"])
 
     def test_settings_module_enables_auto_backup_and_primes_first_interval_without_app_import(self) -> None:
         from backend.settings import SettingsRuntime, persist_auto_backup_enabled

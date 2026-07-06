@@ -94,11 +94,47 @@ def cert_renewal_toggle_log_event(
     }
 
 
+def auto_recovery_toggle_log_event(
+    entity: dict,
+    target_type: str,
+    target_id: str,
+    *,
+    enabled: bool,
+    actor: dict | None,
+    now: float,
+) -> dict:
+    target_name = str(entity.get("name") or target_id)
+    action = "启用" if enabled else "关闭"
+    return {
+        "id": f"{int(now * 1000)}-{target_type}-{target_id}-auto-recovery-toggle",
+        "timestamp": now,
+        "invocation": "auto-recovery-toggle",
+        "targetType": target_type,
+        "targetId": target_id,
+        "targetName": target_name,
+        "actionServerId": "",
+        "actionServerName": "",
+        "actionId": "toggle-auto-recovery",
+        "actionName": "自动恢复开关",
+        "reason": f"操作员{action}自动恢复。",
+        "consecutiveFailures": 0,
+        "ok": True,
+        "message": f"自动恢复已{action}。",
+        "returnCode": None,
+        "durationSeconds": 0,
+        "stdout": "",
+        "stderr": "",
+        "actor": public_user(actor or {}) if actor else {},
+        "enabled": bool(enabled),
+    }
+
+
 def persist_auto_recovery_enabled(
     target_type: str,
     target_id: str,
     enabled: bool,
     *,
+    actor: dict | None = None,
     runtime: SettingsRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -132,7 +168,19 @@ def persist_auto_recovery_enabled(
     recovery["enabled"] = bool(enabled)
     active_runtime.save_config_raw(raw_config)
     active_runtime.reset_state(target_type, target_id, "自动恢复开关已更新。")
-    return 200, {"ok": True, "message": "自动恢复已更新。"}
+    log_event = auto_recovery_toggle_log_event(
+        entity,
+        target_type,
+        target_id,
+        enabled=enabled,
+        actor=actor,
+        now=active_runtime.now(),
+    )
+    try:
+        active_runtime.append_recovery_log(raw_config, log_event)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"自动恢复开关已保存，但处置日志保存失败：{exc}"}
+    return 200, {"ok": True, "message": "自动恢复已更新。", "logId": log_event["id"]}
 
 
 def persist_auto_backup_enabled(

@@ -639,6 +639,7 @@ function recoveryLogCard(log) {
   const statusClass = log.ok ? "healthy" : "down";
   const invocationText = {
     auto: "自动恢复",
+    "auto-recovery-toggle": "恢复开关",
     manual: "手动执行",
     "manual-recovery": "手动恢复",
     "auto-backup": "自动备份",
