@@ -680,6 +680,7 @@ function incidentLogCard(log) {
   const active = log.status === "active";
   const statusClass = active ? "down" : "healthy";
   const statusText = active ? "中断中" : "已恢复";
+  const actionResult = incidentActionResultText(log);
   const output = [
     log.summary || "",
     `类型: ${log.targetKind || log.targetType || "--"}`,
@@ -689,6 +690,7 @@ function incidentLogCard(log) {
     `恢复: ${log.recoveredAt ? formatTime(log.recoveredAt) : "--"}`,
     `持续: ${formatElapsed(log.durationSeconds || 0)}`,
     log.lastLogId ? `关联恢复日志: ${log.lastLogId}` : "",
+    actionResult,
   ].filter(Boolean).join("\n");
 
   return `<article class="log-card incident-log-card">
@@ -701,6 +703,18 @@ function incidentLogCard(log) {
     </div>
     <pre class="log-output">${escapeHtml(output)}</pre>
   </article>`;
+}
+
+function incidentActionResultText(log) {
+  if (!log.lastActionResult) return "";
+  const resultLabels = {
+    success: "成功",
+    failed: "失败",
+  };
+  const result = resultLabels[log.lastActionResult] || log.lastActionResult;
+  const actionAt = log.lastActionAt ? `，时间 ${formatTime(log.lastActionAt)}` : "";
+  const logText = log.lastLogId ? `，日志 ${log.lastLogId}` : "，无日志 ID";
+  return `最近恢复动作: ${result}${actionAt}${logText}`;
 }
 
 function actionButton(server, action) {

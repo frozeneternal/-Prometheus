@@ -272,6 +272,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("关联日志", recovery_block)
         self.assertIn("recovery.lastLogId", recovery_block)
 
+    def test_incident_log_card_surfaces_last_recovery_action_result(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function incidentLogCard(")
+        end = app_js.index("\nfunction actionButton", start)
+        incident_block = app_js[start:end]
+
+        self.assertIn("log.lastActionResult", incident_block)
+        self.assertIn("log.lastActionAt", incident_block)
+        self.assertIn("最近恢复动作", incident_block)
+        self.assertIn("无日志 ID", incident_block)
+
     def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")
