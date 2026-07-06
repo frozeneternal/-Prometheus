@@ -211,6 +211,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("manualRecovery?.available", runbook_block)
         self.assertIn("openManualRecoveryDialog(button.dataset.targetType, button.dataset.targetId)", runbook_block)
 
+    def test_emergency_runbook_failed_auto_recovery_items_offer_disable_action(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderEmergencyRunbook()")
+        end = app_js.index("\nfunction renderGroups()", start)
+        runbook_block = app_js[start:end]
+
+        self.assertIn('data-emergency-auto-recovery-disable="true"', runbook_block)
+        self.assertIn('["server", "website"].includes(item.targetType)', runbook_block)
+        self.assertIn('autoRecovery?.status === "failed"', runbook_block)
+        self.assertIn("toggleAutoRecovery(button.dataset.targetType, button.dataset.targetId, false)", runbook_block)
+
     def test_emergency_runbook_resource_items_offer_renewal_and_acknowledgement_actions(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function renderEmergencyRunbook()")

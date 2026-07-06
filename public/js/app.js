@@ -272,6 +272,9 @@ function renderEmergencyRunbook() {
   $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-recovery]").forEach((button) => {
     button.addEventListener("click", () => openManualRecoveryDialog(button.dataset.targetType, button.dataset.targetId));
   });
+  $("#emergencyRunbookList").querySelectorAll("[data-emergency-auto-recovery-disable]").forEach((button) => {
+    button.addEventListener("click", () => toggleAutoRecovery(button.dataset.targetType, button.dataset.targetId, false));
+  });
   $("#emergencyRunbookList").querySelectorAll("[data-emergency-resource-ack]").forEach((button) => {
     button.addEventListener("click", () => acknowledgeResourceExpiry(button.dataset.resourceId));
   });
@@ -279,12 +282,21 @@ function renderEmergencyRunbook() {
 
 function emergencyActionButton(item) {
   if (["server", "website"].includes(item.targetType)) {
-    const targets = item.targetType === "server" ? (state.config?.servers || []) : (state.config?.websites || []);
-    const target = targets.find((candidate) => candidate.id === item.targetId);
+    const configTargets = item.targetType === "server" ? (state.config?.servers || []) : (state.config?.websites || []);
+    const dashboardTargets = item.targetType === "server" ? (state.dashboard?.servers || []) : (state.dashboard?.websites || []);
+    const target = configTargets.find((candidate) => candidate.id === item.targetId);
+    const dashboardTarget = dashboardTargets.find((candidate) => candidate.id === item.targetId);
+    const targetId = target?.id || dashboardTarget?.id || item.targetId;
     const manualRecovery = target?.manualRecovery;
+    const autoRecovery = dashboardTarget?.autoRecovery || target?.autoRecovery;
+    const actions = [];
     if (manualRecovery?.available) {
-      return `<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-recovery="true" data-target-type="${escapeHtml(item.targetType)}" data-target-id="${escapeHtml(target.id)}">${escapeHtml(manualRecovery.label || "手动恢复")}</button>`;
+      actions.push(`<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-recovery="true" data-target-type="${escapeHtml(item.targetType)}" data-target-id="${escapeHtml(targetId)}">${escapeHtml(manualRecovery.label || "手动恢复")}</button>`);
     }
+    if (autoRecovery?.enabled && autoRecovery?.status === "failed") {
+      actions.push(`<button type="button" class="secondary recovery-trigger compact high" data-emergency-auto-recovery-disable="true" data-target-type="${escapeHtml(item.targetType)}" data-target-id="${escapeHtml(targetId)}">暂停自动恢复</button>`);
+    }
+    return actions.join("");
   }
   if (item.targetType === "website-cert") {
     const website = (state.config?.websites || []).find((candidate) => candidate.id === item.targetId);
