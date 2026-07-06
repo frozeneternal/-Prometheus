@@ -134,6 +134,18 @@ def maybe_finish_pending_cert_renewal(
     if state.get("lastResult") != "verifying":
         return False, "", ""
     if cert_expires_in is None:
+        timeout = cert_renewal_verification_timeout(renewal)
+        last_attempt = float(state.get("lastAttemptAt", 0.0) or 0.0)
+        if last_attempt and now - last_attempt >= timeout:
+            state["lastResult"] = "failed"
+            state["lastCompletedAt"] = now
+            state.pop("pendingExpiresIn", None)
+            state.pop("verifiedExpiresIn", None)
+            return (
+                True,
+                "failed",
+                "证书续期命令已执行，但超时后仍没有证书到期数据。检查 blackbox exporter、TLS 证书链、DNS/CDN 缓存和续期日志。",
+            )
         return True, "verifying", "等待证书监控返回新的到期时间。"
 
     previous = state.get("pendingExpiresIn")

@@ -1669,6 +1669,54 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertIn("verificationTimeoutSeconds", result["message"])
 
+    def test_certificates_module_times_out_pending_verification_without_cert_metric_without_app_import(self) -> None:
+        from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
+
+        states = {
+            "website-cert:site1": {
+                "lastResult": "verifying",
+                "lastAttemptAt": 1000.0,
+                "pendingExpiresIn": 3 * 86400,
+                "lastLogId": "log-1",
+            }
+        }
+        runtime = CertRenewalRuntime(
+            now=lambda: 1301.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **_kwargs: self.fail("timed out verification must not rerun command"),
+        )
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "certRenewal": {
+                "enabled": True,
+                "renewBeforeDays": 14,
+                "cooldownSeconds": 86400,
+                "verificationTimeoutSeconds": 300,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert metric missing"],
+            "metrics": {"certExpiresIn": None},
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_cert_renewal({"servers": []}, website, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["lastResult"], "failed")
+        self.assertEqual(result["lastCompletedAt"], 1301.0)
+        self.assertIn("超时", result["message"])
+        self.assertIn("证书到期数据", result["message"])
+        self.assertNotIn("pendingExpiresIn", states["website-cert:site1"])
+
     def test_certificates_module_marks_success_only_after_expiry_extends_without_app_import(self) -> None:
         from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
 
