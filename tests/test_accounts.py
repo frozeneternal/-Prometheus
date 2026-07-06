@@ -301,14 +301,19 @@ class AccountAuthTests(unittest.TestCase):
                 patch.object(app, "LOGIN_ATTEMPT_PATH", attempts_path),
                 patch.object(app.time, "time", side_effect=[1000, 1010]),
             ):
-                app.login_payload(config, {"username": "ops", "password": "wrong"})
-                status, payload = app.login_payload(config, {"username": "ops", "password": "wrong"})
+                app.login_payload(config, {"username": "ops", "password": "wrong"}, source_ip="10.0.0.23")
+                status, payload = app.login_payload(
+                    config,
+                    {"username": "ops", "password": "wrong"},
+                    source_ip="10.0.0.23",
+                )
                 logs = app.load_auth_audit_logs_from_disk()
 
         self.assertEqual(status, 429)
         self.assertTrue(payload["ok"] is False)
         self.assertEqual(logs[-1]["event"], "login-lockout")
         self.assertEqual(logs[-1]["username"], "ops")
+        self.assertEqual(logs[-1]["sourceIp"], "10.0.0.23")
         self.assertNotIn("password", json.dumps(logs, ensure_ascii=False).lower())
         self.assertNotIn("sessionToken", json.dumps(logs, ensure_ascii=False))
 
@@ -341,6 +346,7 @@ class AccountAuthTests(unittest.TestCase):
                     config,
                     {"sessionToken": token, "username": "ops"},
                     now=1010,
+                    source_ip="10.0.0.24",
                 )
                 logs = app.load_auth_audit_logs_from_disk()
 
@@ -349,6 +355,7 @@ class AccountAuthTests(unittest.TestCase):
         self.assertEqual(logs[-1]["event"], "login-unlock")
         self.assertEqual(logs[-1]["username"], "ops")
         self.assertEqual(logs[-1]["actor"]["username"], "admin")
+        self.assertEqual(logs[-1]["sourceIp"], "10.0.0.24")
         serialized = json.dumps(logs, ensure_ascii=False)
         self.assertNotIn(token, serialized)
         self.assertNotIn("admin-pass", serialized)

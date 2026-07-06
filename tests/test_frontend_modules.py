@@ -450,6 +450,23 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("auth_audit_payload", backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', auth_api_py)
 
+    def test_account_audit_card_surfaces_source_ip(self) -> None:
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+        start = accounts_js.index("export function renderAccountAudit()")
+        end = accounts_js.index("\nfunction resetAccountUserForm()", start)
+        audit_block = accounts_js[start:end]
+
+        self.assertIn("log.sourceIp", audit_block)
+        self.assertIn("来源 IP", audit_block)
+
+    def test_account_audit_mutation_routes_use_server_source_ip(self) -> None:
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn("login_payload(config, body, source_ip=request_source_ip(self))", backend_py)
+        self.assertIn("upsert_account_user_payload(config, body, source_ip=request_source_ip(self))", backend_py)
+        self.assertIn("delete_account_user_payload(config, body, source_ip=request_source_ip(self))", backend_py)
+        self.assertIn("unlock_login_payload(config, body, source_ip=request_source_ip(self))", backend_py)
+
     def test_admin_account_management_has_frontend_and_backend_routes(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")

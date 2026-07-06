@@ -209,6 +209,7 @@ export function renderAccountAudit() {
         <div class="account-audit-meta">
           <span>${escapeHtml(formatTime(log.timestamp))}</span>
           <span>${escapeHtml(log.actor?.username ? `操作者 ${log.actor.username}` : "系统")}</span>
+          <span>${escapeHtml(log.sourceIp ? `来源 IP ${log.sourceIp}` : "来源 IP --")}</span>
         </div>
       </article>
     `).join("")

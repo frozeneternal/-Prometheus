@@ -86,7 +86,13 @@ def auth_audit_page(logs: list[dict], limit: object = None, offset: object = Non
     }
 
 
-def login_payload(config: dict, body: dict, *, runtime: AuthApiRuntime | None = None) -> tuple[int, dict]:
+def login_payload(
+    config: dict,
+    body: dict,
+    *,
+    source_ip: str = "",
+    runtime: AuthApiRuntime | None = None,
+) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
     if not users_enabled(config):
         return 400, {"ok": False, "message": "当前未启用账号登录模式。"}
@@ -117,6 +123,7 @@ def login_payload(config: dict, body: dict, *, runtime: AuthApiRuntime | None = 
                         "login-lockout",
                         username,
                         "登录失败次数过多，账号已临时锁定。",
+                        source_ip=source_ip,
                         now=current,
                     ),
                 )
@@ -216,6 +223,7 @@ def unlock_login_payload(
     body: dict,
     now: float | None = None,
     *,
+    source_ip: str = "",
     runtime: AuthApiRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -243,6 +251,7 @@ def unlock_login_payload(
                 username,
                 "管理员已解除账号临时锁定。",
                 actor=auth_payload.get("user"),
+                source_ip=source_ip,
                 now=current,
             ),
         )

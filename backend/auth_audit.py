@@ -20,6 +20,7 @@ def sanitize_auth_audit_event(event: dict) -> dict:
         "actor": public_user(actor) if isinstance(actor, dict) else None,
         "timestamp": timestamp,
         "message": str(event.get("message") or ""),
+        "sourceIp": str(event.get("sourceIp") or ""),
     }
 
 
@@ -50,6 +51,7 @@ def auth_audit_event(
     username: str,
     message: str,
     actor: dict | None = None,
+    source_ip: str = "",
     now: float | None = None,
 ) -> dict:
     current = time.time() if now is None else float(now)
@@ -60,4 +62,5 @@ def auth_audit_event(
         "actor": public_user(actor) if actor else None,
         "timestamp": current,
         "message": message,
+        "sourceIp": str(source_ip or ""),
     }

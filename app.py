@@ -727,7 +727,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
-            status, payload = login_payload(config, body)
+            status, payload = login_payload(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 
@@ -767,7 +767,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
-            status, payload = upsert_account_user_payload(config, body)
+            status, payload = upsert_account_user_payload(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 
@@ -777,7 +777,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
-            status, payload = delete_account_user_payload(config, body)
+            status, payload = delete_account_user_payload(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 
@@ -807,7 +807,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
-            status, payload = unlock_login_payload(config, body)
+            status, payload = unlock_login_payload(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 

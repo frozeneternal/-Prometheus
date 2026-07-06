@@ -121,6 +121,7 @@ def upsert_account_user_payload(
     config: dict,
     body: dict,
     *,
+    source_ip: str = "",
     runtime: AccountsAdminRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -187,6 +188,7 @@ def upsert_account_user_payload(
                 username,
                 "管理员已更新账号。",
                 actor=auth_payload.get("user"),
+                source_ip=source_ip,
                 now=active_runtime.now(),
             ),
         )
@@ -205,6 +207,7 @@ def delete_account_user_payload(
     config: dict,
     body: dict,
     *,
+    source_ip: str = "",
     runtime: AccountsAdminRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -242,6 +245,7 @@ def delete_account_user_payload(
                 username,
                 "管理员已删除账号。",
                 actor=auth_payload.get("user"),
+                source_ip=source_ip,
                 now=active_runtime.now(),
             ),
         )

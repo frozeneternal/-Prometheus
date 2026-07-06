@@ -182,6 +182,7 @@ class BackendModuleTests(unittest.TestCase):
                 "password": "ops-pass-1",
                 "enabled": True,
             },
+            source_ip="10.0.0.21",
             runtime=runtime,
         )
 
@@ -196,6 +197,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["users"][1]["username"], "ops")
         self.assertEqual(audit_events[0]["event"], "account-upsert")
         self.assertEqual(audit_events[0]["actor"]["username"], "admin")
+        self.assertEqual(audit_events[0]["sourceIp"], "10.0.0.21")
 
     def test_accounts_admin_module_rejects_non_boolean_enabled_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
@@ -480,6 +482,7 @@ class BackendModuleTests(unittest.TestCase):
         status, payload = delete_account_user_payload(
             config,
             {"sessionToken": token, "username": "ops"},
+            source_ip="10.0.0.22",
             runtime=runtime,
         )
 
@@ -488,6 +491,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual([user["username"] for user in saved[0]["users"]], ["admin"])
         self.assertEqual([user["username"] for user in payload["users"]], ["admin"])
         self.assertEqual(audit_events[0]["event"], "account-delete")
+        self.assertEqual(audit_events[0]["sourceIp"], "10.0.0.22")
 
     def test_accounts_admin_module_blocks_current_admin_self_lockout_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, delete_account_user_payload, upsert_account_user_payload
@@ -2609,6 +2613,7 @@ class BackendModuleTests(unittest.TestCase):
                 "ops",
                 "Unlocked",
                 actor={"username": "admin", "role": "admin", "passwordHash": "sample-password-hash-for-redaction"},
+                source_ip="10.0.0.20",
                 now=1000,
             )
 
@@ -2618,6 +2623,7 @@ class BackendModuleTests(unittest.TestCase):
         serialized = json.dumps(loaded, ensure_ascii=False)
         self.assertEqual(loaded[0]["event"], "login-unlock")
         self.assertEqual(loaded[0]["actor"]["username"], "admin")
+        self.assertEqual(loaded[0]["sourceIp"], "10.0.0.20")
         self.assertNotIn("passwordHash", serialized)
         self.assertNotIn("sample-password-hash-for-redaction", serialized)
 
