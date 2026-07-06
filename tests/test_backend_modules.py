@@ -90,6 +90,109 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("过期", payload["message"])
         self.assertEqual(saved, [])
 
+    def test_settings_module_enables_auto_recovery_without_app_import(self) -> None:
+        from backend.settings import SettingsRuntime, persist_auto_recovery_enabled
+
+        raw_config = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "actions": [{"id": "restart", "name": "Restart service", "enabled": False}],
+                }
+            ],
+            "websites": [],
+        }
+        saved: list[dict] = []
+        resets: list[tuple[str, str, str]] = []
+        runtime = SettingsRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+        )
+
+        status, payload = persist_auto_recovery_enabled("server", "srv1", True, runtime=runtime)
+
+        server = saved[0]["servers"][0]
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(server["autoRecovery"]["enabled"])
+        self.assertEqual(server["autoRecovery"]["actionId"], "restart")
+        self.assertEqual(server["autoRecovery"]["minimumConsecutiveFailures"], 2)
+        self.assertEqual(server["autoRecovery"]["cooldownSeconds"], 300)
+        self.assertEqual(server["autoRecovery"]["triggerHealth"], ["down"])
+        self.assertTrue(server["actions"][0]["enabled"])
+        self.assertTrue(server["actions"][0]["allowAuto"])
+        self.assertEqual(resets, [("server", "srv1", "自动恢复开关已更新。")])
+
+    def test_settings_module_enables_auto_backup_and_primes_first_interval_without_app_import(self) -> None:
+        from backend.settings import SettingsRuntime, persist_auto_backup_enabled
+
+        raw_config = {"servers": [{"id": "srv1", "name": "Server 1"}], "websites": []}
+        saved: list[dict] = []
+        resets: list[tuple[str, str, str]] = []
+        states: dict[str, dict] = {}
+        runtime = SettingsRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+        )
+
+        status, payload = persist_auto_backup_enabled("srv1", True, runtime=runtime)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(saved[0]["servers"][0]["autoBackup"]["enabled"])
+        self.assertEqual(resets, [("server-backup", "srv1", "自动备份已启用，等待首个周期。")])
+        self.assertEqual(states["server-backup:srv1"]["lastCompletedAt"], 1000.0)
+
+    def test_settings_module_enables_cert_renewal_without_app_import(self) -> None:
+        from backend.settings import SettingsRuntime, persist_cert_renewal_enabled
+
+        raw_config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "renew-cert", "name": "Renew certificate", "enabled": False}],
+                }
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "serverId": "ops-host",
+                    "manualCertRenewal": {"actionServerId": "ops-host", "actionId": "renew-cert"},
+                }
+            ],
+        }
+        saved: list[dict] = []
+        resets: list[tuple[str, str, str]] = []
+        runtime = SettingsRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+        )
+
+        status, payload = persist_cert_renewal_enabled("site1", True, runtime=runtime)
+
+        website = saved[0]["websites"][0]
+        action = saved[0]["servers"][0]["actions"][0]
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(website["certRenewal"]["enabled"])
+        self.assertEqual(website["certRenewal"]["actionServerId"], "ops-host")
+        self.assertEqual(website["certRenewal"]["actionId"], "renew-cert")
+        self.assertEqual(website["certRenewal"]["renewBeforeDays"], 14)
+        self.assertEqual(website["certRenewal"]["cooldownSeconds"], 86400)
+        self.assertTrue(action["enabled"])
+        self.assertTrue(action["allowAuto"])
+        self.assertEqual(resets, [("website-cert", "site1", "证书自动续期已启用，等待下一次证书检查。")])
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 
@@ -1148,6 +1251,21 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_settings_persistence_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "find_raw_entity",
+            "find_raw_action",
+            "persist_auto_recovery_enabled",
+            "persist_auto_backup_enabled",
+            "persist_cert_renewal_enabled",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -1182,6 +1300,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.maybe_trigger_backup.__module__, "backend.backups")
         self.assertEqual(app.backup_policy_error.__module__, "backend.backups")
         self.assertEqual(app.resolve_backup_action.__module__, "backend.backups")
+        self.assertEqual(app.persist_auto_recovery_enabled.__module__, "backend.settings")
+        self.assertEqual(app.persist_auto_backup_enabled.__module__, "backend.settings")
+        self.assertEqual(app.persist_cert_renewal_enabled.__module__, "backend.settings")
 
 
 if __name__ == "__main__":

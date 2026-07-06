@@ -320,6 +320,15 @@ from backend.resources import (  # noqa: E402 - transitional re-export while app
     find_raw_resource,
     persist_resource_acknowledgement,
 )
+from backend.settings import (  # noqa: E402 - transitional re-export while app.py is split.
+    SettingsRuntime,
+    configure_settings_runtime,
+    find_raw_action,
+    find_raw_entity,
+    persist_auto_backup_enabled,
+    persist_auto_recovery_enabled,
+    persist_cert_renewal_enabled,
+)
 from backend.health import (  # noqa: E402 - transitional re-export while app.py is split.
     data_quality_summary,
     metric_thresholds,
@@ -432,111 +441,16 @@ configure_resource_runtime(
         save_config_raw=lambda raw_config: save_config_raw(raw_config),
     )
 )
-
-
-def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
-    key = "servers" if target_type == "server" else "websites"
-    for entity in raw_config.get(key, []):
-        if entity.get("id") == target_id:
-            return entity
-    return None
-
-
-def find_raw_action(server: dict, action_id: str) -> dict | None:
-    for action in server.get("actions", []):
-        if action.get("id") == action_id:
-            return action
-    return None
-
-
-def persist_auto_recovery_enabled(target_type: str, target_id: str, enabled: bool) -> tuple[int, dict]:
-    raw_config = load_config_raw()
-    entity = find_raw_entity(raw_config, target_type, target_id)
-    if entity is None:
-        return 404, {"ok": False, "message": "目标不存在。"}
-
-    recovery = entity.setdefault("autoRecovery", {})
-    default_action_server_id = entity.get("id") or entity.get("serverId") or ""
-    if enabled:
-        inferred = public_manual_recovery(entity, default_action_server_id)
-        action_server_id = inferred.get("actionServerId") or recovery.get("actionServerId") or ""
-        action_id = inferred.get("actionId") or recovery.get("actionId") or ""
-        if not action_server_id or not action_id:
-            return 400, {"ok": False, "message": "未找到可用的自动恢复动作。先配置手动恢复动作或重启动作。"}
-
-        recovery["actionServerId"] = action_server_id
-        recovery["actionId"] = action_id
-        recovery.setdefault("minimumConsecutiveFailures", 2)
-        recovery.setdefault("cooldownSeconds", 300)
-        recovery.setdefault("triggerHealth", ["down"])
-
-        action_server = find_raw_entity(raw_config, "server", action_server_id)
-        if action_server is not None:
-            action = find_raw_action(action_server, action_id)
-            if action is not None:
-                action["enabled"] = True
-                action["allowAuto"] = True
-
-    recovery["enabled"] = bool(enabled)
-    save_config_raw(raw_config)
-    reset_runtime_entity_state(target_type, target_id, "自动恢复开关已更新。")
-    return 200, {"ok": True, "message": "自动恢复已更新。"}
-
-
-def persist_auto_backup_enabled(server_id: str, enabled: bool) -> tuple[int, dict]:
-    raw_config = load_config_raw()
-    server = find_raw_entity(raw_config, "server", server_id)
-    if server is None:
-        return 404, {"ok": False, "message": "服务器不存在。"}
-
-    auto_backup = server.setdefault("autoBackup", {})
-    auto_backup["enabled"] = bool(enabled)
-    save_config_raw(raw_config)
-    if enabled:
-        reset_runtime_entity_state("server-backup", server_id, "自动备份已启用，等待首个周期。")
-        state = get_runtime_entity_state("server-backup", server_id)
-        state["lastCompletedAt"] = time.time()
-        set_runtime_entity_state("server-backup", server_id, state)
-    else:
-        reset_runtime_entity_state("server-backup", server_id, "自动备份已关闭。")
-
-    return 200, {"ok": True, "message": "自动备份已更新。"}
-
-
-def persist_cert_renewal_enabled(website_id: str, enabled: bool) -> tuple[int, dict]:
-    raw_config = load_config_raw()
-    website = find_raw_entity(raw_config, "website", website_id)
-    if website is None:
-        return 404, {"ok": False, "message": "网站不存在。"}
-
-    renewal = website.setdefault("certRenewal", {})
-    default_action_server_id = website.get("serverId") or ""
-    if enabled:
-        inferred = public_manual_cert_renewal(website, default_action_server_id)
-        action_server_id = inferred.get("actionServerId") or renewal.get("actionServerId") or default_action_server_id
-        action_id = inferred.get("actionId") or renewal.get("actionId") or ""
-        if not action_server_id or not action_id:
-            return 400, {"ok": False, "message": "启用证书续期前需要先配置续期动作。"}
-        renewal["actionServerId"] = action_server_id
-        renewal["actionId"] = action_id
-        renewal.setdefault("renewBeforeDays", 14)
-        renewal.setdefault("cooldownSeconds", 86400)
-
-        action_server = find_raw_entity(raw_config, "server", action_server_id)
-        if action_server is not None:
-            action = find_raw_action(action_server, action_id)
-            if action is not None:
-                action["enabled"] = True
-                action["allowAuto"] = True
-
-    renewal["enabled"] = bool(enabled)
-    save_config_raw(raw_config)
-    if enabled:
-        reset_runtime_entity_state("website-cert", website_id, "证书自动续期已启用，等待下一次证书检查。")
-    else:
-        reset_runtime_entity_state("website-cert", website_id, "证书自动续期已关闭。")
-
-    return 200, {"ok": True, "message": "证书自动续期已更新。"}
+configure_settings_runtime(
+    SettingsRuntime(
+        now=lambda: time.time(),
+        load_config_raw=lambda: load_config_raw(),
+        save_config_raw=lambda raw_config: save_config_raw(raw_config),
+        reset_state=reset_runtime_entity_state,
+        get_state=get_runtime_entity_state,
+        set_state=set_runtime_entity_state,
+    )
+)
 
 
 def persist_dashboard_settings(config: dict) -> dict:
