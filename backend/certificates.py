@@ -150,6 +150,46 @@ def maybe_finish_pending_cert_renewal(
     return True, "verifying", "续期命令已执行，等待证书监控确认新的到期时间。"
 
 
+def record_manual_cert_renewal_result(
+    *,
+    target_id: str,
+    reason: str,
+    snapshot: dict | None,
+    payload: dict,
+    runtime: CertRenewalRuntime | None = None,
+) -> bool:
+    if not target_id:
+        return False
+
+    active_runtime = runtime or _runtime
+    state = active_runtime.get_state("website-cert", target_id)
+    now = active_runtime.now()
+    metrics = snapshot.get("metrics", {}) if isinstance(snapshot, dict) else {}
+    cert_expires_in = metrics.get("certExpiresIn")
+    has_cert_metric = isinstance(cert_expires_in, (int, float)) and not isinstance(cert_expires_in, bool)
+
+    state["lastAttemptAt"] = now
+    state["lastReason"] = reason
+    state["lastLogId"] = payload.get("logId", "")
+
+    if payload.get("ok"):
+        if has_cert_metric:
+            state["lastResult"] = "verifying"
+            state["pendingExpiresIn"] = cert_expires_in
+            state.pop("verifiedExpiresIn", None)
+        else:
+            state["lastResult"] = "success"
+            state["lastCompletedAt"] = now
+            state.pop("pendingExpiresIn", None)
+    else:
+        state["lastResult"] = "failed"
+        state["lastCompletedAt"] = now
+        state.pop("pendingExpiresIn", None)
+
+    active_runtime.set_state("website-cert", target_id, state)
+    return True
+
+
 def resolve_cert_renewal_action(config: dict, website: dict) -> tuple[dict | None, dict | None, str]:
     renewal = website.get("certRenewal") or {}
     action_server_id = renewal.get("actionServerId") or website.get("serverId") or ""

@@ -1081,6 +1081,34 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(result["verifiedExpiresIn"], 40 * 86400)
         self.assertNotIn("pendingExpiresIn", states["website-cert:site1"])
 
+    def test_certificates_module_records_manual_success_as_pending_verification_without_app_import(self) -> None:
+        from backend.certificates import CertRenewalRuntime, record_manual_cert_renewal_result
+
+        states: dict[str, dict] = {}
+        runtime = CertRenewalRuntime(
+            now=lambda: 1500.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+        )
+
+        updated = record_manual_cert_renewal_result(
+            target_id="site1",
+            reason="手动续期",
+            snapshot={"metrics": {"certExpiresIn": 3 * 86400}},
+            payload={"ok": True, "logId": "manual-log-1"},
+            runtime=runtime,
+        )
+
+        state = states["website-cert:site1"]
+        self.assertTrue(updated)
+        self.assertEqual(state["lastResult"], "verifying")
+        self.assertEqual(state["lastAttemptAt"], 1500.0)
+        self.assertEqual(state["pendingExpiresIn"], 3 * 86400)
+        self.assertEqual(state["lastLogId"], "manual-log-1")
+        self.assertEqual(state["lastReason"], "手动续期")
+
     def test_backups_module_triggers_backup_action_without_app_import(self) -> None:
         from backend.backups import BackupRuntime, maybe_trigger_backup
 
@@ -1596,6 +1624,7 @@ class BackendModuleTests(unittest.TestCase):
             "maybe_finish_pending_cert_renewal",
             "resolve_cert_renewal_action",
             "maybe_trigger_cert_renewal",
+            "record_manual_cert_renewal_result",
         ]
 
         for function_name in forbidden_functions:
@@ -1700,6 +1729,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.maybe_trigger_cert_renewal.__module__, "backend.certificates")
         self.assertEqual(app.cert_renewal_policy_error.__module__, "backend.certificates")
         self.assertEqual(app.resolve_cert_renewal_action.__module__, "backend.certificates")
+        self.assertEqual(app.record_manual_cert_renewal_result.__module__, "backend.certificates")
         self.assertEqual(app.maybe_trigger_backup.__module__, "backend.backups")
         self.assertEqual(app.backup_policy_error.__module__, "backend.backups")
         self.assertEqual(app.resolve_backup_action.__module__, "backend.backups")

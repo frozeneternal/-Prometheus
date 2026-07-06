@@ -520,6 +520,83 @@ class DataQualityTests(unittest.TestCase):
         self.assertIn("超时", result["message"])
         execute_server_action.assert_not_called()
 
+    def test_manual_cert_renewal_success_blocks_duplicate_auto_renewal(self) -> None:
+        config = {
+            "actionToken": "token",
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "command": ["echo", "renew"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                }
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "serverId": "ops-host",
+                    "certRenewal": {
+                        "enabled": True,
+                        "actionServerId": "ops-host",
+                        "actionId": "renew-cert",
+                        "renewBeforeDays": 14,
+                        "cooldownSeconds": 86400,
+                    },
+                }
+            ],
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert expires soon"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+        with app.RUNTIME_LOCK:
+            app.RUNTIME_STATE["dashboard"] = {"websites": [snapshot]}
+
+        with patch.object(
+            app,
+            "execute_server_action",
+            return_value=(200, {"ok": True, "message": "manual renew started", "logId": "manual-log-1"}),
+        ) as execute_server_action:
+            status, payload = app.run_action(
+                config,
+                {
+                    "serverId": "ops-host",
+                    "actionId": "renew-cert",
+                    "token": "token",
+                    "targetType": "website-cert",
+                    "targetId": "site1",
+                    "targetName": "Site 1 证书",
+                    "invocation": "manual-cert",
+                    "reason": "手动续期",
+                },
+            )
+
+        state = app.get_runtime_entity_state("website-cert", "site1")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(state["lastResult"], "verifying")
+        self.assertEqual(state["pendingExpiresIn"], 3 * 86400)
+        self.assertEqual(state["lastLogId"], "manual-log-1")
+        execute_server_action.assert_called_once()
+
+        with patch.object(app, "execute_server_action") as duplicate_auto_action:
+            result = app.maybe_trigger_cert_renewal(config, config["websites"][0], snapshot)
+
+        self.assertEqual(result["status"], "verifying")
+        self.assertIn("等待证书监控确认", result["message"])
+        duplicate_auto_action.assert_not_called()
+
     def test_auto_backup_blocks_invalid_policy_without_executing_action(self) -> None:
         config = {
             "servers": [

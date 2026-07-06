@@ -240,6 +240,14 @@ def current_dashboard_payload() -> dict | None:
     return payload
 
 
+def current_website_snapshot(website_id: str) -> dict | None:
+    dashboard = get_runtime_dashboard() or {}
+    for snapshot in dashboard.get("websites", []):
+        if str(snapshot.get("id") or "") == website_id:
+            return snapshot
+    return None
+
+
 from backend.auth import (  # noqa: E402 - transitional re-export while app.py is split.
     ROLE_RANK,
     active_login_lockouts,
@@ -307,6 +315,7 @@ from backend.certificates import (  # noqa: E402 - transitional re-export while 
     configure_cert_renewal_runtime,
     maybe_finish_pending_cert_renewal,
     maybe_trigger_cert_renewal,
+    record_manual_cert_renewal_result,
     resolve_cert_renewal_action,
 )
 from backend.backups import (  # noqa: E402 - transitional re-export while app.py is split.
@@ -575,17 +584,26 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
     if expected_confirm and confirm != expected_confirm:
         return 400, {"ok": False, "message": f"请输入确认文本：{expected_confirm}"}
 
-    return execute_server_action(
+    resolved_target_id = str(target_id or server.get("id", ""))
+    status, payload = execute_server_action(
         config,
         server,
         action,
         invocation=invocation,
         target_type=target_type,
-        target_id=target_id or server.get("id", ""),
+        target_id=resolved_target_id,
         target_name=target_name or server.get("name", server.get("id", "")),
         reason=reason,
         actor=auth_payload.get("user"),
     )
+    if invocation == "manual-cert" and target_type == "website-cert" and target_id:
+        record_manual_cert_renewal_result(
+            target_id=target_id,
+            reason=reason,
+            snapshot=current_website_snapshot(target_id),
+            payload=payload,
+        )
+    return status, payload
 
 
 def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
