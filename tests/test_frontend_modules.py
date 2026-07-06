@@ -20,6 +20,7 @@ class FrontendModuleTests(unittest.TestCase):
         expected_modules = [
             PUBLIC / "js" / "app.js",
             PUBLIC / "js" / "api.js",
+            PUBLIC / "js" / "client.js",
             PUBLIC / "js" / "dom.js",
             PUBLIC / "js" / "format.js",
             PUBLIC / "js" / "prometheus.js",
@@ -29,8 +30,22 @@ class FrontendModuleTests(unittest.TestCase):
             self.assertTrue(module_path.exists(), f"missing {module_path.relative_to(ROOT)}")
 
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        for import_path in ("./api.js", "./dom.js", "./format.js", "./prometheus.js", "./state.js"):
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+        for import_path in ("./client.js", "./dom.js", "./format.js", "./prometheus.js", "./state.js"):
             self.assertIn(import_path, app_js)
+        self.assertIn("./api.js", client_js)
+
+    def test_app_uses_frontend_client_for_backend_routes(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+
+        self.assertNotIn('from "./api.js"', app_js)
+        self.assertNotIn("getJson(", app_js)
+        self.assertNotIn('"/api/', app_js)
+        self.assertIn('"/api/dashboard"', client_js)
+        self.assertIn('"/api/actions/run"', client_js)
+        self.assertIn('"/api/auth/login"', client_js)
+        self.assertIn('"/api/settings/cert-renewal"', client_js)
 
     def test_legacy_root_app_script_removed(self) -> None:
         self.assertFalse((PUBLIC / "app.js").exists())
@@ -52,13 +67,16 @@ class FrontendModuleTests(unittest.TestCase):
 
     def test_charts_skip_series_requests_when_prometheus_is_unavailable(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         prometheus_js = (PUBLIC / "js" / "prometheus.js").read_text(encoding="utf-8")
 
         self.assertIn("canFetchSeries", prometheus_js)
         self.assertIn('dashboard?.prometheus?.available === true', prometheus_js)
         self.assertIn("canFetchSeries(state.dashboard)", app_js)
+        self.assertIn("fetchMetricSeries", app_js)
+        self.assertIn("/api/series", client_js)
         self.assertIn("Prometheus 采集层不可用，暂无趋势数据", app_js)
-        self.assertLess(app_js.index("canFetchSeries(state.dashboard)"), app_js.index("/api/series"))
+        self.assertLess(app_js.index("canFetchSeries(state.dashboard)"), app_js.index("await fetchMetricSeries"))
 
 
     def test_config_validation_summary_is_visible_on_dashboard(self) -> None:
@@ -121,30 +139,35 @@ class FrontendModuleTests(unittest.TestCase):
 
     def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
         self.assertIn('data-resource-ack="true"', app_js)
-        self.assertIn('"/api/settings/resource-ack"', app_js)
+        self.assertIn("acknowledgeResourceExpiryRisk", app_js)
+        self.assertIn('"/api/settings/resource-ack"', client_js)
         self.assertIn('parsed.path == "/api/settings/resource-ack"', backend_py)
         self.assertIn("persist_resource_acknowledgement", backend_py)
         self.assertIn('authorize_operation(config, body, "operator")', backend_py)
 
     def test_logout_calls_backend_session_revocation_route(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
-        self.assertIn('"/api/auth/logout"', app_js)
+        self.assertIn("logoutSession", app_js)
+        self.assertIn('"/api/auth/logout"', client_js)
         self.assertIn('parsed.path == "/api/auth/logout"', backend_py)
         self.assertIn("revoke_session_token", backend_py)
 
     def test_admin_account_lockouts_have_frontend_and_backend_routes(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
         self.assertIn('id="accountLockoutPanel"', index_html)
-        self.assertIn('"/api/auth/lockouts"', app_js)
-        self.assertIn('"/api/auth/unlock"', app_js)
+        self.assertIn('"/api/auth/lockouts"', client_js)
+        self.assertIn('"/api/auth/unlock"', client_js)
         self.assertIn("renderAccountLockouts", app_js)
         self.assertIn('parsed.path == "/api/auth/lockouts"', backend_py)
         self.assertIn('parsed.path == "/api/auth/unlock"', backend_py)
@@ -153,10 +176,11 @@ class FrontendModuleTests(unittest.TestCase):
     def test_admin_account_audit_has_frontend_and_backend_routes(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
         self.assertIn('id="accountAuditList"', index_html)
-        self.assertIn('"/api/auth/audit"', app_js)
+        self.assertIn('"/api/auth/audit"', client_js)
         self.assertIn("renderAccountAudit", app_js)
         self.assertIn('parsed.path == "/api/auth/audit"', backend_py)
         self.assertIn("auth_audit_payload", backend_py)

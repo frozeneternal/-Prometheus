@@ -1,4 +1,19 @@
-import { getJson } from "./api.js";
+import {
+  acknowledgeResourceExpiryRisk,
+  fetchAccountAudit,
+  fetchAccountLockouts,
+  fetchConfig,
+  fetchDashboard,
+  fetchMetricSeries,
+  fetchSession,
+  loginUser,
+  logoutSession,
+  runServerAction,
+  unlockAccount,
+  updateAutoBackup,
+  updateAutoRecovery,
+  updateCertRenewal,
+} from "./client.js";
 import { $, camelToKebab, escapeHtml } from "./dom.js";
 import {
   backupLabels,
@@ -65,7 +80,7 @@ function filteredWebsites() {
 }
 
 async function loadConfig() {
-  const payload = await getJson("/api/config");
+  const payload = await fetchConfig();
   state.config = payload.config;
   await refreshSession();
   await loadAccountLockouts();
@@ -88,11 +103,7 @@ async function refreshSession() {
     return;
   }
   try {
-    const payload = await getJson("/api/auth/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: state.sessionToken }),
-    });
+    const payload = await fetchSession(state.sessionToken);
     state.currentUser = payload.user || null;
   } catch (error) {
     state.sessionToken = "";
@@ -131,11 +142,7 @@ async function loadAccountLockouts() {
   }
 
   try {
-    const payload = await getJson("/api/auth/lockouts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: state.sessionToken }),
-    });
+    const payload = await fetchAccountLockouts(state.sessionToken);
     state.accountLockouts = payload.lockouts || [];
   } catch (error) {
     state.accountLockouts = [];
@@ -149,11 +156,7 @@ async function loadAccountAudit() {
   }
 
   try {
-    const payload = await getJson("/api/auth/audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken: state.sessionToken }),
-    });
+    const payload = await fetchAccountAudit(state.sessionToken);
     state.accountAuditLogs = payload.logs || [];
   } catch (error) {
     state.accountAuditLogs = [];
@@ -213,11 +216,7 @@ function renderAccountAudit() {
 
 async function unlockLoginAccount(username) {
   try {
-    const payload = await getJson("/api/auth/unlock", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, sessionToken: state.sessionToken }),
-    });
+    const payload = await unlockAccount({ username, auth: { sessionToken: state.sessionToken } });
     state.accountLockouts = payload.lockouts || [];
     await loadAccountAudit();
     renderAccountLockouts();
@@ -231,7 +230,7 @@ async function unlockLoginAccount(username) {
 async function refreshDashboard() {
   $("#refreshButton").disabled = true;
   try {
-    state.dashboard = await getJson("/api/dashboard");
+    state.dashboard = await fetchDashboard();
     render();
   } catch (error) {
     renderError(error);
@@ -805,7 +804,11 @@ async function loadCharts() {
 
   await Promise.all(canvases.map(async (canvas) => {
     try {
-      const payload = await getJson(`/api/series?serverId=${encodeURIComponent(canvas.dataset.chartServer)}&metric=${encodeURIComponent(state.chartMetric)}&minutes=60`);
+      const payload = await fetchMetricSeries({
+        serverId: canvas.dataset.chartServer,
+        metric: state.chartMetric,
+        minutes: 60,
+      });
       drawChart(canvas, payload.values || [], state.chartMetric);
     } catch (error) {
       drawChart(canvas, [], state.chartMetric, error.message);
@@ -946,11 +949,7 @@ function openManualBackupDialog(serverId) {
 
 async function toggleAutoRecovery(targetType, targetId, enabled) {
   try {
-    const payload = await getJson("/api/settings/auto-recovery", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetType, targetId, enabled, ...authPayload() }),
-    });
+    const payload = await updateAutoRecovery({ targetType, targetId, enabled, auth: authPayload() });
     state.dashboard = payload;
     state.dashboard.ok = true;
     await loadConfig();
@@ -962,11 +961,7 @@ async function toggleAutoRecovery(targetType, targetId, enabled) {
 
 async function toggleAutoBackup(serverId, enabled) {
   try {
-    const payload = await getJson("/api/settings/auto-backup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serverId, enabled, ...authPayload() }),
-    });
+    const payload = await updateAutoBackup({ serverId, enabled, auth: authPayload() });
     state.dashboard = payload;
     state.dashboard.ok = true;
     await loadConfig();
@@ -978,11 +973,7 @@ async function toggleAutoBackup(serverId, enabled) {
 
 async function toggleCertRenewal(websiteId, enabled) {
   try {
-    const payload = await getJson("/api/settings/cert-renewal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ websiteId, enabled, ...authPayload() }),
-    });
+    const payload = await updateCertRenewal({ websiteId, enabled, auth: authPayload() });
     state.dashboard = payload;
     state.dashboard.ok = true;
     await loadConfig();
@@ -995,11 +986,7 @@ async function toggleCertRenewal(websiteId, enabled) {
 async function acknowledgeResourceExpiry(resourceId) {
   const acknowledgedUntil = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
   try {
-    const payload = await getJson("/api/settings/resource-ack", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resourceId, acknowledgedUntil, ...authPayload() }),
-    });
+    const payload = await acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, auth: authPayload() });
     state.dashboard = payload;
     state.dashboard.ok = true;
     await loadConfig();
@@ -1015,20 +1002,16 @@ async function runCurrentAction() {
   button.disabled = true;
   button.textContent = "执行中";
   try {
-    const payload = await getJson("/api/actions/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serverId: server.id,
-        actionId: action.id,
-        ...authPayload(),
-        confirm: $("#confirmInput").value,
-        targetType: meta.targetType || "server",
-        targetId: meta.targetId || server.id,
-        targetName: meta.targetName || server.name || server.id,
-        invocation: meta.invocation || "manual",
-        reason: meta.reason || "手动执行",
-      }),
+    const payload = await runServerAction({
+      serverId: server.id,
+      actionId: action.id,
+      ...authPayload(),
+      confirm: $("#confirmInput").value,
+      targetType: meta.targetType || "server",
+      targetId: meta.targetId || server.id,
+      targetName: meta.targetName || server.name || server.id,
+      invocation: meta.invocation || "manual",
+      reason: meta.reason || "手动执行",
     });
     const output = [
       payload.message,
@@ -1066,13 +1049,9 @@ async function loginCurrentUser(event) {
   $("#loginError").textContent = "";
   $("#loginButton").disabled = true;
   try {
-    const payload = await getJson("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: $("#loginUsername").value,
-        password: $("#loginPassword").value,
-      }),
+    const payload = await loginUser({
+      username: $("#loginUsername").value,
+      password: $("#loginPassword").value,
     });
     state.sessionToken = payload.sessionToken || "";
     state.currentUser = payload.user || null;
@@ -1093,11 +1072,7 @@ async function logoutCurrentUser() {
   const token = state.sessionToken;
   try {
     if (token) {
-      await getJson("/api/auth/logout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionToken: token }),
-      });
+      await logoutSession(token);
     }
   } catch (error) {
     // Local logout must still proceed even if the server session is already expired.
