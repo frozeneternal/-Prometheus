@@ -244,18 +244,36 @@ function renderEmergencyRunbook() {
   $("#emergencyRunbookSummary").textContent = `共 ${summary.total || items.length} 项 · 严重 ${summary.critical || 0} · 预警 ${summary.warning || 0}`;
   $("#emergencyRunbookBadge").className = `emergency-badge ${badgeStatus}`;
   $("#emergencyRunbookBadge").textContent = String(summary.critical || summary.warning || summary.total || items.length);
-  $("#emergencyRunbookList").innerHTML = items.map((item) => `
-    <article class="emergency-item ${escapeHtml(item.severity || "info")}">
-      <div class="emergency-item-head">
-        <strong>${escapeHtml(item.title || item.id || "应急项")}</strong>
-        <span class="emergency-badge ${escapeHtml(item.severity || "info")}">${escapeHtml(item.severity || "info")}</span>
-      </div>
-      <p>${escapeHtml(item.message || "")}</p>
-      <ol>
-        ${(item.nextSteps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
-      </ol>
-    </article>
-  `).join("");
+  $("#emergencyRunbookList").innerHTML = items.map((item) => {
+    const actionButton = emergencyActionButton(item);
+    return `
+      <article class="emergency-item ${escapeHtml(item.severity || "info")}">
+        <div class="emergency-item-head">
+          <strong>${escapeHtml(item.title || item.id || "应急项")}</strong>
+          <span class="emergency-badge ${escapeHtml(item.severity || "info")}">${escapeHtml(item.severity || "info")}</span>
+        </div>
+        <p>${escapeHtml(item.message || "")}</p>
+        <ol>
+          ${(item.nextSteps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+        </ol>
+        ${actionButton ? `<div class="emergency-actions">${actionButton}</div>` : ""}
+      </article>
+    `;
+  }).join("");
+  $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-cert-renewal]").forEach((button) => {
+    button.addEventListener("click", () => openManualCertRenewalDialog(button.dataset.websiteId));
+  });
+}
+
+function emergencyActionButton(item) {
+  if (item.targetType === "website-cert") {
+    const website = (state.config?.websites || []).find((candidate) => candidate.id === item.targetId);
+    const manualCertRenewal = website?.manualCertRenewal;
+    if (manualCertRenewal?.available) {
+      return `<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-cert-renewal="true" data-website-id="${escapeHtml(website.id)}">${escapeHtml(manualCertRenewal.label || "手动续期")}</button>`;
+    }
+  }
+  return "";
 }
 
 function renderGroups() {

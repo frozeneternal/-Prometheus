@@ -166,6 +166,18 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderEmergencyRunbook();", app_js)
         self.assertIn(".emergency-runbook-panel", styles_css)
 
+    def test_emergency_runbook_cert_items_offer_manual_renewal_action(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderEmergencyRunbook()")
+        end = app_js.index("\nfunction renderGroups()", start)
+        runbook_block = app_js[start:end]
+
+        self.assertIn("emergencyActionButton(item)", runbook_block)
+        self.assertIn('data-emergency-manual-cert-renewal="true"', runbook_block)
+        self.assertIn('item.targetType === "website-cert"', runbook_block)
+        self.assertIn("manualCertRenewal?.available", runbook_block)
+        self.assertIn("openManualCertRenewalDialog(button.dataset.websiteId)", runbook_block)
+
     def test_config_validation_panel_uses_backend_field_contract(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         render_config_validation = app_js[

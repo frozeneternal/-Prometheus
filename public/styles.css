@@ -426,6 +426,12 @@ select {
   font-size: 13px;
 }
 
+.emergency-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .emergency-badge {
   display: inline-grid;
   place-items: center;
