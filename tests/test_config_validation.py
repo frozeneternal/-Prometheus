@@ -306,6 +306,33 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("duplicate-user-username:ops", issue_ids)
 
+    def test_config_validation_reports_unsafe_account_usernames(self) -> None:
+        config = {
+            "sessionSecret": "session-secret-with-enough-length",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [
+                {
+                    "username": "ops root",
+                    "role": "operator",
+                    "passwordHash": app.hash_password("safe-pass", salt="ops-salt", iterations=1000),
+                },
+                {
+                    "username": "ops\nroot",
+                    "role": "operator",
+                    "passwordHash": app.hash_password("safe-pass", salt="ops-two-salt", iterations=1000),
+                },
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("user-username-invalid:0", issue_ids)
+        self.assertIn("user-username-invalid:1", issue_ids)
+
     def test_config_validation_reports_missing_operator_account(self) -> None:
         config = {
             "sessionSecret": "session-secret",

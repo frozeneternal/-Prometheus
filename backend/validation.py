@@ -225,6 +225,16 @@ def account_configuration_issues(config: dict) -> list[dict]:
                     username,
                 )
             )
+        elif any(char.isspace() for char in username):
+            issues.append(
+                make_issue(
+                    f"user-username-invalid:{index}",
+                    "error",
+                    f"用户 username 不能包含空白字符：{username}。",
+                    "user",
+                    username,
+                )
+            )
         seen.add(username_key)
 
         password_hash = str(user.get("passwordHash") or "")
