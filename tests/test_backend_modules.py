@@ -994,6 +994,39 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("provider", steps)
         self.assertIn("资产台账", steps)
 
+    def test_emergency_module_surfaces_failed_auto_backup_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "health": "healthy",
+                    "status": "online",
+                    "autoBackup": {
+                        "enabled": True,
+                        "status": "failed",
+                        "message": "backup command returned non-zero exit code",
+                        "lastLogId": "backup-log-1",
+                    },
+                }
+            ],
+            websites=[],
+            resources=[],
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], "server-backup:srv1:failed")
+        self.assertEqual(items[0]["targetType"], "server-backup")
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("backup-log-1", steps)
+        self.assertIn("stdout/stderr", steps)
+        self.assertIn("存储空间", steps)
+        self.assertIn("凭据", steps)
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 

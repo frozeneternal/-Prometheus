@@ -141,6 +141,36 @@ def _server_item(server: dict) -> dict | None:
     )
 
 
+def _backup_item(server: dict) -> dict | None:
+    backup = server.get("autoBackup") or {}
+    if not backup.get("enabled") or str(backup.get("status") or "") != "failed":
+        return None
+
+    server_id = str(server.get("id") or "")
+    name = str(server.get("name") or server_id or "服务器")
+    last_log_id = str(backup.get("lastLogId") or "")
+    next_steps = [
+        f"打开自动备份日志 {last_log_id or '未记录'}，检查 returnCode、stdout/stderr、备份目标路径和命令超时。",
+        "检查备份存储空间、挂载状态、对象存储或远端仓库连通性，确认没有容量不足或网络中断。",
+        "核对备份动作使用的凭据、权限和 allowAuto 配置，必要时先改用手动备份动作验证。",
+        "暂停自动备份或临时拉长备份周期，避免失败任务重复写入同一目标。",
+    ]
+    if not last_log_id:
+        next_steps.insert(
+            0,
+            "最近自动备份失败但没有备份日志 ID；优先检查 action runner 是否启动、actionId 是否存在且命令可执行。",
+        )
+    return _item(
+        f"server-backup:{server_id}:failed",
+        "warning",
+        f"{name} 自动备份失败",
+        str(backup.get("message") or "最近一次自动备份失败。"),
+        next_steps,
+        target_type="server-backup",
+        target_id=server_id,
+    )
+
+
 def _website_item(website: dict) -> dict | None:
     health = str(website.get("health") or website.get("status") or "unknown")
     if health not in {"down", "warning"}:
@@ -215,6 +245,9 @@ def emergency_items(
         item = _server_item(server)
         if item:
             items.append(item)
+        backup_item = _backup_item(server)
+        if backup_item:
+            items.append(backup_item)
     for website in websites:
         item = _website_item(website)
         if item:
