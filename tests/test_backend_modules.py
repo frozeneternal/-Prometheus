@@ -1029,6 +1029,54 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(incident_action_updates[0]["lastLogId"], "log-1")
         self.assertEqual(incident_action_updates[0]["lastActionResult"], "success")
 
+    def test_recovery_module_tolerates_corrupt_failure_counter_without_app_import(self) -> None:
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
+
+        states: dict[str, dict] = {"server:srv1": {"consecutiveFailures": "stale"}}
+        runtime = RecoveryRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            update_incident_state=lambda *_args, **_kwargs: {"active": True, "id": "incident-1"},
+            execute_server_action=lambda *_args, **_kwargs: self.fail("one normalized failure should not execute action"),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "restart", "command": ["restart"], "allowAuto": True}],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "restart",
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 2,
+                "cooldownSeconds": 30,
+            },
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["target down"],
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_recovery(config, "server", entity, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["consecutiveFailures"], 1)
+        self.assertEqual(states["server:srv1"]["consecutiveFailures"], 1)
+
     def test_recovery_module_blocks_untrusted_data_without_action(self) -> None:
         from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
 

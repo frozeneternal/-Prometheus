@@ -59,6 +59,16 @@ def strict_positive_int_value(value: object) -> int | None:
     return parsed
 
 
+def safe_failure_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
+
+
 def recovery_policy_error(recovery: dict) -> str:
     trigger_health = recovery.get("triggerHealth") or ["down"]
     if (
@@ -98,7 +108,7 @@ def can_trigger_recovery(entity: dict, health: str, state: dict, *, now: float |
 
     min_failures = strict_positive_int_value(recovery.get("minimumConsecutiveFailures", 2)) or 2
     min_failures = max(1, min_failures)
-    if state.get("consecutiveFailures", 0) < min_failures:
+    if safe_failure_count(state.get("consecutiveFailures", 0)) < min_failures:
         return False, f"连续失败次数不足 {min_failures} 次。"
 
     cooldown = strict_positive_int_value(recovery.get("cooldownSeconds", 300)) or 300
@@ -184,7 +194,7 @@ def maybe_trigger_recovery(
     incident = active_runtime.update_incident_state(config, target_type, entity, snapshot, state)
 
     if enabled and health in trigger_health and data_trusted:
-        state["consecutiveFailures"] = int(state.get("consecutiveFailures", 0)) + 1
+        state["consecutiveFailures"] = safe_failure_count(state.get("consecutiveFailures", 0)) + 1
     else:
         state["consecutiveFailures"] = 0
 
