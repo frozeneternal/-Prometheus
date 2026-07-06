@@ -263,6 +263,9 @@ function renderEmergencyRunbook() {
   $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-cert-renewal]").forEach((button) => {
     button.addEventListener("click", () => openManualCertRenewalDialog(button.dataset.websiteId));
   });
+  $("#emergencyRunbookList").querySelectorAll("[data-emergency-cert-renewal-disable]").forEach((button) => {
+    button.addEventListener("click", () => toggleCertRenewal(button.dataset.websiteId, false));
+  });
   $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-backup]").forEach((button) => {
     button.addEventListener("click", () => openManualBackupDialog(button.dataset.serverId));
   });
@@ -286,9 +289,14 @@ function emergencyActionButton(item) {
   if (item.targetType === "website-cert") {
     const website = (state.config?.websites || []).find((candidate) => candidate.id === item.targetId);
     const manualCertRenewal = website?.manualCertRenewal;
+    const actions = [];
     if (manualCertRenewal?.available) {
-      return `<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-cert-renewal="true" data-website-id="${escapeHtml(website.id)}">${escapeHtml(manualCertRenewal.label || "手动续期")}</button>`;
+      actions.push(`<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-cert-renewal="true" data-website-id="${escapeHtml(website.id)}">${escapeHtml(manualCertRenewal.label || "手动续期")}</button>`);
     }
+    if (website?.certRenewal?.enabled) {
+      actions.push(`<button type="button" class="secondary recovery-trigger compact high" data-emergency-cert-renewal-disable="true" data-website-id="${escapeHtml(website.id)}">暂停自动续期</button>`);
+    }
+    return actions.join("");
   }
   if (item.targetType === "server-backup") {
     const server = (state.config?.servers || []).find((candidate) => candidate.id === item.targetId);

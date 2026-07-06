@@ -178,6 +178,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("manualCertRenewal?.available", runbook_block)
         self.assertIn("openManualCertRenewalDialog(button.dataset.websiteId)", runbook_block)
 
+    def test_emergency_runbook_cert_items_offer_disable_auto_renewal_action(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderEmergencyRunbook()")
+        end = app_js.index("\nfunction renderGroups()", start)
+        runbook_block = app_js[start:end]
+
+        self.assertIn('data-emergency-cert-renewal-disable="true"', runbook_block)
+        self.assertIn('item.targetType === "website-cert"', runbook_block)
+        self.assertIn("website?.certRenewal?.enabled", runbook_block)
+        self.assertIn("toggleCertRenewal(button.dataset.websiteId, false)", runbook_block)
+
     def test_emergency_runbook_backup_items_offer_manual_backup_action(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function renderEmergencyRunbook()")
