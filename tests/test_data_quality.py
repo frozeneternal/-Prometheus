@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 import app  # noqa: E402
 from backend import prometheus  # noqa: E402
+from backend import snapshots  # noqa: E402
 
 
 def vector(value: float | None) -> dict:
@@ -34,7 +35,7 @@ class DataQualityTests(unittest.TestCase):
         self.assertFalse(snapshot["dataQuality"]["trusted"])
 
     def test_metric_snapshot_marks_missing_up_as_untrusted_no_series(self) -> None:
-        with patch.object(app, "prom_query", return_value=vector(None)):
+        with patch.object(snapshots, "prom_query", return_value=vector(None)):
             snapshot = app.metric_snapshot({}, {"id": "srv1", "labels": {"instance": "srv1:9100"}})
 
         self.assertEqual(snapshot["status"], "unknown")
@@ -45,7 +46,7 @@ class DataQualityTests(unittest.TestCase):
         def fake_query(_config: dict, query: str) -> dict:
             return vector(0 if query.startswith("up{") else None)
 
-        with patch.object(app, "prom_query", side_effect=fake_query):
+        with patch.object(snapshots, "prom_query", side_effect=fake_query):
             snapshot = app.metric_snapshot({}, {"id": "srv1", "labels": {"instance": "srv1:9100"}})
 
         self.assertEqual(snapshot["status"], "offline")
@@ -104,7 +105,7 @@ class DataQualityTests(unittest.TestCase):
         def fake_query(_config: dict, query: str) -> dict:
             return vector(0 if query.startswith("probe_success") else None)
 
-        with patch.object(app, "prom_query", side_effect=fake_query):
+        with patch.object(snapshots, "prom_query", side_effect=fake_query):
             snapshot = app.website_snapshot({}, {"id": "site1", "url": "https://example.test/"})
 
         self.assertEqual(snapshot["status"], "offline")

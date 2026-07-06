@@ -5,6 +5,7 @@ import unittest
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 class BackendModuleTests(unittest.TestCase):
@@ -147,6 +148,33 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["untrusted"], 1)
         self.assertEqual(summary["levels"]["ok"], 1)
         self.assertEqual(summary["levels"]["no_series"], 1)
+
+    def test_snapshots_module_builds_server_and_website_snapshots_without_app_import(self) -> None:
+        from backend import snapshots
+
+        def fake_query(_config: dict, query: str) -> dict:
+            if query.startswith("up{"):
+                return {"data": {"result": [{"value": [0, "1"]}]}}
+            if query.startswith("probe_success"):
+                return {"data": {"result": [{"value": [0, "0"]}]}}
+            return {"data": {"result": []}}
+
+        with patch.object(snapshots, "prom_query", side_effect=fake_query):
+            server_snapshot = snapshots.metric_snapshot(
+                {},
+                {"id": "srv1", "name": "Server 1", "labels": {"instance": "srv1:9100"}},
+            )
+            website_snapshot = snapshots.website_snapshot(
+                {},
+                {"id": "site1", "name": "Site 1", "url": "https://example.test/"},
+            )
+
+        self.assertEqual(server_snapshot["id"], "srv1")
+        self.assertEqual(server_snapshot["status"], "online")
+        self.assertEqual(server_snapshot["dataQuality"]["level"], "partial")
+        self.assertEqual(website_snapshot["id"], "site1")
+        self.assertEqual(website_snapshot["status"], "offline")
+        self.assertEqual(website_snapshot["dataQuality"]["level"], "target_down")
 
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
@@ -412,6 +440,20 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_snapshot_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "metric_snapshot",
+            "unavailable_metric_snapshot",
+            "website_snapshot",
+            "unavailable_website_snapshot",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -428,6 +470,8 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.verify_action_token.__module__, "backend.auth")
         self.assertEqual(app.server_health.__module__, "backend.health")
         self.assertEqual(app.data_quality_summary.__module__, "backend.health")
+        self.assertEqual(app.metric_snapshot.__module__, "backend.snapshots")
+        self.assertEqual(app.website_snapshot.__module__, "backend.snapshots")
 
 
 if __name__ == "__main__":
