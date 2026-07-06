@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .auth import ROLE_RANK
+from .auth import ROLE_RANK, login_attempt_key
 from .expiry import parse_expiry_datetime
 
 
@@ -204,7 +204,8 @@ def account_configuration_issues(config: dict) -> list[dict]:
     for index, user in enumerate(users):
         username = str(user.get("username") or "")
         target_id = username or f"index-{index}"
-        if not username:
+        username_key = login_attempt_key(username)
+        if not username_key:
             issues.append(
                 make_issue(
                     f"user-username-missing:{index}",
@@ -214,17 +215,17 @@ def account_configuration_issues(config: dict) -> list[dict]:
                     target_id,
                 )
             )
-        elif username in seen:
+        elif username_key in seen:
             issues.append(
                 make_issue(
-                    f"duplicate-user-username:{username}",
+                    f"duplicate-user-username:{username_key}",
                     "error",
                     f"用户 username 重复：{username}。",
                     "user",
                     username,
                 )
             )
-        seen.add(username)
+        seen.add(username_key)
 
         password_hash = str(user.get("passwordHash") or "")
         if not password_hash:
