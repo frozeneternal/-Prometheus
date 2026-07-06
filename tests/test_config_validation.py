@@ -239,6 +239,29 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("resource-expiry-invalid:bool-expiry", issue_ids)
         self.assertNotIn("resource-expiry-invalid:valid-expiry", issue_ids)
 
+    def test_config_validation_warns_when_resource_has_no_handling_path(self) -> None:
+        config = {
+            "servers": [],
+            "websites": [],
+            "resources": [
+                {"id": "unhandled-domain", "expiresAt": "2026-08-01"},
+                {"id": "handled-domain", "expiresAt": "2026-08-01", "renewUrl": "https://example.com/billing"},
+                {"id": "owned-license", "expiresAt": "2026-08-01", "owner": "ops@example.com"},
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+        messages = {issue["id"]: issue["message"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "warning")
+        self.assertIn("resource-handling-missing:unhandled-domain", issue_ids)
+        self.assertNotIn("resource-handling-missing:handled-domain", issue_ids)
+        self.assertNotIn("resource-handling-missing:owned-license", issue_ids)
+        self.assertIn("renewUrl", messages["resource-handling-missing:unhandled-domain"])
+        self.assertIn("owner", messages["resource-handling-missing:unhandled-domain"])
+        self.assertIn("provider", messages["resource-handling-missing:unhandled-domain"])
+
     def test_config_validation_reports_account_configuration_risks(self) -> None:
         config = {
             "sessionSecret": "",

@@ -983,6 +983,21 @@ def config_validation_summary(config: dict) -> dict:
                     resource_id,
                 )
             )
+        handling_paths = (
+            str(resource.get("renewUrl") or "").strip(),
+            str(resource.get("owner") or "").strip(),
+            str(resource.get("provider") or "").strip(),
+        )
+        if not any(handling_paths):
+            issues.append(
+                make_issue(
+                    f"resource-handling-missing:{resource_id}",
+                    "warning",
+                    "资源缺少 renewUrl、owner 或 provider；到期告警触发后没有明确续费入口或联系人。",
+                    "resource",
+                    resource_id,
+                )
+            )
 
     error_count = sum(1 for issue in issues if issue["severity"] == "error")
     warning_count = sum(1 for issue in issues if issue["severity"] == "warning")
