@@ -1312,6 +1312,61 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(incident_action_updates[0]["lastLogId"], "log-1")
         self.assertEqual(incident_action_updates[0]["lastActionResult"], "success")
 
+    def test_recovery_module_records_failed_auto_action_on_incident_without_log_id(self) -> None:
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
+
+        states: dict[str, dict] = {}
+        incident_action_updates: list[dict] = []
+
+        runtime = RecoveryRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            update_incident_state=lambda _config, _target_type, _entity, _snapshot, state: (
+                state.__setitem__("activeIncidentId", "incident-1")
+                or {"active": True, "id": "incident-1", "lastLogId": ""}
+            ),
+            execute_server_action=lambda *_args, **_kwargs: (500, {"ok": False, "message": "runner failed"}),
+            upsert_incident_log=lambda _config, event: incident_action_updates.append(event),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "restart", "command": ["restart"], "allowAuto": True}],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "autoRecovery": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "restart",
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 1,
+                "cooldownSeconds": 30,
+            },
+        }
+        snapshot = {
+            "id": "srv1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["target down"],
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_recovery(config, "server", entity, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["lastResult"], "failed")
+        self.assertEqual(incident_action_updates[0]["id"], "incident-1")
+        self.assertEqual(incident_action_updates[0]["lastActionResult"], "failed")
+        self.assertEqual(incident_action_updates[0]["lastLogId"], "")
+        self.assertEqual(incident_action_updates[0]["lastActionAt"], 1000.0)
+
     def test_recovery_module_tolerates_corrupt_failure_counter_without_app_import(self) -> None:
         from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
 

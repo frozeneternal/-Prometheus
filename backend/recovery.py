@@ -261,12 +261,12 @@ def maybe_trigger_recovery(
     state["lastCompletedAt"] = active_runtime.now()
     state["lastResult"] = "success" if payload.get("ok") else "failed"
     state["lastLogId"] = payload.get("logId", "")
-    if state.get("activeIncidentId") and state.get("lastLogId"):
+    if state.get("activeIncidentId"):
         active_runtime.upsert_incident_log(
             config,
             {
                 "id": state["activeIncidentId"],
-                "lastLogId": state["lastLogId"],
+                "lastLogId": state.get("lastLogId", ""),
                 "lastActionAt": state["lastCompletedAt"],
                 "lastActionResult": state["lastResult"],
             },
