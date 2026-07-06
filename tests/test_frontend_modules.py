@@ -234,6 +234,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('"resource-ack"', recovery_log_block)
         self.assertIn("资源确认", recovery_log_block)
 
+    def test_recovery_log_labels_include_cert_renewal_toggle(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function recoveryLogCard(")
+        end = app_js.index("function incidentLogCard(", start)
+        recovery_log_block = app_js[start:end]
+
+        self.assertIn('"cert-renewal-toggle"', recovery_log_block)
+        self.assertIn("证书开关", recovery_log_block)
+
     def test_auto_recovery_card_surfaces_attempt_and_log_context(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function recoveryBlock(")

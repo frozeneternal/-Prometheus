@@ -531,18 +531,27 @@ class BackendModuleTests(unittest.TestCase):
         }
         saved: list[dict] = []
         resets: list[tuple[str, str, str]] = []
+        logs: list[dict] = []
         runtime = SettingsRuntime(
+            now=lambda: 1000.0,
             load_config_raw=lambda: raw_config,
             save_config_raw=lambda config: saved.append(config),
             reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+            append_recovery_log=lambda _config, event: logs.append(event),
         )
 
-        status, payload = persist_cert_renewal_enabled("site1", True, runtime=runtime)
+        status, payload = persist_cert_renewal_enabled(
+            "site1",
+            True,
+            actor={"username": "ops", "role": "operator"},
+            runtime=runtime,
+        )
 
         website = saved[0]["websites"][0]
         action = saved[0]["servers"][0]["actions"][0]
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["logId"], logs[0]["id"])
         self.assertTrue(website["certRenewal"]["enabled"])
         self.assertEqual(website["certRenewal"]["actionServerId"], "ops-host")
         self.assertEqual(website["certRenewal"]["actionId"], "renew-cert")
@@ -551,6 +560,11 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(action["enabled"])
         self.assertTrue(action["allowAuto"])
         self.assertEqual(resets, [("website-cert", "site1", "证书自动续期已启用，等待下一次证书检查。")])
+        self.assertEqual(logs[0]["invocation"], "cert-renewal-toggle")
+        self.assertEqual(logs[0]["targetType"], "website-cert")
+        self.assertEqual(logs[0]["targetId"], "site1")
+        self.assertEqual(logs[0]["actor"]["username"], "ops")
+        self.assertIn("启用", logs[0]["message"])
 
     def test_emergency_module_builds_runbook_items_without_app_import(self) -> None:
         from backend.emergency import emergency_items, emergency_summary

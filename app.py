@@ -477,6 +477,7 @@ configure_settings_runtime(
         reset_state=reset_runtime_entity_state,
         get_state=get_runtime_entity_state,
         set_state=set_runtime_entity_state,
+        append_recovery_log=lambda config, event: append_recovery_log(config, event),
     )
 )
 configure_auth_api_runtime(
@@ -876,7 +877,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, auth_status, auth_payload)
                 return
 
-            status, payload = persist_cert_renewal_enabled(website_id, enabled)
+            status, payload = persist_cert_renewal_enabled(website_id, enabled, actor=auth_payload.get("user"))
             if status != 200:
                 json_response(self, status, payload)
                 return

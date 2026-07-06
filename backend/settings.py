@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from backend.auth import public_user
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
 from backend.public_view import public_manual_cert_renewal, public_manual_recovery
@@ -21,6 +22,10 @@ def _noop_set_state(_target_type: str, _target_id: str, _state: dict) -> None:
     return None
 
 
+def _noop_append_recovery_log(_config: dict, event: dict) -> dict:
+    return event
+
+
 @dataclass(frozen=True)
 class SettingsRuntime:
     now: Callable[[], float] = time.time
@@ -29,6 +34,7 @@ class SettingsRuntime:
     reset_state: Callable[[str, str, str], None] = _noop_reset_state
     get_state: Callable[[str, str], dict] = _empty_state
     set_state: Callable[[str, str, dict], None] = _noop_set_state
+    append_recovery_log: Callable[[dict, dict], object] = _noop_append_recovery_log
 
 
 _runtime = SettingsRuntime()
@@ -52,6 +58,40 @@ def find_raw_action(server: dict, action_id: str) -> dict | None:
         if action.get("id") == action_id:
             return action
     return None
+
+
+def cert_renewal_toggle_log_event(
+    website: dict,
+    *,
+    enabled: bool,
+    actor: dict | None,
+    now: float,
+) -> dict:
+    website_id = str(website.get("id") or "")
+    website_name = str(website.get("name") or website_id)
+    action = "启用" if enabled else "关闭"
+    return {
+        "id": f"{int(now * 1000)}-website-cert-{website_id}-toggle",
+        "timestamp": now,
+        "invocation": "cert-renewal-toggle",
+        "targetType": "website-cert",
+        "targetId": website_id,
+        "targetName": website_name,
+        "actionServerId": "",
+        "actionServerName": "",
+        "actionId": "toggle-cert-renewal",
+        "actionName": "证书自动续期开关",
+        "reason": f"操作员{action}证书自动续期。",
+        "consecutiveFailures": 0,
+        "ok": True,
+        "message": f"证书自动续期已{action}。",
+        "returnCode": None,
+        "durationSeconds": 0,
+        "stdout": "",
+        "stderr": "",
+        "actor": public_user(actor or {}) if actor else {},
+        "enabled": bool(enabled),
+    }
 
 
 def persist_auto_recovery_enabled(
@@ -125,6 +165,7 @@ def persist_cert_renewal_enabled(
     website_id: str,
     enabled: bool,
     *,
+    actor: dict | None = None,
     runtime: SettingsRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -160,4 +201,14 @@ def persist_cert_renewal_enabled(
     else:
         active_runtime.reset_state("website-cert", website_id, "证书自动续期已关闭。")
 
-    return 200, {"ok": True, "message": "证书自动续期已更新。"}
+    log_event = cert_renewal_toggle_log_event(
+        website,
+        enabled=enabled,
+        actor=actor,
+        now=active_runtime.now(),
+    )
+    try:
+        active_runtime.append_recovery_log(raw_config, log_event)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"证书续期开关已保存，但处置日志保存失败：{exc}"}
+    return 200, {"ok": True, "message": "证书自动续期已更新。", "logId": log_event["id"]}

@@ -645,6 +645,7 @@ function recoveryLogCard(log) {
     "manual-backup": "手动备份",
     "auto-cert": "自动续期",
     "manual-cert": "手动续期",
+    "cert-renewal-toggle": "证书开关",
     "resource-ack": "资源确认",
   }[log.invocation] || log.invocation || "--";
   const output = [
