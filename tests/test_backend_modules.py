@@ -301,6 +301,29 @@ class BackendModuleTests(unittest.TestCase):
         self.assertNotIn("passwordHash", serialized)
         self.assertNotIn("sample-password-hash-for-redaction", serialized)
 
+    def test_auth_state_module_persists_lockouts_and_revocations(self) -> None:
+        from backend import auth_state
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            attempts_path = root / "login_attempts.json"
+            revoked_path = root / "revoked_sessions.json"
+
+            attempts = {"ops": {"failures": [1000.0, 1010.0], "lockedUntil": 1200.0}}
+            revoked = {"sid:session-1": 2000.0}
+            auth_state.save_login_attempts_to_disk(attempts, attempts_path)
+            auth_state.save_revoked_sessions_to_disk(revoked, revoked_path)
+
+            loaded_attempts = auth_state.load_login_attempts_from_disk(attempts_path)
+            loaded_revoked = auth_state.load_revoked_sessions_from_disk(revoked_path)
+            missing_attempts = auth_state.load_login_attempts_from_disk(root / "missing_attempts.json")
+            missing_revoked = auth_state.load_revoked_sessions_from_disk(root / "missing_revoked.json")
+
+        self.assertEqual(loaded_attempts, attempts)
+        self.assertEqual(loaded_revoked, revoked)
+        self.assertEqual(missing_attempts, {})
+        self.assertEqual(missing_revoked, {})
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 

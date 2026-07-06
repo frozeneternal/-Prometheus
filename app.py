@@ -21,6 +21,12 @@ from backend.auth_audit import (
     load_auth_audit_logs_from_disk as load_auth_audit_logs,
     save_auth_audit_logs_to_disk as save_auth_audit_logs,
 )
+from backend.auth_state import (
+    load_login_attempts_from_disk as load_login_attempt_state,
+    load_revoked_sessions_from_disk as load_revoked_session_state,
+    save_login_attempts_to_disk as save_login_attempt_state,
+    save_revoked_sessions_to_disk as save_revoked_session_state,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -115,45 +121,19 @@ def save_auth_audit_logs_to_disk(logs: list[dict]) -> None:
 
 
 def load_revoked_sessions_from_disk() -> dict[str, float]:
-    ensure_data_dir()
-    if not SESSION_REVOCATION_PATH.exists():
-        return {}
-
-    try:
-        with SESSION_REVOCATION_PATH.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    revoked = data.get("revokedSessionIds", data) if isinstance(data, dict) else {}
-    return revoked if isinstance(revoked, dict) else {}
+    return load_revoked_session_state(SESSION_REVOCATION_PATH)
 
 
 def save_revoked_sessions_to_disk(session_ids: dict[str, float]) -> None:
-    ensure_data_dir()
-    with SESSION_REVOCATION_PATH.open("w", encoding="utf-8") as fh:
-        json.dump({"revokedSessionIds": session_ids}, fh, ensure_ascii=False, indent=2, sort_keys=True)
+    save_revoked_session_state(session_ids, SESSION_REVOCATION_PATH)
 
 
 def load_login_attempts_from_disk() -> dict:
-    ensure_data_dir()
-    if not LOGIN_ATTEMPT_PATH.exists():
-        return {}
-
-    try:
-        with LOGIN_ATTEMPT_PATH.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    attempts = data.get("loginAttempts", data) if isinstance(data, dict) else {}
-    return attempts if isinstance(attempts, dict) else {}
+    return load_login_attempt_state(LOGIN_ATTEMPT_PATH)
 
 
 def save_login_attempts_to_disk(attempts: dict) -> None:
-    ensure_data_dir()
-    with LOGIN_ATTEMPT_PATH.open("w", encoding="utf-8") as fh:
-        json.dump({"loginAttempts": attempts}, fh, ensure_ascii=False, indent=2, sort_keys=True)
+    save_login_attempt_state(attempts, LOGIN_ATTEMPT_PATH)
 
 
 def get_recent_incident_logs(limit: int = 50) -> list[dict]:
