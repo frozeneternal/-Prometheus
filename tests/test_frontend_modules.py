@@ -213,17 +213,19 @@ class FrontendModuleTests(unittest.TestCase):
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+        auth_api_py = (ROOT / "backend" / "auth_api.py").read_text(encoding="utf-8")
 
         self.assertIn("logoutSession", accounts_js)
         self.assertIn('"/api/auth/logout"', client_js)
         self.assertIn('parsed.path == "/api/auth/logout"', backend_py)
-        self.assertIn("revoke_session_token", backend_py)
+        self.assertIn("revoke_session_token", auth_api_py)
 
     def test_admin_account_lockouts_have_frontend_and_backend_routes(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+        auth_api_py = (ROOT / "backend" / "auth_api.py").read_text(encoding="utf-8")
 
         self.assertIn('id="accountLockoutPanel"', index_html)
         self.assertIn('"/api/auth/lockouts"', client_js)
@@ -231,20 +233,21 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderAccountLockouts", (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8"))
         self.assertIn('parsed.path == "/api/auth/lockouts"', backend_py)
         self.assertIn('parsed.path == "/api/auth/unlock"', backend_py)
-        self.assertIn('authorize_operation(config, body, "admin")', backend_py)
+        self.assertIn('authorize_operation(config, body, "admin")', auth_api_py)
 
     def test_admin_account_audit_has_frontend_and_backend_routes(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+        auth_api_py = (ROOT / "backend" / "auth_api.py").read_text(encoding="utf-8")
 
         self.assertIn('id="accountAuditList"', index_html)
         self.assertIn('"/api/auth/audit"', client_js)
         self.assertIn("renderAccountAudit", (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8"))
         self.assertIn('parsed.path == "/api/auth/audit"', backend_py)
         self.assertIn("auth_audit_payload", backend_py)
-        self.assertIn('authorize_operation(config, body, "admin")', backend_py)
+        self.assertIn('authorize_operation(config, body, "admin")', auth_api_py)
 
 
 if __name__ == "__main__":

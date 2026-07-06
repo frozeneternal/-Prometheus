@@ -17,6 +17,76 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(verify_password("secret-pass", password_hash))
         self.assertFalse(verify_password("wrong-pass", password_hash))
 
+    def test_auth_api_module_rejects_failed_login_and_persists_attempts_without_app_import(self) -> None:
+        from backend import auth as auth_backend
+        from backend.auth import hash_password
+        from backend.auth_api import AuthApiRuntime, login_payload
+
+        username = "module-ops"
+        config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Ops",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass", salt="module-salt", iterations=1000),
+                }
+            ],
+        }
+        saved_attempts: list[dict] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1000.0,
+            save_login_attempts=lambda attempts: saved_attempts.append(attempts),
+        )
+
+        auth_backend.LOGIN_ATTEMPTS.clear()
+        try:
+            status, payload = login_payload(config, {"username": username, "password": "wrong"}, runtime=runtime)
+        finally:
+            auth_backend.LOGIN_ATTEMPTS.clear()
+
+        self.assertEqual(status, 401)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(saved_attempts[0][username]["failures"], [1000.0])
+
+    def test_auth_api_module_logout_revokes_session_without_app_import(self) -> None:
+        from backend import auth as auth_backend
+        from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
+        from backend.auth_api import AuthApiRuntime, logout_payload
+
+        username = "module-logout"
+        config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Logout",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass", salt="module-logout-salt", iterations=1000),
+                }
+            ],
+        }
+        user = authenticate_user(config, username, "ops-pass")
+        token = create_session_token(config, user, now=1000)
+        saved_revocations: list[dict[str, float]] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1010.0,
+            save_revoked_sessions=lambda sessions: saved_revocations.append(sessions),
+        )
+
+        auth_backend.REVOKED_SESSION_IDS.clear()
+        try:
+            status, payload = logout_payload(config, {"sessionToken": token}, runtime=runtime)
+            revoked_user = verify_session_token(config, token, now=1011)
+        finally:
+            auth_backend.REVOKED_SESSION_IDS.clear()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertIsNone(revoked_user)
+        self.assertTrue(saved_revocations[0])
+
     def test_expiry_module_classifies_resources_without_app_import(self) -> None:
         from backend.expiry import resource_expiry_items, resource_expiry_summary
 
@@ -1266,10 +1336,32 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_auth_api_payload_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "login_payload",
+            "session_payload",
+            "logout_payload",
+            "login_lockouts_payload",
+            "auth_audit_payload",
+            "unlock_login_payload",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
         self.assertEqual(app.hash_password.__module__, "backend.auth")
+        self.assertEqual(app.login_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.session_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.logout_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.login_lockouts_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.auth_audit_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.unlock_login_payload.__module__, "backend.auth_api")
         self.assertEqual(app.resource_expiry_items.__module__, "backend.expiry")
         self.assertEqual(app.parse_expiry_datetime.__module__, "backend.expiry")
         self.assertEqual(app.resource_expiry_summary.__module__, "backend.expiry")
