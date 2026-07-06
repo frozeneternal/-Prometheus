@@ -905,6 +905,34 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("allowAuto", steps)
         self.assertIn("timeout", steps)
 
+    def test_emergency_module_surfaces_resource_missing_handling_path_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[],
+            resources=[
+                {
+                    "id": "domain-main",
+                    "name": "Main Domain",
+                    "status": "critical",
+                    "message": "Main Domain will expire soon.",
+                    "actionRequired": True,
+                    "handlingReady": False,
+                    "missingHandlingFields": ["renewUrl", "owner", "provider"],
+                    "handlingMessage": "未配置 renewUrl、owner 或 provider，资源到期后没有明确续费入口或联系人。",
+                }
+            ],
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("renewUrl", steps)
+        self.assertIn("owner", steps)
+        self.assertIn("provider", steps)
+        self.assertIn("资产台账", steps)
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 

@@ -97,6 +97,16 @@ def resource_requires_action(status: str, acknowledged: bool) -> bool:
     return False
 
 
+def resource_handling_state(resource: dict) -> tuple[bool, list[str], str]:
+    required_paths = ("renewUrl", "owner", "provider")
+    missing = [field for field in required_paths if not str(resource.get(field) or "").strip()]
+    ready = len(missing) < len(required_paths)
+    message = ""
+    if not ready:
+        message = "未配置 renewUrl、owner 或 provider，资源到期后没有明确续费入口或联系人。"
+    return ready, missing, message
+
+
 def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
     current = time.time() if now is None else float(now)
     current_day = datetime.fromtimestamp(current, timezone.utc).date()
@@ -111,6 +121,7 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
         acknowledged_until = resource_acknowledged_until(resource, current)
         acknowledged = status in {"critical", "warning"} and acknowledged_until is not None
         action_required = resource_requires_action(status, acknowledged)
+        handling_ready, missing_handling_fields, handling_message = resource_handling_state(resource)
         items.append(
             {
                 "id": str(resource.get("id") or resource.get("name") or ""),
@@ -133,6 +144,9 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
                 "acknowledgedUntilTimestamp": acknowledged_until,
                 "acknowledgedBy": resource.get("acknowledgedBy", ""),
                 "actionRequired": action_required,
+                "handlingReady": handling_ready,
+                "missingHandlingFields": missing_handling_fields,
+                "handlingMessage": handling_message,
             }
         )
 

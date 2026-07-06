@@ -180,6 +180,14 @@ def _resource_item(resource: dict) -> dict | None:
         "完成处理后用“确认 7 天”临时消警，或更新 expiresAt 为新的到期日期。",
         "如该资源关联网站或服务器，复查 linkedTarget 是否正确。",
     ]
+    if resource.get("handlingReady") is False:
+        raw_missing_fields = resource.get("missingHandlingFields")
+        missing_fields = raw_missing_fields if isinstance(raw_missing_fields, list) else []
+        missing_text = "、".join(str(field) for field in missing_fields if str(field or "").strip())
+        next_steps.insert(
+            0,
+            f"{resource.get('handlingMessage') or '该资源缺少明确处置路径。'} 先从资产台账、账单系统或供应商后台补充 {missing_text or 'renewUrl、owner、provider'}，再执行续费或迁移。",
+        )
     return _item(
         f"resource:{resource_id}:{status}",
         severity,

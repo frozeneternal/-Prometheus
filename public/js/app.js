@@ -519,6 +519,12 @@ function resourceExpiryCard(item) {
   const ackText = item.acknowledged
     ? `已确认至 ${formatDate(item.acknowledgedUntil)}`
     : "";
+  const missingHandlingFields = Array.isArray(item.missingHandlingFields)
+    ? item.missingHandlingFields.join(", ")
+    : "";
+  const handlingWarning = item.handlingMessage
+    ? `${item.handlingMessage}${missingHandlingFields ? ` (${missingHandlingFields})` : ""}`
+    : "";
   const ackButton = canAcknowledge
     ? `<button type="button" class="secondary recovery-trigger compact" data-resource-ack="true" data-resource-id="${escapeHtml(item.id)}">确认 7 天</button>`
     : "";
@@ -537,7 +543,7 @@ function resourceExpiryCard(item) {
       <span>临界 ${escapeHtml(String(item.criticalDays ?? 7))} 天</span>
       ${meta.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}
     </div>
-    ${item.notes || renewLink || ackText || ackButton ? `<div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${ackText ? `<span>${escapeHtml(ackText)}</span>` : ""}${renewLink}${ackButton}</div>` : ""}
+    ${item.notes || handlingWarning || renewLink || ackText || ackButton ? `<div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${handlingWarning ? `<span>${escapeHtml(handlingWarning)}</span>` : ""}${ackText ? `<span>${escapeHtml(ackText)}</span>` : ""}${renewLink}${ackButton}</div>` : ""}
   </article>`;
 }
 

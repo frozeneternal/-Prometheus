@@ -75,6 +75,28 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(by_id["license-warning"]["status"], "warning")
         self.assertEqual(by_id["domain-ok"]["status"], "ok")
 
+    def test_resource_expiry_flags_missing_handling_path_for_actionable_resource(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {
+                    "id": "unowned-domain",
+                    "name": "Unowned Domain",
+                    "type": "domain",
+                    "expiresAt": "2026-07-05",
+                },
+            ],
+        }
+
+        item = app.resource_expiry_items(config, now=now)[0]
+
+        self.assertTrue(item["actionRequired"])
+        self.assertIs(item.get("handlingReady"), False)
+        self.assertEqual(item.get("missingHandlingFields"), ["renewUrl", "owner", "provider"])
+        self.assertIn("renewUrl", item.get("handlingMessage", ""))
+        self.assertIn("owner", item.get("handlingMessage", ""))
+        self.assertIn("provider", item.get("handlingMessage", ""))
+
     def test_resource_expiry_summary_counts_actionable_items(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {

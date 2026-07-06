@@ -234,6 +234,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('"resource-ack"', recovery_log_block)
         self.assertIn("资源确认", recovery_log_block)
 
+    def test_resource_expiry_card_surfaces_missing_handling_path(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function resourceExpiryCard(")
+        end = app_js.index("\nfunction recoveryBlock", start)
+        resource_block = app_js[start:end]
+
+        self.assertIn("item.handlingMessage", resource_block)
+        self.assertIn("missingHandlingFields", resource_block)
+
     def test_recovery_log_labels_include_cert_renewal_toggle(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function recoveryLogCard(")
