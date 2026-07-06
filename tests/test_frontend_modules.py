@@ -252,6 +252,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('"auto-recovery-toggle"', recovery_log_block)
         self.assertIn("恢复开关", recovery_log_block)
 
+    def test_recovery_log_labels_include_auto_backup_toggle(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function recoveryLogCard(")
+        end = app_js.index("function incidentLogCard(", start)
+        recovery_log_block = app_js[start:end]
+
+        self.assertIn('"auto-backup-toggle"', recovery_log_block)
+        self.assertIn("备份开关", recovery_log_block)
+
     def test_auto_recovery_card_surfaces_attempt_and_log_context(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function recoveryBlock(")

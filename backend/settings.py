@@ -129,6 +129,40 @@ def auto_recovery_toggle_log_event(
     }
 
 
+def auto_backup_toggle_log_event(
+    server: dict,
+    *,
+    enabled: bool,
+    actor: dict | None,
+    now: float,
+) -> dict:
+    server_id = str(server.get("id") or "")
+    server_name = str(server.get("name") or server_id)
+    action = "启用" if enabled else "关闭"
+    return {
+        "id": f"{int(now * 1000)}-server-backup-{server_id}-toggle",
+        "timestamp": now,
+        "invocation": "auto-backup-toggle",
+        "targetType": "server-backup",
+        "targetId": server_id,
+        "targetName": server_name,
+        "actionServerId": "",
+        "actionServerName": "",
+        "actionId": "toggle-auto-backup",
+        "actionName": "自动备份开关",
+        "reason": f"操作员{action}自动备份。",
+        "consecutiveFailures": 0,
+        "ok": True,
+        "message": f"自动备份已{action}。",
+        "returnCode": None,
+        "durationSeconds": 0,
+        "stdout": "",
+        "stderr": "",
+        "actor": public_user(actor or {}) if actor else {},
+        "enabled": bool(enabled),
+    }
+
+
 def persist_auto_recovery_enabled(
     target_type: str,
     target_id: str,
@@ -187,6 +221,7 @@ def persist_auto_backup_enabled(
     server_id: str,
     enabled: bool,
     *,
+    actor: dict | None = None,
     runtime: SettingsRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
@@ -206,7 +241,17 @@ def persist_auto_backup_enabled(
     else:
         active_runtime.reset_state("server-backup", server_id, "自动备份已关闭。")
 
-    return 200, {"ok": True, "message": "自动备份已更新。"}
+    log_event = auto_backup_toggle_log_event(
+        server,
+        enabled=enabled,
+        actor=actor,
+        now=active_runtime.now(),
+    )
+    try:
+        active_runtime.append_recovery_log(raw_config, log_event)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"自动备份开关已保存，但处置日志保存失败：{exc}"}
+    return 200, {"ok": True, "message": "自动备份已更新。", "logId": log_event["id"]}
 
 
 def persist_cert_renewal_enabled(

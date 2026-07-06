@@ -856,11 +856,15 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, auth_status, auth_payload)
                 return
 
-            status, payload = persist_auto_backup_enabled(server_id, enabled)
+            status, payload = persist_auto_backup_enabled(
+                server_id,
+                enabled,
+                actor=auth_payload.get("user"),
+            )
             if status != 200:
                 json_response(self, status, payload)
                 return
-            status, payload = settings_response(payload["message"])
+            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
             json_response(self, status, payload)
             return
 

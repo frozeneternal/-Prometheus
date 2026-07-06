@@ -506,6 +506,7 @@ class BackendModuleTests(unittest.TestCase):
         saved: list[dict] = []
         resets: list[tuple[str, str, str]] = []
         states: dict[str, dict] = {}
+        logs: list[dict] = []
         runtime = SettingsRuntime(
             now=lambda: 1000.0,
             load_config_raw=lambda: raw_config,
@@ -515,15 +516,27 @@ class BackendModuleTests(unittest.TestCase):
             set_state=lambda target_type, target_id, state: states.__setitem__(
                 f"{target_type}:{target_id}", state.copy()
             ),
+            append_recovery_log=lambda _config, event: logs.append(event),
         )
 
-        status, payload = persist_auto_backup_enabled("srv1", True, runtime=runtime)
+        status, payload = persist_auto_backup_enabled(
+            "srv1",
+            True,
+            actor={"username": "ops", "role": "operator"},
+            runtime=runtime,
+        )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["logId"], logs[0]["id"])
         self.assertTrue(saved[0]["servers"][0]["autoBackup"]["enabled"])
         self.assertEqual(resets, [("server-backup", "srv1", "自动备份已启用，等待首个周期。")])
         self.assertEqual(states["server-backup:srv1"]["lastCompletedAt"], 1000.0)
+        self.assertEqual(logs[0]["invocation"], "auto-backup-toggle")
+        self.assertEqual(logs[0]["targetType"], "server-backup")
+        self.assertEqual(logs[0]["targetId"], "srv1")
+        self.assertEqual(logs[0]["actor"]["username"], "ops")
+        self.assertIn("启用", logs[0]["message"])
 
     def test_settings_module_enables_cert_renewal_without_app_import(self) -> None:
         from backend.settings import SettingsRuntime, persist_cert_renewal_enabled

@@ -643,6 +643,7 @@ function recoveryLogCard(log) {
     manual: "手动执行",
     "manual-recovery": "手动恢复",
     "auto-backup": "自动备份",
+    "auto-backup-toggle": "备份开关",
     "manual-backup": "手动备份",
     "auto-cert": "自动续期",
     "manual-cert": "手动续期",
