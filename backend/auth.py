@@ -16,6 +16,7 @@ DEFAULT_AUTH_POLICY = {
     "maxLoginFailures": 5,
     "failureWindowSeconds": 300,
     "lockoutSeconds": 900,
+    "passwordMinLength": 8,
 }
 
 
@@ -107,6 +108,12 @@ def auth_policy(config: dict) -> dict:
             DEFAULT_AUTH_POLICY["lockoutSeconds"],
             minimum=60,
             maximum=86400,
+        ),
+        "passwordMinLength": safe_positive_int(
+            raw.get("passwordMinLength"),
+            DEFAULT_AUTH_POLICY["passwordMinLength"],
+            minimum=8,
+            maximum=128,
         ),
     }
 

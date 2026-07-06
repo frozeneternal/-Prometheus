@@ -228,6 +228,39 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(saved, [])
         self.assertEqual(audit_events, [])
 
+    def test_accounts_admin_module_respects_password_min_length_policy_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        config["authPolicy"] = {"passwordMinLength": 12}
+        raw_config["authPolicy"] = {"passwordMinLength": 12}
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "password": "shortpass",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("12", payload["message"])
+        self.assertEqual(saved, [])
+        self.assertEqual(audit_events, [])
+
     def test_accounts_admin_module_rejects_unsafe_username_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
 

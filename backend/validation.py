@@ -127,6 +127,13 @@ def auth_policy_issues(config: dict) -> list[dict]:
             86400,
             "authPolicy.lockoutSeconds 必须是 60 到 86400 秒之间的整数。",
         ),
+        (
+            "passwordMinLength",
+            "auth-policy-password-min-length-invalid",
+            8,
+            128,
+            "authPolicy.passwordMinLength 必须是 8 到 128 之间的整数。",
+        ),
     ]
     issues = []
     for key, issue_id, minimum, maximum, message in checks:

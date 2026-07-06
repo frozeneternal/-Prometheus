@@ -372,6 +372,7 @@ class ConfigValidationTests(unittest.TestCase):
                 "maxLoginFailures": True,
                 "failureWindowSeconds": 0,
                 "lockoutSeconds": "soon",
+                "passwordMinLength": 4,
             },
             "servers": [],
             "websites": [],
@@ -392,6 +393,7 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("auth-policy-max-login-failures-invalid", issue_ids)
         self.assertIn("auth-policy-failure-window-invalid", issue_ids)
         self.assertIn("auth-policy-lockout-invalid", issue_ids)
+        self.assertIn("auth-policy-password-min-length-invalid", issue_ids)
 
     def test_config_validation_reports_actions_without_authentication(self) -> None:
         config = {

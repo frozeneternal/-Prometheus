@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from backend.auth import authorize_operation, hash_password, normalize_role
+from backend.auth import auth_policy, authorize_operation, hash_password, normalize_role
 from backend.auth_audit import auth_audit_event
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
@@ -139,10 +139,11 @@ def upsert_account_user_payload(
     existing = users[index] if index is not None else {}
     password = str(body.get("password") or "")
     password_provided = bool(password)
+    password_min_length = auth_policy(raw_config)["passwordMinLength"]
     if index is None and not password_provided:
         return 400, {"ok": False, "message": "新账号必须设置密码。"}
-    if password_provided and len(password) < 8:
-        return 400, {"ok": False, "message": "密码至少 8 位。"}
+    if password_provided and len(password) < password_min_length:
+        return 400, {"ok": False, "message": f"密码至少 {password_min_length} 位。"}
 
     next_user = dict(existing)
     next_user["username"] = username
