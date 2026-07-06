@@ -2046,6 +2046,59 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("200", result["message"])
         self.assertEqual(states["server-backup:srv1"]["lastReason"], "定时自动备份")
 
+    def test_backups_module_records_manual_success_as_interval_without_app_import(self) -> None:
+        from backend.backups import BackupRuntime, maybe_trigger_backup, record_manual_backup_result
+
+        states: dict[str, dict] = {}
+        current_time = 1000.0
+        runtime = BackupRuntime(
+            now=lambda: current_time,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **_kwargs: self.fail(
+                "manual backup success should block duplicate auto backup"
+            ),
+        )
+        record_manual_backup_result(
+            target_id="srv1",
+            reason="manual backup from runbook",
+            payload={"ok": True, "message": "manual backup completed", "logId": "manual-backup-log-1"},
+            runtime=runtime,
+        )
+
+        state = states["server-backup:srv1"]
+        self.assertEqual(state["lastAttemptAt"], 1000.0)
+        self.assertEqual(state["lastCompletedAt"], 1000.0)
+        self.assertEqual(state["lastResult"], "success")
+        self.assertEqual(state["lastReason"], "manual backup from runbook")
+        self.assertEqual(state["lastLogId"], "manual-backup-log-1")
+
+        current_time = 1100.0
+        server = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoBackup": {
+                "enabled": True,
+                "actionServerId": "srv1",
+                "actionId": "backup",
+                "intervalSeconds": 300,
+            },
+            "actions": [{"id": "backup", "command": ["backup"], "allowAuto": True}],
+        }
+        result = maybe_trigger_backup(
+            {"servers": [server]},
+            server,
+            {"id": "srv1", "status": "online", "health": "healthy", "issues": []},
+            runtime=runtime,
+        )
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertEqual(result["lastLogId"], "manual-backup-log-1")
+        self.assertIn("200", result["message"])
+
     def test_incidents_module_tracks_active_and_recovered_incidents_without_app_import(self) -> None:
         from backend.incidents import IncidentRuntime, summarize_incident_reason, target_display_type, update_incident_state
 

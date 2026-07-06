@@ -313,6 +313,75 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(result["lastLogId"], "manual-log-1")
         duplicate_auto_action.assert_not_called()
 
+    def test_manual_backup_success_blocks_duplicate_auto_backup(self) -> None:
+        config = {
+            "actionToken": "token",
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "actions": [
+                        {
+                            "id": "backup",
+                            "command": ["echo", "backup"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                    "autoBackup": {
+                        "enabled": True,
+                        "actionServerId": "srv1",
+                        "actionId": "backup",
+                        "intervalSeconds": 300,
+                    },
+                }
+            ],
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "online",
+            "health": "healthy",
+            "issues": [],
+            "dataQuality": {"level": "trusted", "trusted": True},
+        }
+
+        with patch.object(
+            app,
+            "execute_server_action",
+            return_value=(200, {"ok": True, "message": "manual backup completed", "logId": "manual-backup-log-1"}),
+        ) as manual_action:
+            status, payload = app.run_action(
+                config,
+                {
+                    "serverId": "srv1",
+                    "actionId": "backup",
+                    "token": "token",
+                    "targetType": "server-backup",
+                    "targetId": "srv1",
+                    "targetName": "Server 1 备份",
+                    "invocation": "manual-backup",
+                    "reason": "手动备份",
+                },
+            )
+
+        state = app.get_runtime_entity_state("server-backup", "srv1")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(state["lastResult"], "success")
+        self.assertEqual(state["lastReason"], "手动备份")
+        self.assertEqual(state["lastLogId"], "manual-backup-log-1")
+        self.assertGreater(state["lastCompletedAt"], 0.0)
+        manual_action.assert_called_once()
+
+        with patch.object(app, "execute_server_action") as duplicate_auto_action:
+            result = app.maybe_trigger_backup(config, config["servers"][0], snapshot)
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertEqual(result["lastLogId"], "manual-backup-log-1")
+        duplicate_auto_action.assert_not_called()
+
     def test_cert_renewal_blocks_invalid_policy_without_executing_action(self) -> None:
         config = {
             "servers": [

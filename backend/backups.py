@@ -117,6 +117,28 @@ def resolve_backup_action(config: dict, server: dict) -> tuple[dict | None, dict
     return action_server, action, ""
 
 
+def record_manual_backup_result(
+    *,
+    target_id: str,
+    reason: str,
+    payload: dict,
+    runtime: BackupRuntime | None = None,
+) -> bool:
+    if not target_id:
+        return False
+
+    active_runtime = runtime or _runtime
+    state = active_runtime.get_state("server-backup", target_id)
+    now = active_runtime.now()
+    state["lastAttemptAt"] = now
+    state["lastCompletedAt"] = now
+    state["lastResult"] = "success" if payload.get("ok") else "failed"
+    state["lastReason"] = reason
+    state["lastLogId"] = payload.get("logId", "")
+    active_runtime.set_state("server-backup", target_id, state)
+    return True
+
+
 def maybe_trigger_backup(
     config: dict,
     server: dict,

@@ -324,6 +324,7 @@ from backend.backups import (  # noqa: E402 - transitional re-export while app.p
     can_trigger_backup,
     configure_backup_runtime,
     maybe_trigger_backup,
+    record_manual_backup_result,
     resolve_backup_action,
 )
 from backend.dashboard import (  # noqa: E402 - transitional re-export while app.py is split.
@@ -610,6 +611,12 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
     if invocation == "manual-recovery" and target_type in {"server", "website"} and target_id:
         record_manual_recovery_result(
             target_type=target_type,
+            target_id=target_id,
+            reason=reason,
+            payload=payload,
+        )
+    if invocation == "manual-backup" and target_type == "server-backup" and target_id:
+        record_manual_backup_result(
             target_id=target_id,
             reason=reason,
             payload=payload,
