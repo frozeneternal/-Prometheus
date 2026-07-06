@@ -22,6 +22,7 @@ class AccountAuthTests(unittest.TestCase):
     def setUp(self) -> None:
         auth_backend.REVOKED_SESSION_IDS.clear()
         auth_backend.LOGIN_ATTEMPTS.clear()
+        app.RUNTIME_STATE["authAuditLogs"] = []
 
     def config_with_users(self) -> dict:
         return {
@@ -158,8 +159,10 @@ class AccountAuthTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "login_attempts.json"
+            audit_path = Path(tmpdir) / "auth_audit_logs.json"
             with (
                 patch.object(app, "LOGIN_ATTEMPT_PATH", path, create=True),
+                patch.object(app, "AUTH_AUDIT_LOG_PATH", audit_path, create=True),
                 patch.object(app.time, "time", side_effect=[1000, 1010, 1020, 1030]),
             ):
                 self.assertEqual(app.login_payload(config, {"username": "ops", "password": "wrong"})[0], 401)
@@ -187,10 +190,13 @@ class AccountAuthTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "login_attempts.json"
+            audit_path = Path(tmpdir) / "auth_audit_logs.json"
             with (
                 patch.object(app, "LOGIN_ATTEMPT_PATH", path, create=True),
+                patch.object(app, "AUTH_AUDIT_LOG_PATH", audit_path, create=True),
                 patch.object(app, "load_recovery_logs_from_disk", return_value=[]),
                 patch.object(app, "load_incident_logs_from_disk", return_value=[]),
+                patch.object(app, "load_auth_audit_logs_from_disk", return_value=[]),
                 patch.object(app, "load_revoked_sessions_from_disk", return_value={}),
                 patch.object(app.time, "time", side_effect=[1000, 1010, 1020, 1030]),
             ):
@@ -254,7 +260,11 @@ class AccountAuthTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "login_attempts.json"
-            with patch.object(app, "LOGIN_ATTEMPT_PATH", path):
+            audit_path = Path(tmpdir) / "auth_audit_logs.json"
+            with (
+                patch.object(app, "LOGIN_ATTEMPT_PATH", path),
+                patch.object(app, "AUTH_AUDIT_LOG_PATH", audit_path, create=True),
+            ):
                 status, payload = app.unlock_login_payload(
                     config,
                     {"sessionToken": token, "username": "ops"},
@@ -266,6 +276,74 @@ class AccountAuthTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(app.login_lockout_until(config, "ops", now=1011), 0)
+
+    def test_login_lockout_appends_auth_audit_log(self) -> None:
+        config = self.config_with_users()
+        config["authPolicy"] = {
+            "maxLoginFailures": 2,
+            "failureWindowSeconds": 60,
+            "lockoutSeconds": 120,
+        }
+
+        with TemporaryDirectory() as tmpdir:
+            audit_path = Path(tmpdir) / "auth_audit_logs.json"
+            attempts_path = Path(tmpdir) / "login_attempts.json"
+            with (
+                patch.object(app, "AUTH_AUDIT_LOG_PATH", audit_path, create=True),
+                patch.object(app, "LOGIN_ATTEMPT_PATH", attempts_path),
+                patch.object(app.time, "time", side_effect=[1000, 1010]),
+            ):
+                app.login_payload(config, {"username": "ops", "password": "wrong"})
+                status, payload = app.login_payload(config, {"username": "ops", "password": "wrong"})
+                logs = app.load_auth_audit_logs_from_disk()
+
+        self.assertEqual(status, 429)
+        self.assertTrue(payload["ok"] is False)
+        self.assertEqual(logs[-1]["event"], "login-lockout")
+        self.assertEqual(logs[-1]["username"], "ops")
+        self.assertNotIn("password", json.dumps(logs, ensure_ascii=False).lower())
+        self.assertNotIn("sessionToken", json.dumps(logs, ensure_ascii=False))
+
+    def test_unlock_login_payload_appends_admin_audit_log(self) -> None:
+        config = self.config_with_users()
+        config["users"].append(
+            {
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+            }
+        )
+        admin = app.authenticate_user(config, "admin", "admin-pass")
+        token = app.create_session_token(config, admin)
+        app.record_login_failure(config, "ops", now=1000)
+        app.record_login_failure(config, "ops", now=1001)
+        app.record_login_failure(config, "ops", now=1002)
+        app.record_login_failure(config, "ops", now=1003)
+        app.record_login_failure(config, "ops", now=1004)
+
+        with TemporaryDirectory() as tmpdir:
+            audit_path = Path(tmpdir) / "auth_audit_logs.json"
+            attempts_path = Path(tmpdir) / "login_attempts.json"
+            with (
+                patch.object(app, "AUTH_AUDIT_LOG_PATH", audit_path, create=True),
+                patch.object(app, "LOGIN_ATTEMPT_PATH", attempts_path),
+            ):
+                status, payload = app.unlock_login_payload(
+                    config,
+                    {"sessionToken": token, "username": "ops"},
+                    now=1010,
+                )
+                logs = app.load_auth_audit_logs_from_disk()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(logs[-1]["event"], "login-unlock")
+        self.assertEqual(logs[-1]["username"], "ops")
+        self.assertEqual(logs[-1]["actor"]["username"], "admin")
+        serialized = json.dumps(logs, ensure_ascii=False)
+        self.assertNotIn(token, serialized)
+        self.assertNotIn("admin-pass", serialized)
 
     def test_legacy_action_token_still_authorizes_without_users(self) -> None:
         config = {"actionToken": "legacy-token", "users": []}

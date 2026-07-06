@@ -150,6 +150,18 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('parsed.path == "/api/auth/unlock"', backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', backend_py)
 
+    def test_admin_account_audit_has_frontend_and_backend_routes(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountAuditList"', index_html)
+        self.assertIn('"/api/auth/audit"', app_js)
+        self.assertIn("renderAccountAudit", app_js)
+        self.assertIn('parsed.path == "/api/auth/audit"', backend_py)
+        self.assertIn("auth_audit_payload", backend_py)
+        self.assertIn('authorize_operation(config, body, "admin")', backend_py)
+
 
 if __name__ == "__main__":
     unittest.main()

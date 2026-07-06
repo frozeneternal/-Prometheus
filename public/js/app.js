@@ -69,6 +69,7 @@ async function loadConfig() {
   state.config = payload.config;
   await refreshSession();
   await loadAccountLockouts();
+  await loadAccountAudit();
   renderAuthControls();
   $("#appName").textContent = state.config.appName || "本地服务器监控台";
   $("#prometheusUrl").textContent = state.config.prometheusUrl || "";
@@ -141,12 +142,31 @@ async function loadAccountLockouts() {
   }
 }
 
+async function loadAccountAudit() {
+  if (!state.sessionToken || !isAdminUser()) {
+    state.accountAuditLogs = [];
+    return;
+  }
+
+  try {
+    const payload = await getJson("/api/auth/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken: state.sessionToken }),
+    });
+    state.accountAuditLogs = payload.logs || [];
+  } catch (error) {
+    state.accountAuditLogs = [];
+  }
+}
+
 function renderAccountLockouts() {
   const panel = $("#accountLockoutPanel");
   if (!isAdminUser()) {
     panel.classList.add("hidden");
     $("#accountLockoutList").innerHTML = "";
     $("#accountLockoutSummary").textContent = "";
+    $("#accountAuditList").innerHTML = "";
     return;
   }
 
@@ -170,6 +190,25 @@ function renderAccountLockouts() {
   $("#accountLockoutList").querySelectorAll("[data-unlock-user]").forEach((button) => {
     button.addEventListener("click", () => unlockLoginAccount(button.dataset.unlockUser));
   });
+  renderAccountAudit();
+}
+
+function renderAccountAudit() {
+  const logs = (state.accountAuditLogs || []).slice().reverse();
+  $("#accountAuditList").innerHTML = logs.length
+    ? logs.map((log) => `
+      <article class="account-audit-item">
+        <div>
+          <strong>${escapeHtml(log.username || "--")}</strong>
+          <span class="muted">${escapeHtml(log.message || log.event || "")}</span>
+        </div>
+        <div class="account-audit-meta">
+          <span>${escapeHtml(formatTime(log.timestamp))}</span>
+          <span>${escapeHtml(log.actor?.username ? `操作者 ${log.actor.username}` : "系统")}</span>
+        </div>
+      </article>
+    `).join("")
+    : '<p class="muted">暂无账号审计事件。</p>';
 }
 
 async function unlockLoginAccount(username) {
@@ -180,9 +219,11 @@ async function unlockLoginAccount(username) {
       body: JSON.stringify({ username, sessionToken: state.sessionToken }),
     });
     state.accountLockouts = payload.lockouts || [];
+    await loadAccountAudit();
     renderAccountLockouts();
   } catch (error) {
     await loadAccountLockouts();
+    await loadAccountAudit();
     renderAccountLockouts();
   }
 }
@@ -1038,6 +1079,7 @@ async function loginCurrentUser(event) {
     window.localStorage.setItem("monitorSessionToken", state.sessionToken);
     $("#loginPassword").value = "";
     await loadAccountLockouts();
+    await loadAccountAudit();
     renderAuthControls();
     await refreshDashboard();
   } catch (error) {
@@ -1063,6 +1105,7 @@ async function logoutCurrentUser() {
     state.sessionToken = "";
     state.currentUser = null;
     state.accountLockouts = [];
+    state.accountAuditLogs = [];
     window.localStorage.removeItem("monitorSessionToken");
     renderAuthControls();
   }

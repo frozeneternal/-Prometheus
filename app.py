@@ -24,6 +24,7 @@ RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
 INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
 SESSION_REVOCATION_PATH = DATA_DIR / "revoked_sessions.json"
 LOGIN_ATTEMPT_PATH = DATA_DIR / "login_attempts.json"
+AUTH_AUDIT_LOG_PATH = DATA_DIR / "auth_audit_logs.json"
 
 MAX_OUTPUT_CHARS = 20000
 SERVER_METRICS = ("up", "cpu", "memory", "disk", "rx", "tx", "load", "uptime")
@@ -34,6 +35,7 @@ RUNTIME_STATE = {
     "entityStates": {},
     "recoveryLogs": [],
     "incidentLogs": [],
+    "authAuditLogs": [],
 }
 
 
@@ -98,6 +100,26 @@ def save_incident_logs_to_disk(logs: list[dict]) -> None:
         json.dump(logs, fh, ensure_ascii=False, indent=2)
 
 
+def load_auth_audit_logs_from_disk() -> list[dict]:
+    ensure_data_dir()
+    if not AUTH_AUDIT_LOG_PATH.exists():
+        return []
+
+    try:
+        with AUTH_AUDIT_LOG_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    return data if isinstance(data, list) else []
+
+
+def save_auth_audit_logs_to_disk(logs: list[dict]) -> None:
+    ensure_data_dir()
+    with AUTH_AUDIT_LOG_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(logs, fh, ensure_ascii=False, indent=2)
+
+
 def load_revoked_sessions_from_disk() -> dict[str, float]:
     ensure_data_dir()
     if not SESSION_REVOCATION_PATH.exists():
@@ -144,6 +166,41 @@ def get_recent_incident_logs(limit: int = 50) -> list[dict]:
     with RUNTIME_LOCK:
         logs = list(RUNTIME_STATE["incidentLogs"])
     return logs[-limit:]
+
+
+def get_recent_auth_audit_logs(limit: int = 50) -> list[dict]:
+    with RUNTIME_LOCK:
+        logs = list(RUNTIME_STATE["authAuditLogs"])
+    return logs[-limit:]
+
+
+def append_auth_audit_log(config: dict, event: dict) -> dict:
+    limit = monitoring_options(config)["incidentLogLimit"]
+    with RUNTIME_LOCK:
+        logs = list(RUNTIME_STATE["authAuditLogs"])
+        logs.append(event)
+        logs = logs[-limit:]
+        RUNTIME_STATE["authAuditLogs"] = logs
+    save_auth_audit_logs_to_disk(logs)
+    return event
+
+
+def auth_audit_event(
+    event: str,
+    username: str,
+    message: str,
+    actor: dict | None = None,
+    now: float | None = None,
+) -> dict:
+    current = time.time() if now is None else float(now)
+    return {
+        "id": f"{int(current * 1000)}-{event}-{username}",
+        "event": event,
+        "username": str(username or ""),
+        "actor": public_user(actor) if actor else None,
+        "timestamp": current,
+        "message": message,
+    }
 
 
 def upsert_incident_log(config: dict, event: dict) -> dict:
@@ -1686,12 +1743,14 @@ def monitor_loop() -> None:
 def bootstrap_runtime_state() -> None:
     logs = load_recovery_logs_from_disk()
     incident_logs = load_incident_logs_from_disk()
+    auth_audit_logs = load_auth_audit_logs_from_disk()
     current = time.time()
     load_revoked_sessions(load_revoked_sessions_from_disk(), now=current)
     load_login_attempts(load_login_attempts_from_disk(), now=current)
     with RUNTIME_LOCK:
         RUNTIME_STATE["recoveryLogs"] = logs
         RUNTIME_STATE["incidentLogs"] = incident_logs
+        RUNTIME_STATE["authAuditLogs"] = auth_audit_logs
 
 
 def find_action(server: dict, action_id: str) -> dict | None:
@@ -2014,6 +2073,18 @@ def login_payload(config: dict, body: dict) -> tuple[int, dict]:
         except OSError as exc:
             return 500, {"ok": False, "message": f"登录失败状态保存失败：{exc}"}
         if locked_until > current:
+            try:
+                append_auth_audit_log(
+                    config,
+                    auth_audit_event(
+                        "login-lockout",
+                        username,
+                        "登录失败次数过多，账号已临时锁定。",
+                        now=current,
+                    ),
+                )
+            except OSError as exc:
+                return 500, {"ok": False, "message": f"账号审计日志保存失败：{exc}"}
             return 429, {
                 "ok": False,
                 "message": "登录失败次数过多，账号已临时锁定。",
@@ -2076,6 +2147,17 @@ def login_lockouts_payload(config: dict, body: dict, now: float | None = None) -
     }
 
 
+def auth_audit_payload(config: dict, body: dict) -> tuple[int, dict]:
+    allowed, status, auth_payload = authorize_operation(config, body, "admin")
+    if not allowed:
+        return status, auth_payload
+    return 200, {
+        "ok": True,
+        "logs": get_recent_auth_audit_logs(),
+        "user": auth_payload.get("user"),
+    }
+
+
 def unlock_login_payload(config: dict, body: dict, now: float | None = None) -> tuple[int, dict]:
     allowed, status, auth_payload = authorize_operation(config, body, "admin")
     if not allowed:
@@ -2092,6 +2174,19 @@ def unlock_login_payload(config: dict, body: dict, now: float | None = None) -> 
         return 500, {"ok": False, "message": f"账号锁定状态保存失败：{exc}"}
     if not unlocked:
         return 404, {"ok": False, "message": "该账号当前没有锁定记录。"}
+    try:
+        append_auth_audit_log(
+            config,
+            auth_audit_event(
+                "login-unlock",
+                username,
+                "管理员已解除账号临时锁定。",
+                actor=auth_payload.get("user"),
+                now=now,
+            ),
+        )
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号已解锁，但审计日志保存失败：{exc}"}
     return 200, {
         "ok": True,
         "message": "账号已解锁。",
@@ -2399,6 +2494,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
             status, payload = login_lockouts_payload(config, body)
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/audit":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = auth_audit_payload(config, body)
             json_response(self, status, payload)
             return
 

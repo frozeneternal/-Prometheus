@@ -8,4 +8,5 @@ export const state = {
   sessionToken: window.localStorage.getItem("monitorSessionToken") || "",
   currentUser: null,
   accountLockouts: [],
+  accountAuditLogs: [],
 };

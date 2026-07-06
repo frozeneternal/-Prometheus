@@ -208,15 +208,41 @@ input {
   gap: 8px;
 }
 
+.account-audit-head {
+  border-top: 1px solid #edd48d;
+  padding-top: 10px;
+}
+
+.account-audit-list {
+  display: grid;
+  gap: 8px;
+}
+
 .account-lockout-item {
   min-height: 44px;
   border-top: 1px solid #edd48d;
   padding-top: 8px;
 }
 
-.account-lockout-item div {
+.account-lockout-item div,
+.account-audit-item div {
   display: grid;
   gap: 2px;
+}
+
+.account-audit-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+}
+
+.account-audit-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
 }
 
 .compact {
