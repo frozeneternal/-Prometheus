@@ -137,6 +137,14 @@ def maybe_finish_pending_cert_renewal(
         state["verifiedExpiresIn"] = cert_expires_in
         state.pop("pendingExpiresIn", None)
         return True, "triggered", "证书续期已确认，监控到新的证书到期时间。"
+    if not isinstance(previous, (int, float)) or isinstance(previous, bool):
+        renew_before_days = strict_positive_int_value(renewal.get("renewBeforeDays", 14)) or 14
+        if cert_expires_in > renew_before_days * 86400:
+            state["lastResult"] = "success"
+            state["lastCompletedAt"] = now
+            state["verifiedExpiresIn"] = cert_expires_in
+            state.pop("pendingExpiresIn", None)
+            return True, "triggered", "证书续期已确认，当前证书已离开续期窗口。"
 
     timeout = cert_renewal_verification_timeout(renewal)
     last_attempt = float(state.get("lastAttemptAt", 0.0) or 0.0)
@@ -168,18 +176,17 @@ def record_manual_cert_renewal_result(
     cert_expires_in = metrics.get("certExpiresIn")
     has_cert_metric = isinstance(cert_expires_in, (int, float)) and not isinstance(cert_expires_in, bool)
 
+    state.setdefault("lastCompletedAt", 0.0)
     state["lastAttemptAt"] = now
     state["lastReason"] = reason
     state["lastLogId"] = payload.get("logId", "")
 
     if payload.get("ok"):
+        state["lastResult"] = "verifying"
+        state.pop("verifiedExpiresIn", None)
         if has_cert_metric:
-            state["lastResult"] = "verifying"
             state["pendingExpiresIn"] = cert_expires_in
-            state.pop("verifiedExpiresIn", None)
         else:
-            state["lastResult"] = "success"
-            state["lastCompletedAt"] = now
             state.pop("pendingExpiresIn", None)
     else:
         state["lastResult"] = "failed"

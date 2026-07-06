@@ -1109,6 +1109,50 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(state["lastLogId"], "manual-log-1")
         self.assertEqual(state["lastReason"], "手动续期")
 
+    def test_certificates_module_keeps_manual_success_unverified_without_baseline_metric(self) -> None:
+        from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal, record_manual_cert_renewal_result
+
+        current_time = 1500.0
+        states: dict[str, dict] = {}
+        runtime = CertRenewalRuntime(
+            now=lambda: current_time,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **_kwargs: self.fail("verification should not rerun command"),
+        )
+
+        record_manual_cert_renewal_result(
+            target_id="site1",
+            reason="手动续期",
+            snapshot={"metrics": {"certExpiresIn": None}},
+            payload={"ok": True, "logId": "manual-log-1"},
+            runtime=runtime,
+        )
+
+        state = states["website-cert:site1"]
+        self.assertEqual(state["lastResult"], "verifying")
+        self.assertNotIn("pendingExpiresIn", state)
+        self.assertEqual(state["lastCompletedAt"], 0.0)
+
+        current_time = 1600.0
+        result = maybe_trigger_cert_renewal(
+            {"servers": []},
+            {"id": "site1", "certRenewal": {"enabled": True, "renewBeforeDays": 14, "cooldownSeconds": 86400}},
+            {
+                "id": "site1",
+                "metrics": {"certExpiresIn": 40 * 86400},
+                "dataQuality": {"trusted": True},
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(result["status"], "triggered")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertEqual(result["verifiedExpiresIn"], 40 * 86400)
+        self.assertNotIn("pendingExpiresIn", states["website-cert:site1"])
+
     def test_backups_module_triggers_backup_action_without_app_import(self) -> None:
         from backend.backups import BackupRuntime, maybe_trigger_backup
 

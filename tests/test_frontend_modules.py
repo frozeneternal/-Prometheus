@@ -214,6 +214,17 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn("verifying", labels_block)
 
+    def test_cert_renewal_card_surfaces_attempt_and_log_context(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function certRenewalBlock(")
+        end = app_js.index("\nfunction toggleControl", start)
+        renewal_block = app_js[start:end]
+
+        self.assertIn("最近尝试", renewal_block)
+        self.assertIn("certRenewal.lastAttemptAt", renewal_block)
+        self.assertIn("关联日志", renewal_block)
+        self.assertIn("certRenewal.lastLogId", renewal_block)
+
     def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")

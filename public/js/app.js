@@ -600,6 +600,7 @@ function certRenewalBlock(certRenewal, manualCertRenewal, website) {
   const expireText = certRenewal.expiresInDays === null || certRenewal.expiresInDays === undefined
     ? "证书天数未知"
     : `剩余 ${certRenewal.expiresInDays} 天`;
+  const logText = certRenewal.lastLogId || "--";
   return `<div class="recovery-block">
     <div class="recovery-head">
       <div class="block-title-row">
@@ -611,7 +612,9 @@ function certRenewalBlock(certRenewal, manualCertRenewal, website) {
     <div class="recovery-meta">
       <span>${escapeHtml(expireText)}</span>
       <span>提前 ${escapeHtml(String(certRenewal.renewBeforeDays ?? 14))} 天续期</span>
+      <span>最近尝试 ${escapeHtml(formatTime(certRenewal.lastAttemptAt))}</span>
       <span>最近续期 ${escapeHtml(formatTime(certRenewal.lastCompletedAt))}</span>
+      <span>关联日志 ${escapeHtml(logText)}</span>
     </div>
     <p class="recovery-message muted">${escapeHtml(certRenewal.message || certRenewal.lastReason || "暂无证书续期记录")}</p>
     ${manualButton ? `<div class="recovery-actions">${manualButton}</div>` : ""}
