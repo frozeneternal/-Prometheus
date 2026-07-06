@@ -463,6 +463,7 @@ class FrontendModuleTests(unittest.TestCase):
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
         self.assertIn("login_payload(config, body, source_ip=request_source_ip(self))", backend_py)
+        self.assertIn("logout_payload(config, body, source_ip=request_source_ip(self))", backend_py)
         self.assertIn("upsert_account_user_payload(config, body, source_ip=request_source_ip(self))", backend_py)
         self.assertIn("delete_account_user_payload(config, body, source_ip=request_source_ip(self))", backend_py)
         self.assertIn("unlock_login_payload(config, body, source_ip=request_source_ip(self))", backend_py)

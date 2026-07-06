@@ -152,6 +152,53 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIsNone(revoked_user)
         self.assertTrue(saved_revocations[0])
 
+    def test_auth_api_module_records_logout_audit_without_app_import(self) -> None:
+        from backend import auth as auth_backend
+        from backend.auth import authenticate_user, create_session_token, hash_password
+        from backend.auth_api import AuthApiRuntime, logout_payload
+
+        username = "module-logout"
+        config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Logout",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass", salt="module-logout-salt", iterations=1000),
+                }
+            ],
+        }
+        user = authenticate_user(config, username, "ops-pass")
+        token = create_session_token(config, user, now=1000)
+        audit_events: list[dict] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1010.0,
+            save_revoked_sessions=lambda _sessions: None,
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        auth_backend.REVOKED_SESSION_IDS.clear()
+        try:
+            status, payload = logout_payload(
+                config,
+                {"sessionToken": token, "sourceIp": "203.0.113.200"},
+                source_ip="10.0.0.26",
+                runtime=runtime,
+            )
+        finally:
+            auth_backend.REVOKED_SESSION_IDS.clear()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(audit_events[0]["event"], "logout-success")
+        self.assertEqual(audit_events[0]["username"], username)
+        self.assertEqual(audit_events[0]["actor"]["username"], username)
+        self.assertEqual(audit_events[0]["sourceIp"], "10.0.0.26")
+        serialized = json.dumps(audit_events, ensure_ascii=False)
+        self.assertNotIn(token, serialized)
+        self.assertNotIn("ops-pass", serialized)
+
     def test_auth_api_module_pages_audit_logs_without_app_import(self) -> None:
         from backend.auth_api import AuthApiRuntime, auth_audit_payload
 

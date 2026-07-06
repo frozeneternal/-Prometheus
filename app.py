@@ -747,7 +747,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
-            status, payload = logout_payload(config, body)
+            status, payload = logout_payload(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 

@@ -178,7 +178,13 @@ def session_payload(config: dict, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True, "mode": "session", "user": user}
 
 
-def logout_payload(config: dict, body: dict, *, runtime: AuthApiRuntime | None = None) -> tuple[int, dict]:
+def logout_payload(
+    config: dict,
+    body: dict,
+    *,
+    source_ip: str = "",
+    runtime: AuthApiRuntime | None = None,
+) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
     if not users_enabled(config):
         return 200, {"ok": True, "mode": "legacy-token", "message": "未启用账号登录模式。"}
@@ -187,12 +193,28 @@ def logout_payload(config: dict, body: dict, *, runtime: AuthApiRuntime | None =
     if not token:
         return 400, {"ok": False, "message": "缺少会话令牌。"}
     current = active_runtime.now()
+    user = verify_session_token(config, token, now=current)
     if not revoke_session_token(config, token, now=current):
         return 401, {"ok": False, "message": "登录已失效。"}
     try:
         active_runtime.save_revoked_sessions(revoked_session_snapshot(now=current))
     except OSError as exc:
         return 500, {"ok": False, "message": f"会话已撤销，但撤销记录保存失败：{exc}"}
+    if user:
+        try:
+            active_runtime.append_auth_audit(
+                config,
+                auth_audit_event(
+                    "logout-success",
+                    str(user.get("username") or ""),
+                    "账号已退出登录。",
+                    actor=user,
+                    source_ip=source_ip,
+                    now=current,
+                ),
+            )
+        except OSError as exc:
+            return 500, {"ok": False, "message": f"会话已撤销，但账号审计日志保存失败：{exc}"}
     return 200, {"ok": True, "mode": "session", "message": "已退出登录。"}
 
 
