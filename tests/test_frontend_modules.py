@@ -19,6 +19,7 @@ class FrontendModuleTests(unittest.TestCase):
     def test_frontend_base_modules_exist_and_are_imported(self) -> None:
         expected_modules = [
             PUBLIC / "js" / "app.js",
+            PUBLIC / "js" / "accounts.js",
             PUBLIC / "js" / "api.js",
             PUBLIC / "js" / "client.js",
             PUBLIC / "js" / "dom.js",
@@ -31,9 +32,33 @@ class FrontendModuleTests(unittest.TestCase):
 
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
-        for import_path in ("./client.js", "./dom.js", "./format.js", "./prometheus.js", "./state.js"):
+        for import_path in ("./accounts.js", "./client.js", "./dom.js", "./format.js", "./prometheus.js", "./state.js"):
             self.assertIn(import_path, app_js)
         self.assertIn("./api.js", client_js)
+
+    def test_account_ui_logic_lives_in_frontend_account_module(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+        account_functions = [
+            "refreshSession",
+            "renderAuthControls",
+            "authPayload",
+            "loadAccountLockouts",
+            "loadAccountAudit",
+            "renderAccountLockouts",
+            "renderAccountAudit",
+            "loginCurrentUser",
+            "logoutCurrentUser",
+        ]
+
+        for function_name in account_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"function {function_name}(", app_js)
+                self.assertIn(f"function {function_name}(", accounts_js)
+
+        self.assertIn("from \"./accounts.js\"", app_js)
+        self.assertIn("from \"./client.js\"", accounts_js)
+        self.assertIn("from \"./state.js\"", accounts_js)
 
     def test_app_uses_frontend_client_for_backend_routes(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
@@ -150,11 +175,11 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('authorize_operation(config, body, "operator")', backend_py)
 
     def test_logout_calls_backend_session_revocation_route(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
-        self.assertIn("logoutSession", app_js)
+        self.assertIn("logoutSession", accounts_js)
         self.assertIn('"/api/auth/logout"', client_js)
         self.assertIn('parsed.path == "/api/auth/logout"', backend_py)
         self.assertIn("revoke_session_token", backend_py)
@@ -168,7 +193,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('id="accountLockoutPanel"', index_html)
         self.assertIn('"/api/auth/lockouts"', client_js)
         self.assertIn('"/api/auth/unlock"', client_js)
-        self.assertIn("renderAccountLockouts", app_js)
+        self.assertIn("renderAccountLockouts", (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8"))
         self.assertIn('parsed.path == "/api/auth/lockouts"', backend_py)
         self.assertIn('parsed.path == "/api/auth/unlock"', backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', backend_py)
@@ -181,7 +206,7 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn('id="accountAuditList"', index_html)
         self.assertIn('"/api/auth/audit"', client_js)
-        self.assertIn("renderAccountAudit", app_js)
+        self.assertIn("renderAccountAudit", (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8"))
         self.assertIn('parsed.path == "/api/auth/audit"', backend_py)
         self.assertIn("auth_audit_payload", backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', backend_py)
