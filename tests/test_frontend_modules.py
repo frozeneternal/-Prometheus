@@ -21,6 +21,7 @@ class FrontendModuleTests(unittest.TestCase):
             PUBLIC / "js" / "app.js",
             PUBLIC / "js" / "accounts.js",
             PUBLIC / "js" / "api.js",
+            PUBLIC / "js" / "actions.js",
             PUBLIC / "js" / "client.js",
             PUBLIC / "js" / "dom.js",
             PUBLIC / "js" / "format.js",
@@ -32,7 +33,15 @@ class FrontendModuleTests(unittest.TestCase):
 
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
-        for import_path in ("./accounts.js", "./client.js", "./dom.js", "./format.js", "./prometheus.js", "./state.js"):
+        for import_path in (
+            "./accounts.js",
+            "./actions.js",
+            "./client.js",
+            "./dom.js",
+            "./format.js",
+            "./prometheus.js",
+            "./state.js",
+        ):
             self.assertIn(import_path, app_js)
         self.assertIn("./api.js", client_js)
 
@@ -59,6 +68,31 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("from \"./accounts.js\"", app_js)
         self.assertIn("from \"./client.js\"", accounts_js)
         self.assertIn("from \"./state.js\"", accounts_js)
+
+    def test_action_ui_logic_lives_in_frontend_action_module(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")
+        action_functions = [
+            "openActionDialog",
+            "openManualRecoveryDialog",
+            "openManualCertRenewalDialog",
+            "openManualBackupDialog",
+            "toggleAutoRecovery",
+            "toggleAutoBackup",
+            "toggleCertRenewal",
+            "acknowledgeResourceExpiry",
+            "runCurrentAction",
+        ]
+
+        for function_name in action_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"function {function_name}(", app_js)
+                self.assertIn(f"function {function_name}(", actions_js)
+
+        self.assertIn("from \"./actions.js\"", app_js)
+        self.assertIn("from \"./client.js\"", actions_js)
+        self.assertIn("from \"./accounts.js\"", actions_js)
+        self.assertIn("from \"./state.js\"", actions_js)
 
     def test_app_uses_frontend_client_for_backend_routes(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
@@ -164,11 +198,12 @@ class FrontendModuleTests(unittest.TestCase):
 
     def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
         backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
         self.assertIn('data-resource-ack="true"', app_js)
-        self.assertIn("acknowledgeResourceExpiryRisk", app_js)
+        self.assertIn("acknowledgeResourceExpiryRisk", actions_js)
         self.assertIn('"/api/settings/resource-ack"', client_js)
         self.assertIn('parsed.path == "/api/settings/resource-ack"', backend_py)
         self.assertIn("persist_resource_acknowledgement", backend_py)

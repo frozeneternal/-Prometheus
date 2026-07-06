@@ -1,5 +1,4 @@
 import {
-  authPayload,
   loadAccountAudit,
   loadAccountLockouts,
   loginCurrentUser,
@@ -8,14 +7,21 @@ import {
   renderAuthControls,
 } from "./accounts.js";
 import {
-  acknowledgeResourceExpiryRisk,
+  acknowledgeResourceExpiry,
+  configureActionRuntime,
+  openActionDialog,
+  openManualBackupDialog,
+  openManualCertRenewalDialog,
+  openManualRecoveryDialog,
+  runCurrentAction,
+  toggleAutoBackup,
+  toggleAutoRecovery,
+  toggleCertRenewal,
+} from "./actions.js";
+import {
   fetchConfig,
   fetchDashboard,
   fetchMetricSeries,
-  runServerAction,
-  updateAutoBackup,
-  updateAutoRecovery,
-  updateCertRenewal,
 } from "./client.js";
 import { $, camelToKebab, escapeHtml } from "./dom.js";
 import {
@@ -740,177 +746,7 @@ function drawChart(canvas, values, metric, errorText = "") {
   ctx.fillText(metricValue(metric, latest), 18, 24);
 }
 
-function openActionDialog(serverId, actionId, meta = {}) {
-  const server = state.config.servers.find((item) => item.id === serverId);
-  const action = server.actions.find((item) => item.id === actionId);
-  state.currentAction = { server, action, meta };
-
-  $("#dialogTitle").textContent = meta.dialogTitle || action.name || action.id;
-  $("#dialogMeta").textContent = meta.dialogMeta || server.name || server.id;
-  $("#confirmInput").value = "";
-  $("#confirmWrap").classList.toggle("hidden", !action.confirm);
-  $("#confirmInput").placeholder = action.confirm || "";
-  $("#actionOutput").classList.add("hidden");
-  $("#actionOutput").textContent = "";
-  $("#actionDialog").showModal();
-}
-
-function openManualRecoveryDialog(targetType, targetId) {
-  if (targetType === "server") {
-    const server = state.config.servers.find((item) => item.id === targetId);
-    const manualRecovery = server?.manualRecovery;
-    if (!server || !manualRecovery?.available) return;
-    openActionDialog(manualRecovery.actionServerId, manualRecovery.actionId, {
-      targetType: "server",
-      targetId: server.id,
-      targetName: server.name || server.id,
-      invocation: "manual-recovery",
-      reason: "手动恢复",
-    });
-    return;
-  }
-
-  if (targetType === "website") {
-    const website = state.config.websites.find((item) => item.id === targetId);
-    const manualRecovery = website?.manualRecovery;
-    if (!website || !manualRecovery?.available) return;
-    openActionDialog(manualRecovery.actionServerId, manualRecovery.actionId, {
-      targetType: "website",
-      targetId: website.id,
-      targetName: website.name || website.id,
-      invocation: "manual-recovery",
-      reason: "手动恢复网站",
-      dialogMeta: website.name || website.id,
-    });
-  }
-}
-
-function openManualCertRenewalDialog(websiteId) {
-  const website = state.config.websites.find((item) => item.id === websiteId);
-  const manualCertRenewal = website?.manualCertRenewal;
-  if (!website || !manualCertRenewal?.available) return;
-  openActionDialog(manualCertRenewal.actionServerId, manualCertRenewal.actionId, {
-    targetType: "website-cert",
-    targetId: website.id,
-    targetName: `${website.name || website.id} 证书`,
-    invocation: "manual-cert",
-    reason: "手动续期",
-    dialogTitle: manualCertRenewal.label || "手动续期",
-    dialogMeta: website.name || website.id,
-  });
-}
-
-function openManualBackupDialog(serverId) {
-  const server = state.config.servers.find((item) => item.id === serverId);
-  const manualBackup = server?.manualBackup;
-  if (!server || !manualBackup?.available) return;
-  openActionDialog(manualBackup.actionServerId, manualBackup.actionId, {
-    targetType: "server-backup",
-    targetId: server.id,
-    targetName: `${server.name || server.id} 备份`,
-    invocation: "manual-backup",
-    reason: "手动备份",
-    dialogTitle: manualBackup.label || "立即备份",
-    dialogMeta: server.name || server.id,
-  });
-}
-
-async function toggleAutoRecovery(targetType, targetId, enabled) {
-  try {
-    const payload = await updateAutoRecovery({ targetType, targetId, enabled, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await loadConfig();
-    render();
-  } catch (error) {
-    await refreshDashboard();
-  }
-}
-
-async function toggleAutoBackup(serverId, enabled) {
-  try {
-    const payload = await updateAutoBackup({ serverId, enabled, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await loadConfig();
-    render();
-  } catch (error) {
-    await refreshDashboard();
-  }
-}
-
-async function toggleCertRenewal(websiteId, enabled) {
-  try {
-    const payload = await updateCertRenewal({ websiteId, enabled, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await loadConfig();
-    render();
-  } catch (error) {
-    await refreshDashboard();
-  }
-}
-
-async function acknowledgeResourceExpiry(resourceId) {
-  const acknowledgedUntil = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
-  try {
-    const payload = await acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await loadConfig();
-    render();
-  } catch (error) {
-    await refreshDashboard();
-  }
-}
-
-async function runCurrentAction() {
-  const { server, action, meta = {} } = state.currentAction;
-  const button = $("#runActionButton");
-  button.disabled = true;
-  button.textContent = "执行中";
-  try {
-    const payload = await runServerAction({
-      serverId: server.id,
-      actionId: action.id,
-      ...authPayload(),
-      confirm: $("#confirmInput").value,
-      targetType: meta.targetType || "server",
-      targetId: meta.targetId || server.id,
-      targetName: meta.targetName || server.name || server.id,
-      invocation: meta.invocation || "manual",
-      reason: meta.reason || "手动执行",
-    });
-    const output = [
-      payload.message,
-      payload.logId ? `日志ID: ${payload.logId}` : "",
-      `退出码: ${payload.returnCode ?? "-"}`,
-      `耗时: ${payload.durationSeconds ?? "-"}s`,
-      "",
-      payload.stdout ? `STDOUT\n${payload.stdout}` : "",
-      payload.stderr ? `STDERR\n${payload.stderr}` : "",
-    ].filter(Boolean).join("\n");
-    $("#actionOutput").textContent = output;
-    $("#actionOutput").classList.remove("hidden");
-  } catch (error) {
-    const payload = error.payload || {};
-    const output = [
-      payload.message || error.message,
-      payload.logId ? `日志ID: ${payload.logId}` : "",
-      `退出码: ${payload.returnCode ?? "-"}`,
-      `耗时: ${payload.durationSeconds ?? "-"}s`,
-      "",
-      payload.stdout ? `STDOUT\n${payload.stdout}` : "",
-      payload.stderr ? `STDERR\n${payload.stderr}` : "",
-    ].filter(Boolean).join("\n");
-    $("#actionOutput").textContent = output || error.message;
-    $("#actionOutput").classList.remove("hidden");
-  } finally {
-    await refreshDashboard();
-    button.disabled = false;
-    button.textContent = "执行";
-  }
-}
+configureActionRuntime({ loadConfig, refreshDashboard, render });
 
 $("#refreshButton").addEventListener("click", refreshDashboard);
 $("#loginForm").addEventListener("submit", (event) => loginCurrentUser(event, { refreshDashboard }));
