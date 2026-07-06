@@ -940,6 +940,88 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("stdout/stderr", steps)
         self.assertIn("暂停自动恢复", steps)
 
+    def test_emergency_module_includes_failed_auto_recovery_log_summary(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "health": "down",
+                    "status": "offline",
+                    "issues": ["node exporter down"],
+                    "autoRecovery": {
+                        "enabled": True,
+                        "status": "failed",
+                        "message": "restart command failed",
+                        "lastLogId": "recovery-log-1",
+                    },
+                }
+            ],
+            websites=[],
+            resources=[],
+            recovery_logs=[
+                {"id": "other-log", "returnCode": 0, "stderr": "unrelated"},
+                {
+                    "id": "recovery-log-1",
+                    "returnCode": 5,
+                    "durationSeconds": 120,
+                    "stderr": "systemctl restart failed\nunit not found",
+                },
+            ],
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("returnCode=5", steps)
+        self.assertIn("duration=120s", steps)
+        self.assertIn("systemctl restart failed", steps)
+        self.assertIn("unit not found", steps)
+        self.assertNotIn("unrelated", steps)
+
+    def test_emergency_module_includes_failed_website_auto_recovery_log_summary(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "down",
+                    "status": "offline",
+                    "issues": ["site probe failed"],
+                    "autoRecovery": {
+                        "enabled": True,
+                        "status": "failed",
+                        "message": "restart website failed",
+                        "lastLogId": "website-recovery-log-1",
+                    },
+                }
+            ],
+            resources=[],
+            recovery_logs=[
+                {"id": "other-log", "returnCode": 0, "stderr": "unrelated"},
+                {
+                    "id": "website-recovery-log-1",
+                    "returnCode": 7,
+                    "durationSeconds": 60,
+                    "stderr": "nginx reload failed\nbad config",
+                },
+            ],
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("returnCode=7", steps)
+        self.assertIn("duration=60s", steps)
+        self.assertIn("nginx reload failed", steps)
+        self.assertIn("bad config", steps)
+        self.assertNotIn("unrelated", steps)
+
     def test_emergency_module_explains_failed_auto_recovery_without_log_id_without_app_import(self) -> None:
         from backend.emergency import emergency_items
 

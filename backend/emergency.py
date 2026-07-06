@@ -133,7 +133,7 @@ def _data_quality_item(target: dict, target_type: str) -> dict | None:
     )
 
 
-def _server_item(server: dict) -> dict | None:
+def _server_item(server: dict, recovery_log_lookup: dict[str, dict] | None = None) -> dict | None:
     health = str(server.get("health") or server.get("status") or "unknown")
     if health not in {"down", "warning"}:
         return _data_quality_item(server, "server")
@@ -143,6 +143,7 @@ def _server_item(server: dict) -> dict | None:
     issues = _text_list(server.get("issues"))
     recovery = server.get("autoRecovery") or {}
     recovery_status = str(recovery.get("status") or "idle")
+    last_log_id = str(recovery.get("lastLogId") or "")
     next_steps = [
         "先查看数据质量，确认不是 Prometheus 或 node_exporter 缺数导致的误判。",
         "检查该服务器的最近恢复日志和中断事件，确认自动恢复是否已经触发。",
@@ -150,6 +151,9 @@ def _server_item(server: dict) -> dict | None:
     if recovery.get("enabled"):
         next_steps.append(f"自动恢复当前状态：{recovery_status}；如已触发，核对日志 ID {recovery.get('lastLogId') or '未记录'}。")
         if recovery_status == "failed":
+            log_summary = _action_log_summary((recovery_log_lookup or {}).get(last_log_id))
+            if log_summary:
+                next_steps.append(log_summary)
             if not recovery.get("lastLogId"):
                 next_steps.append(
                     "最近自动恢复失败但没有恢复日志 ID；优先检查 action runner 是否启动、actionId 是否存在且启用、allowAuto/confirm 配置、执行权限和 timeout 设置。"
@@ -238,7 +242,7 @@ def _cert_renewal_item(website: dict, recovery_log_lookup: dict[str, dict] | Non
     )
 
 
-def _website_item(website: dict) -> dict | None:
+def _website_item(website: dict, recovery_log_lookup: dict[str, dict] | None = None) -> dict | None:
     health = str(website.get("health") or website.get("status") or "unknown")
     if health not in {"down", "warning"}:
         return _data_quality_item(website, "website")
@@ -246,11 +250,24 @@ def _website_item(website: dict) -> dict | None:
     website_id = str(website.get("id") or "")
     name = str(website.get("name") or website_id or "网站")
     issues = _text_list(website.get("issues"))
+    recovery = website.get("autoRecovery") or {}
+    recovery_status = str(recovery.get("status") or "idle")
+    last_log_id = str(recovery.get("lastLogId") or "")
     renewal = website.get("certRenewal") or {}
     next_steps = [
         "先确认 blackbox 探测目标 URL 与配置完全一致。",
         "检查网站状态码、响应时间和证书剩余时间，区分服务中断和证书风险。",
     ]
+    if recovery.get("enabled"):
+        next_steps.append(f"自动恢复当前状态：{recovery_status}；如已触发，核对日志 ID {last_log_id or '未记录'}。")
+        if recovery_status == "failed":
+            log_summary = _action_log_summary((recovery_log_lookup or {}).get(last_log_id))
+            if log_summary:
+                next_steps.append(log_summary)
+            if not last_log_id:
+                next_steps.append(
+                    "最近自动恢复失败但没有恢复日志 ID；优先检查 action runner 是否启动、actionId 是否存在且启用、allowAuto/confirm 配置、执行权限和 timeout 设置。"
+                )
     if renewal.get("enabled"):
         next_steps.append(f"证书续期状态：{renewal.get('status') or 'idle'}；如仍接近过期，检查续期动作日志。")
     next_steps.append("必要时使用网站卡片上的手动恢复或手动续期动作。")
@@ -311,14 +328,14 @@ def emergency_items(
         if candidate:
             items.append(candidate)
     for server in servers:
-        item = _server_item(server)
+        item = _server_item(server, recovery_log_lookup)
         if item:
             items.append(item)
         backup_item = _backup_item(server)
         if backup_item:
             items.append(backup_item)
     for website in websites:
-        item = _website_item(website)
+        item = _website_item(website, recovery_log_lookup)
         if item:
             items.append(item)
         cert_item = _cert_renewal_item(website, recovery_log_lookup)
