@@ -734,12 +734,16 @@ function recoveryLogCard(log) {
     "cert-renewal-toggle": "证书开关",
     "resource-ack": "资源确认",
   }[log.invocation] || log.invocation || "--";
+  const actorName = log.actor?.displayName || log.actor?.username || "";
+  const actorRole = log.actor?.role || "";
+  const actorText = actorName ? `${actorName}${actorRole ? ` (${actorRole})` : ""}` : "系统/未记录";
   const output = [
     log.message || "",
     `原因: ${log.reason || "--"}`,
     `目标: ${log.targetName || log.targetId || "--"}`,
     `动作: ${log.actionName || log.actionId || "--"}`,
     `方式: ${invocationText}`,
+    `操作者: ${actorText}`,
     `执行时间: ${formatTime(log.timestamp)}`,
     `退出码: ${log.returnCode ?? "-"}`,
     `耗时: ${log.durationSeconds ?? "-"}s`,
