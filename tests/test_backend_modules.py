@@ -1770,6 +1770,47 @@ class BackendModuleTests(unittest.TestCase):
         self.assertNotIn("passwordHash", serialized)
         self.assertNotIn("sample-password-hash-for-redaction", serialized)
 
+    def test_auth_audit_module_sanitizes_loaded_legacy_events(self) -> None:
+        from backend import auth_audit
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "auth_audit_logs.json"
+            path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "legacy-event",
+                            "event": "login-unlock",
+                            "username": "ops",
+                            "actor": {
+                                "username": "admin",
+                                "role": "admin",
+                                "passwordHash": "sample-password-hash-for-redaction",
+                                "sessionToken": "sample-session-token-for-redaction",
+                            },
+                            "timestamp": 1000,
+                            "message": "Unlocked",
+                            "password": "sample-password-for-redaction",
+                            "sessionToken": "sample-session-token-for-redaction",
+                            "details": {"token": "sample-token-for-redaction"},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = auth_audit.load_auth_audit_logs_from_disk(path)
+
+        serialized = json.dumps(loaded, ensure_ascii=False)
+        self.assertEqual(loaded[0]["id"], "legacy-event")
+        self.assertEqual(loaded[0]["event"], "login-unlock")
+        self.assertEqual(loaded[0]["username"], "ops")
+        self.assertEqual(loaded[0]["actor"]["username"], "admin")
+        self.assertNotIn("password", serialized.lower())
+        self.assertNotIn("passwordHash", serialized)
+        self.assertNotIn("sessionToken", serialized)
+        self.assertNotIn("sample-token-for-redaction", serialized)
+
     def test_auth_state_module_persists_lockouts_and_revocations(self) -> None:
         from backend import auth_state
 

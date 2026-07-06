@@ -7,6 +7,22 @@ from pathlib import Path
 from backend.auth import public_user
 
 
+def sanitize_auth_audit_event(event: dict) -> dict:
+    try:
+        timestamp = float(event.get("timestamp", 0) or 0)
+    except (TypeError, ValueError):
+        timestamp = 0.0
+    actor = event.get("actor")
+    return {
+        "id": str(event.get("id") or ""),
+        "event": str(event.get("event") or ""),
+        "username": str(event.get("username") or ""),
+        "actor": public_user(actor) if isinstance(actor, dict) else None,
+        "timestamp": timestamp,
+        "message": str(event.get("message") or ""),
+    }
+
+
 def load_auth_audit_logs_from_disk(path: Path) -> list[dict]:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -18,7 +34,9 @@ def load_auth_audit_logs_from_disk(path: Path) -> list[dict]:
     except (OSError, json.JSONDecodeError):
         return []
 
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    return [sanitize_auth_audit_event(event) for event in data if isinstance(event, dict)]
 
 
 def save_auth_audit_logs_to_disk(logs: list[dict], path: Path) -> None:
