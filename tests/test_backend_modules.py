@@ -279,6 +279,28 @@ class BackendModuleTests(unittest.TestCase):
         backup = view["servers"][0]["autoBackup"]
         self.assertEqual(backup["intervalSeconds"], 86400)
 
+    def test_auth_audit_module_persists_sanitized_events(self) -> None:
+        from backend import auth_audit
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "auth_audit_logs.json"
+            event = auth_audit.auth_audit_event(
+                "login-unlock",
+                "ops",
+                "Unlocked",
+                actor={"username": "admin", "role": "admin", "passwordHash": "sample-password-hash-for-redaction"},
+                now=1000,
+            )
+
+            auth_audit.save_auth_audit_logs_to_disk([event], path)
+            loaded = auth_audit.load_auth_audit_logs_from_disk(path)
+
+        serialized = json.dumps(loaded, ensure_ascii=False)
+        self.assertEqual(loaded[0]["event"], "login-unlock")
+        self.assertEqual(loaded[0]["actor"]["username"], "admin")
+        self.assertNotIn("passwordHash", serialized)
+        self.assertNotIn("sample-password-hash-for-redaction", serialized)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -289,6 +311,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.load_config.__module__, "backend.config")
         self.assertEqual(app.find_server.__module__, "backend.config")
         self.assertEqual(app.public_config.__module__, "backend.public_view")
+        self.assertEqual(app.auth_audit_event.__module__, "backend.auth_audit")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,12 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from backend.auth_audit import (
+    auth_audit_event,
+    load_auth_audit_logs_from_disk as load_auth_audit_logs,
+    save_auth_audit_logs_to_disk as save_auth_audit_logs,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
@@ -101,23 +107,11 @@ def save_incident_logs_to_disk(logs: list[dict]) -> None:
 
 
 def load_auth_audit_logs_from_disk() -> list[dict]:
-    ensure_data_dir()
-    if not AUTH_AUDIT_LOG_PATH.exists():
-        return []
-
-    try:
-        with AUTH_AUDIT_LOG_PATH.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return []
-
-    return data if isinstance(data, list) else []
+    return load_auth_audit_logs(AUTH_AUDIT_LOG_PATH)
 
 
 def save_auth_audit_logs_to_disk(logs: list[dict]) -> None:
-    ensure_data_dir()
-    with AUTH_AUDIT_LOG_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(logs, fh, ensure_ascii=False, indent=2)
+    save_auth_audit_logs(logs, AUTH_AUDIT_LOG_PATH)
 
 
 def load_revoked_sessions_from_disk() -> dict[str, float]:
@@ -183,24 +177,6 @@ def append_auth_audit_log(config: dict, event: dict) -> dict:
         RUNTIME_STATE["authAuditLogs"] = logs
     save_auth_audit_logs_to_disk(logs)
     return event
-
-
-def auth_audit_event(
-    event: str,
-    username: str,
-    message: str,
-    actor: dict | None = None,
-    now: float | None = None,
-) -> dict:
-    current = time.time() if now is None else float(now)
-    return {
-        "id": f"{int(current * 1000)}-{event}-{username}",
-        "event": event,
-        "username": str(username or ""),
-        "actor": public_user(actor) if actor else None,
-        "timestamp": current,
-        "message": message,
-    }
 
 
 def upsert_incident_log(config: dict, event: dict) -> dict:
