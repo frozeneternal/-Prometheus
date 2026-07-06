@@ -874,6 +874,37 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("stdout/stderr", steps)
         self.assertIn("暂停自动恢复", steps)
 
+    def test_emergency_module_explains_failed_auto_recovery_without_log_id_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "health": "down",
+                    "status": "offline",
+                    "issues": ["node exporter down"],
+                    "autoRecovery": {
+                        "enabled": True,
+                        "status": "failed",
+                        "message": "action runner failed before log creation",
+                        "lastLogId": "",
+                    },
+                }
+            ],
+            websites=[],
+            resources=[],
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("action runner", steps)
+        self.assertIn("actionId", steps)
+        self.assertIn("allowAuto", steps)
+        self.assertIn("timeout", steps)
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 

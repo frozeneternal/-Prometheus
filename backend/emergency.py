@@ -116,6 +116,10 @@ def _server_item(server: dict) -> dict | None:
     if recovery.get("enabled"):
         next_steps.append(f"自动恢复当前状态：{recovery_status}；如已触发，核对日志 ID {recovery.get('lastLogId') or '未记录'}。")
         if recovery_status == "failed":
+            if not recovery.get("lastLogId"):
+                next_steps.append(
+                    "最近自动恢复失败但没有恢复日志 ID；优先检查 action runner 是否启动、actionId 是否存在且启用、allowAuto/confirm 配置、执行权限和 timeout 设置。"
+                )
             next_steps.extend(
                 [
                     f"打开恢复日志 {recovery.get('lastLogId') or '未记录'}，检查 returnCode、stdout/stderr 和超时信息。",
