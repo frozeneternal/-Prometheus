@@ -171,6 +171,36 @@ def _backup_item(server: dict) -> dict | None:
     )
 
 
+def _cert_renewal_item(website: dict) -> dict | None:
+    renewal = website.get("certRenewal") or {}
+    if not renewal.get("enabled") or str(renewal.get("status") or "") != "failed":
+        return None
+
+    website_id = str(website.get("id") or "")
+    name = str(website.get("name") or website_id or "网站")
+    last_log_id = str(renewal.get("lastLogId") or "")
+    next_steps = [
+        f"打开证书续期日志 {last_log_id or '未记录'}，检查 returnCode、stdout/stderr、ACME challenge 和命令超时。",
+        "核对证书续期动作使用的账号、DNS/API 凭据、Webroot 路径和 allowAuto 配置，必要时先手动续期验证。",
+        "检查 DNS/CDN 缓存、证书链部署位置和 blackbox exporter 看到的 certExpiresIn 是否已更新。",
+        "暂停自动续期或临时拉长 cooldownSeconds，避免失败命令连续重复执行。",
+    ]
+    if not last_log_id:
+        next_steps.insert(
+            0,
+            "最近证书续期失败但没有续期日志 ID；优先检查 action runner 是否启动、actionId 是否存在且命令可执行。",
+        )
+    return _item(
+        f"website-cert:{website_id}:failed",
+        "warning",
+        f"{name} 证书续期失败",
+        str(renewal.get("message") or "最近一次证书自动续期失败。"),
+        next_steps,
+        target_type="website-cert",
+        target_id=website_id,
+    )
+
+
 def _website_item(website: dict) -> dict | None:
     health = str(website.get("health") or website.get("status") or "unknown")
     if health not in {"down", "warning"}:
@@ -252,6 +282,9 @@ def emergency_items(
         item = _website_item(website)
         if item:
             items.append(item)
+        cert_item = _cert_renewal_item(website)
+        if cert_item:
+            items.append(cert_item)
     for resource in resources:
         item = _resource_item(resource)
         if item:

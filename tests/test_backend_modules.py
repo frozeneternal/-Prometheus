@@ -1027,6 +1027,39 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("存储空间", steps)
         self.assertIn("凭据", steps)
 
+    def test_emergency_module_surfaces_failed_cert_renewal_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "healthy",
+                    "status": "online",
+                    "certRenewal": {
+                        "enabled": True,
+                        "status": "failed",
+                        "message": "certificate renewal command timed out",
+                        "lastLogId": "cert-log-1",
+                    },
+                }
+            ],
+            resources=[],
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], "website-cert:site1:failed")
+        self.assertEqual(items[0]["targetType"], "website-cert")
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("cert-log-1", steps)
+        self.assertIn("stdout/stderr", steps)
+        self.assertIn("ACME", steps)
+        self.assertIn("DNS/CDN", steps)
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 
