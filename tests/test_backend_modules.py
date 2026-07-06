@@ -36,6 +36,60 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(items[0]["status"], "critical")
         self.assertEqual(resource_expiry_summary(items)["critical"], 1)
 
+    def test_resources_module_persists_acknowledgement_without_app_import(self) -> None:
+        from backend.resources import ResourceRuntime, persist_resource_acknowledgement
+
+        current = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        raw_config = {
+            "monitoring": {"resourceExpiryWarningDays": 30, "resourceExpiryCriticalDays": 7},
+            "resources": [
+                {"id": "license-warning", "name": "Backup License", "expiresAt": "2026-07-20"},
+            ],
+        }
+        saved: list[dict] = []
+        runtime = ResourceRuntime(
+            now=lambda: current,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+
+        status, payload = persist_resource_acknowledgement(
+            "license-warning",
+            acknowledged_until="2026-07-10T00:00:00Z",
+            actor={"username": "ops"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved[0]["resources"][0]["acknowledgedUntil"], "2026-07-10T00:00:00Z")
+        self.assertEqual(saved[0]["resources"][0]["acknowledgedBy"], "ops")
+        self.assertEqual(saved[0]["resources"][0]["acknowledgedAt"], "2026-07-03T08:00:00+00:00")
+
+    def test_resources_module_rejects_expired_resource_without_app_import(self) -> None:
+        from backend.resources import ResourceRuntime, persist_resource_acknowledgement
+
+        current = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        raw_config = {"resources": [{"id": "expired", "name": "Expired", "expiresAt": "2026-07-01"}]}
+        saved: list[dict] = []
+        runtime = ResourceRuntime(
+            now=lambda: current,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+
+        status, payload = persist_resource_acknowledgement(
+            "expired",
+            acknowledged_until="2026-07-10T00:00:00Z",
+            actor={"username": "ops"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("过期", payload["message"])
+        self.assertEqual(saved, [])
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 
@@ -973,6 +1027,18 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_resource_settings_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "find_raw_resource",
+            "persist_resource_acknowledgement",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_does_not_define_health_domain_functions_locally(self) -> None:
         root = Path(__file__).resolve().parents[1]
         app_source = (root / "app.py").read_text(encoding="utf-8")
@@ -1089,6 +1155,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.resource_expiry_items.__module__, "backend.expiry")
         self.assertEqual(app.parse_expiry_datetime.__module__, "backend.expiry")
         self.assertEqual(app.resource_expiry_summary.__module__, "backend.expiry")
+        self.assertEqual(app.persist_resource_acknowledgement.__module__, "backend.resources")
         self.assertEqual(app.prom_query.__module__, "backend.prometheus")
         self.assertEqual(app.series_payload.__module__, "backend.prometheus")
         self.assertEqual(app.load_config.__module__, "backend.config")

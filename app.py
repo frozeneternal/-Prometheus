@@ -8,7 +8,6 @@ import subprocess
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -315,6 +314,12 @@ from backend.expiry import (  # noqa: E402 - transitional re-export while app.py
     resource_expiry_summary,
     resource_expiry_thresholds,
 )
+from backend.resources import (  # noqa: E402 - transitional re-export while app.py is split.
+    ResourceRuntime,
+    configure_resource_runtime,
+    find_raw_resource,
+    persist_resource_acknowledgement,
+)
 from backend.health import (  # noqa: E402 - transitional re-export while app.py is split.
     data_quality_summary,
     metric_thresholds,
@@ -418,6 +423,13 @@ configure_backup_runtime(
         get_state=get_runtime_entity_state,
         set_state=set_runtime_entity_state,
         execute_server_action=lambda *args, **kwargs: execute_server_action(*args, **kwargs),
+    )
+)
+configure_resource_runtime(
+    ResourceRuntime(
+        now=lambda: time.time(),
+        load_config_raw=lambda: load_config_raw(),
+        save_config_raw=lambda raw_config: save_config_raw(raw_config),
     )
 )
 
@@ -525,39 +537,6 @@ def persist_cert_renewal_enabled(website_id: str, enabled: bool) -> tuple[int, d
         reset_runtime_entity_state("website-cert", website_id, "证书自动续期已关闭。")
 
     return 200, {"ok": True, "message": "证书自动续期已更新。"}
-
-
-def find_raw_resource(config: dict, resource_id: str) -> dict | None:
-    for resource in config.get("resources", []):
-        if str(resource.get("id") or "") == resource_id:
-            return resource
-    return None
-
-
-def persist_resource_acknowledgement(
-    resource_id: str,
-    *,
-    acknowledged_until: str,
-    actor: dict | None = None,
-) -> tuple[int, dict]:
-    if parse_expiry_datetime(acknowledged_until) is None:
-        return 400, {"ok": False, "message": "确认截止时间无效。"}
-
-    raw_config = load_config_raw()
-    resource = find_raw_resource(raw_config, resource_id)
-    if resource is None:
-        return 404, {"ok": False, "message": "资源不存在。"}
-
-    current = time.time()
-    item = next((entry for entry in resource_expiry_items({"resources": [resource]}, now=current) if entry["id"] == resource_id), None)
-    if not item or item.get("status") not in {"critical", "warning"}:
-        return 400, {"ok": False, "message": "只有未过期的预警资源可以确认。"}
-
-    resource["acknowledgedUntil"] = acknowledged_until
-    resource["acknowledgedBy"] = str((actor or {}).get("username") or "operator")
-    resource["acknowledgedAt"] = datetime.fromtimestamp(current, timezone.utc).isoformat()
-    save_config_raw(raw_config)
-    return 200, {"ok": True, "message": "资源到期告警已确认。"}
 
 
 def persist_dashboard_settings(config: dict) -> dict:
