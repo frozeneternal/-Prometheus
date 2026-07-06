@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -56,8 +57,29 @@ def safe_positive_int(value: object, default: int, minimum: int = 1) -> int:
     return parsed if parsed >= minimum else default
 
 
+def cert_expiry_metric(snapshot: dict | None) -> float | None:
+    metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else {}
+    if not isinstance(metrics, dict):
+        return None
+
+    value = metrics.get("certExpiresIn")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    parsed = float(value)
+    return parsed if math.isfinite(parsed) else None
+
+
+def has_invalid_cert_expiry_metric(snapshot: dict | None) -> bool:
+    metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else {}
+    if not isinstance(metrics, dict) or "certExpiresIn" not in metrics:
+        return False
+
+    value = metrics.get("certExpiresIn")
+    return value is not None and cert_expiry_metric(snapshot) is None
+
+
 def certificate_reason(snapshot: dict) -> str:
-    cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
+    cert_expires_in = cert_expiry_metric(snapshot)
     if cert_expires_in is None:
         return "当前没有可用的证书到期数据。"
     if cert_expires_in <= 0:
@@ -106,7 +128,7 @@ def can_trigger_cert_renewal(
     if policy_message:
         return False, policy_message
 
-    cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
+    cert_expires_in = cert_expiry_metric(snapshot)
     if cert_expires_in is None:
         return False, "当前没有可用的证书到期数据。"
 
@@ -190,9 +212,8 @@ def record_manual_cert_renewal_result(
     active_runtime = runtime or _runtime
     state = active_runtime.get_state("website-cert", target_id)
     now = active_runtime.now()
-    metrics = snapshot.get("metrics", {}) if isinstance(snapshot, dict) else {}
-    cert_expires_in = metrics.get("certExpiresIn")
-    has_cert_metric = isinstance(cert_expires_in, (int, float)) and not isinstance(cert_expires_in, bool)
+    cert_expires_in = cert_expiry_metric(snapshot)
+    has_cert_metric = cert_expires_in is not None
 
     state.setdefault("lastCompletedAt", 0.0)
     state["lastAttemptAt"] = now
@@ -251,7 +272,8 @@ def maybe_trigger_cert_renewal(
     reason = certificate_reason(snapshot)
     renewal_config = website.get("certRenewal") or {}
     enabled = bool(renewal_config.get("enabled"))
-    cert_expires_in = snapshot.get("metrics", {}).get("certExpiresIn")
+    cert_expires_in = cert_expiry_metric(snapshot)
+    invalid_cert_metric = has_invalid_cert_expiry_metric(snapshot)
     quality = snapshot.get("dataQuality") or {}
     data_trusted = quality.get("trusted") is not False
     now = active_runtime.now()
@@ -284,6 +306,12 @@ def maybe_trigger_cert_renewal(
     if not data_trusted:
         renewal_view["status"] = "blocked"
         renewal_view["message"] = quality.get("message") or "证书监控数据不可信，禁止执行自动续期。"
+        active_runtime.set_state("website-cert", target_id, state)
+        return renewal_view
+
+    if invalid_cert_metric:
+        renewal_view["status"] = "blocked"
+        renewal_view["message"] = "证书监控指标 certExpiresIn 不是有效数字，禁止执行自动续期。"
         active_runtime.set_state("website-cert", target_id, state)
         return renewal_view
 
