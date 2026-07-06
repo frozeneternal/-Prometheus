@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import Callable
+
+from backend.config import DEFAULT_CONFIG, config_source_info
+from backend.expiry import resource_expiry_items, resource_expiry_summary
+from backend.health import data_quality_summary
+from backend.prometheus import prometheus_ready_status
+from backend.public_view import server_type
+from backend.snapshots import (
+    metric_snapshot as build_metric_snapshot,
+    unavailable_metric_snapshot as build_unavailable_metric_snapshot,
+    unavailable_website_snapshot as build_unavailable_website_snapshot,
+    website_snapshot as build_website_snapshot,
+)
+from backend.validation import config_validation_summary
+
+
+PROMETHEUS_UNAVAILABLE_MESSAGE = "Prometheus 暂不可用或未启动。"
+
+
+def _default_ready_status(config: dict, timeout: float = 1.5) -> tuple[bool, str]:
+    return prometheus_ready_status(config, timeout=timeout)
+
+
+def _idle_recovery(_config: dict, _target_type: str, _entity: dict, _snapshot: dict) -> dict:
+    return {"enabled": False, "status": "idle", "message": "自动恢复运行时未装配。"}
+
+
+def _idle_backup(_config: dict, _server: dict, _snapshot: dict) -> dict:
+    return {"enabled": False, "status": "idle", "message": "自动备份运行时未装配。"}
+
+
+def _idle_cert_renewal(_config: dict, _website: dict, _snapshot: dict) -> dict:
+    return {"enabled": False, "status": "idle", "message": "证书自动续期运行时未装配。"}
+
+
+def _empty_logs() -> list[dict]:
+    return []
+
+
+def _ignore_dashboard(_payload: dict) -> None:
+    return None
+
+
+@dataclass(frozen=True)
+class DashboardRuntime:
+    now: Callable[[], float] = time.time
+    ready_status: Callable[..., tuple[bool, str]] = _default_ready_status
+    metric_snapshot: Callable[[dict, dict], dict] = build_metric_snapshot
+    unavailable_metric_snapshot: Callable[[dict, str], dict] = build_unavailable_metric_snapshot
+    website_snapshot: Callable[[dict, dict], dict] = build_website_snapshot
+    unavailable_website_snapshot: Callable[[dict, str], dict] = build_unavailable_website_snapshot
+    trigger_recovery: Callable[[dict, str, dict, dict], dict] = _idle_recovery
+    trigger_backup: Callable[[dict, dict, dict], dict] = _idle_backup
+    trigger_cert_renewal: Callable[[dict, dict, dict], dict] = _idle_cert_renewal
+    config_source: Callable[[], dict] = config_source_info
+    config_validation: Callable[[dict], dict] = config_validation_summary
+    get_recovery_logs: Callable[[], list[dict]] = _empty_logs
+    get_incident_logs: Callable[[], list[dict]] = _empty_logs
+    set_runtime_dashboard: Callable[[dict], None] = _ignore_dashboard
+
+
+_runtime = DashboardRuntime()
+
+
+def configure_dashboard_runtime(runtime: DashboardRuntime) -> None:
+    global _runtime
+    _runtime = runtime
+
+
+def _enrich_server_snapshot(snapshot: dict, server_by_id: dict[object, dict]) -> dict:
+    configured = server_by_id.get(snapshot["id"], {})
+    host_server_id = configured.get("hostServerId", "")
+    host_server = server_by_id.get(host_server_id) if host_server_id else None
+    return {
+        **snapshot,
+        "type": server_type(configured),
+        "hostServerId": host_server_id,
+        "hostServerName": host_server.get("name", host_server_id) if host_server else "",
+    }
+
+
+def _summary(items: list[dict]) -> dict:
+    online = sum(1 for item in items if item["status"] == "online")
+    offline = sum(1 for item in items if item["status"] == "offline")
+    return {
+        "total": len(items),
+        "online": online,
+        "offline": offline,
+        "unknown": len(items) - online - offline,
+        "warning": sum(1 for item in items if item["health"] == "warning"),
+        "down": sum(1 for item in items if item["health"] == "down"),
+        "dataQuality": data_quality_summary(items),
+    }
+
+
+def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> dict:
+    active_runtime = runtime or _runtime
+    servers = config.get("servers", [])
+    websites = config.get("websites", [])
+    expiry_items = resource_expiry_items(config)
+    expiry_summary = resource_expiry_summary(expiry_items)
+
+    prometheus_available, prometheus_error = active_runtime.ready_status(config, timeout=1.5)
+    if prometheus_available:
+        snapshots = [active_runtime.metric_snapshot(config, server) for server in servers]
+        website_snapshots = [active_runtime.website_snapshot(config, website) for website in websites]
+    else:
+        snapshots = [
+            active_runtime.unavailable_metric_snapshot(server, PROMETHEUS_UNAVAILABLE_MESSAGE) for server in servers
+        ]
+        website_snapshots = [
+            active_runtime.unavailable_website_snapshot(website, PROMETHEUS_UNAVAILABLE_MESSAGE)
+            for website in websites
+        ]
+
+    server_by_id = {server.get("id"): server for server in servers}
+    website_by_id = {website.get("id"): website for website in websites}
+
+    snapshots = [
+        {
+            **_enrich_server_snapshot(snapshot, server_by_id),
+            "autoRecovery": active_runtime.trigger_recovery(
+                config,
+                "server",
+                server_by_id.get(snapshot["id"], {}),
+                snapshot,
+            ),
+            "autoBackup": active_runtime.trigger_backup(config, server_by_id.get(snapshot["id"], {}), snapshot),
+        }
+        for snapshot in snapshots
+    ]
+    website_snapshots = [
+        {
+            **snapshot,
+            "autoRecovery": active_runtime.trigger_recovery(
+                config,
+                "website",
+                website_by_id.get(snapshot["id"], {}),
+                snapshot,
+            ),
+            "certRenewal": active_runtime.trigger_cert_renewal(
+                config,
+                website_by_id.get(snapshot["id"], {}),
+                snapshot,
+            ),
+        }
+        for snapshot in website_snapshots
+    ]
+
+    payload = {
+        "generatedAt": active_runtime.now(),
+        "prometheus": {
+            "available": prometheus_available,
+            "url": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
+            "message": "" if prometheus_available else PROMETHEUS_UNAVAILABLE_MESSAGE,
+            "error": prometheus_error,
+        },
+        "configSource": active_runtime.config_source(),
+        "configValidation": active_runtime.config_validation(config),
+        "summary": _summary(snapshots),
+        "websiteSummary": _summary(website_snapshots),
+        "resourceExpirySummary": expiry_summary,
+        "resourceExpiryItems": expiry_items,
+        "servers": snapshots,
+        "websites": website_snapshots,
+        "recoveryLogs": active_runtime.get_recovery_logs(),
+        "incidentLogs": active_runtime.get_incident_logs(),
+    }
+    active_runtime.set_runtime_dashboard(payload)
+    return payload

@@ -469,6 +469,11 @@ from backend.config import (  # noqa: E402 - transitional re-export while app.py
     monitoring_options,
     save_config_raw,
 )
+from backend.dashboard import (  # noqa: E402 - transitional re-export while app.py is split.
+    DashboardRuntime,
+    configure_dashboard_runtime,
+    dashboard_payload,
+)
 from backend.expiry import (  # noqa: E402 - transitional re-export while app.py is split.
     classify_resource_expiry,
     parse_expiry_datetime,
@@ -1083,97 +1088,6 @@ def maybe_trigger_cert_renewal(config: dict, website: dict, snapshot: dict) -> d
         renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
     set_runtime_entity_state("website-cert", target_id, state)
     return renewal_view
-
-
-def dashboard_payload(config: dict) -> dict:
-    servers = config.get("servers", [])
-    websites = config.get("websites", [])
-    expiry_items = resource_expiry_items(config)
-    expiry_summary = resource_expiry_summary(expiry_items)
-    prometheus_message = "Prometheus 暂不可用或未启动。"
-
-    prometheus_available, prometheus_error = prometheus_ready_status(config, timeout=1.5)
-
-    if prometheus_available:
-        snapshots = [metric_snapshot(config, server) for server in servers]
-        website_snapshots = [website_snapshot(config, website) for website in websites]
-    else:
-        snapshots = [unavailable_metric_snapshot(server, prometheus_message) for server in servers]
-        website_snapshots = [unavailable_website_snapshot(website, prometheus_message) for website in websites]
-
-    server_by_id = {server.get("id"): server for server in servers}
-    website_by_id = {website.get("id"): website for website in websites}
-
-    def enrich_server_snapshot(snapshot: dict) -> dict:
-        configured = server_by_id.get(snapshot["id"], {})
-        host_server_id = configured.get("hostServerId", "")
-        host_server = server_by_id.get(host_server_id) if host_server_id else None
-        return {
-            **snapshot,
-            "type": server_type(configured),
-            "hostServerId": host_server_id,
-            "hostServerName": host_server.get("name", host_server_id) if host_server else "",
-        }
-
-    snapshots = [
-        {
-            **enrich_server_snapshot(snapshot),
-            "autoRecovery": maybe_trigger_recovery(config, "server", server_by_id.get(snapshot["id"], {}), snapshot),
-            "autoBackup": maybe_trigger_backup(config, server_by_id.get(snapshot["id"], {}), snapshot),
-        }
-        for snapshot in snapshots
-    ]
-    website_snapshots = [
-        {
-            **snapshot,
-            "autoRecovery": maybe_trigger_recovery(config, "website", website_by_id.get(snapshot["id"], {}), snapshot),
-            "certRenewal": maybe_trigger_cert_renewal(config, website_by_id.get(snapshot["id"], {}), snapshot),
-        }
-        for snapshot in website_snapshots
-    ]
-
-    online = sum(1 for item in snapshots if item["status"] == "online")
-    offline = sum(1 for item in snapshots if item["status"] == "offline")
-    website_online = sum(1 for item in website_snapshots if item["status"] == "online")
-    website_offline = sum(1 for item in website_snapshots if item["status"] == "offline")
-
-    payload = {
-        "generatedAt": time.time(),
-        "prometheus": {
-            "available": prometheus_available,
-            "url": config.get("prometheusUrl", DEFAULT_CONFIG["prometheusUrl"]),
-            "message": "" if prometheus_available else prometheus_message,
-            "error": prometheus_error,
-        },
-        "configSource": config_source_info(),
-        "configValidation": config_validation_summary(config),
-        "summary": {
-            "total": len(snapshots),
-            "online": online,
-            "offline": offline,
-            "unknown": len(snapshots) - online - offline,
-            "warning": sum(1 for item in snapshots if item["health"] == "warning"),
-            "down": sum(1 for item in snapshots if item["health"] == "down"),
-            "dataQuality": data_quality_summary(snapshots),
-        },
-        "websiteSummary": {
-            "total": len(website_snapshots),
-            "online": website_online,
-            "offline": website_offline,
-            "unknown": len(website_snapshots) - website_online - website_offline,
-            "warning": sum(1 for item in website_snapshots if item["health"] == "warning"),
-            "down": sum(1 for item in website_snapshots if item["health"] == "down"),
-            "dataQuality": data_quality_summary(website_snapshots),
-        },
-        "resourceExpirySummary": expiry_summary,
-        "resourceExpiryItems": expiry_items,
-        "servers": snapshots,
-        "websites": website_snapshots,
-        "recoveryLogs": get_recent_recovery_logs(),
-        "incidentLogs": get_recent_incident_logs(),
-    }
-    set_runtime_dashboard(payload)
-    return payload
 
 
 def monitor_loop() -> None:
@@ -1838,6 +1752,25 @@ def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapsho
     )
     set_runtime_entity_state(target_type, target_id, state)
     return recovery_view
+
+
+configure_dashboard_runtime(
+    DashboardRuntime(
+        ready_status=lambda config, timeout=1.5: prometheus_ready_status(config, timeout=timeout),
+        metric_snapshot=lambda config, server: metric_snapshot(config, server),
+        unavailable_metric_snapshot=lambda server, message: unavailable_metric_snapshot(server, message),
+        website_snapshot=lambda config, website: website_snapshot(config, website),
+        unavailable_website_snapshot=lambda website, message: unavailable_website_snapshot(website, message),
+        trigger_recovery=maybe_trigger_recovery,
+        trigger_backup=maybe_trigger_backup,
+        trigger_cert_renewal=maybe_trigger_cert_renewal,
+        config_source=lambda: config_source_info(),
+        config_validation=lambda config: config_validation_summary(config),
+        get_recovery_logs=get_recent_recovery_logs,
+        get_incident_logs=get_recent_incident_logs,
+        set_runtime_dashboard=set_runtime_dashboard,
+    )
+)
 
 
 class MonitorHandler(BaseHTTPRequestHandler):

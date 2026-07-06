@@ -176,6 +176,45 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(website_snapshot["status"], "offline")
         self.assertEqual(website_snapshot["dataQuality"]["level"], "target_down")
 
+    def test_dashboard_module_builds_payload_without_app_import(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        captured: dict[str, dict] = {}
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            config_source=lambda: {"configFile": "servers.local.json", "usingLocalConfig": True},
+            get_recovery_logs=lambda: [{"id": "log1"}],
+            get_incident_logs=lambda: [{"id": "incident1"}],
+            set_runtime_dashboard=lambda payload: captured.setdefault("payload", payload),
+        )
+
+        payload = dashboard_payload(
+            {
+                "prometheusUrl": "http://prometheus.local",
+                "monitoring": {},
+                "servers": [{"id": "srv1", "name": "Server 1"}],
+                "websites": [{"id": "site1", "name": "Site 1", "url": "https://example.test/"}],
+                "resources": [{"id": "domain", "name": "Domain", "expiresAt": "2026-07-08"}],
+            },
+            runtime=runtime,
+        )
+
+        self.assertIs(captured["payload"], payload)
+        self.assertEqual(payload["generatedAt"], 1234.0)
+        self.assertFalse(payload["prometheus"]["available"])
+        self.assertEqual(payload["prometheus"]["error"], "collector unavailable")
+        self.assertEqual(payload["configSource"]["configFile"], "servers.local.json")
+        self.assertEqual(payload["summary"]["total"], 1)
+        self.assertEqual(payload["summary"]["unknown"], 1)
+        self.assertEqual(payload["websiteSummary"]["total"], 1)
+        self.assertEqual(payload["websiteSummary"]["unknown"], 1)
+        self.assertEqual(payload["servers"][0]["autoRecovery"]["status"], "idle")
+        self.assertEqual(payload["servers"][0]["autoBackup"]["status"], "idle")
+        self.assertEqual(payload["websites"][0]["certRenewal"]["status"], "idle")
+        self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
+        self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
+
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view
 
@@ -454,6 +493,12 @@ class BackendModuleTests(unittest.TestCase):
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
 
+    def test_app_does_not_define_dashboard_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("def dashboard_payload(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
@@ -472,6 +517,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.data_quality_summary.__module__, "backend.health")
         self.assertEqual(app.metric_snapshot.__module__, "backend.snapshots")
         self.assertEqual(app.website_snapshot.__module__, "backend.snapshots")
+        self.assertEqual(app.dashboard_payload.__module__, "backend.dashboard")
 
 
 if __name__ == "__main__":
