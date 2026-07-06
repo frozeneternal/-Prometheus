@@ -189,8 +189,26 @@ def execute_server_action(
             runtime=active_runtime,
         )
 
+    raw_timeout_seconds = action.get("timeoutSeconds", 30)
+    if isinstance(raw_timeout_seconds, bool):
+        return _log_and_return(
+            config,
+            action_server,
+            action,
+            invocation=invocation,
+            target_type=target_type,
+            target_id=target_id,
+            target_name=target_name,
+            reason=reason,
+            consecutive_failures=consecutive_failures,
+            payload={"ok": False, "message": "动作 timeoutSeconds 必须是大于 0 的整数。", "stdout": "", "stderr": ""},
+            http_status=400,
+            actor=actor,
+            runtime=active_runtime,
+        )
+
     try:
-        timeout_seconds = int(action.get("timeoutSeconds", 30))
+        timeout_seconds = int(raw_timeout_seconds)
     except (TypeError, ValueError):
         return _log_and_return(
             config,

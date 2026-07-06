@@ -893,6 +893,44 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(appended[0]["id"], "invalid-codes")
         self.assertIn("successReturnCodes", payload["message"])
 
+    def test_actions_module_rejects_bool_timeout_before_runner(self) -> None:
+        from backend.actions import ActionRuntime, execute_server_action
+
+        appended: list[dict] = []
+        runner_called = False
+
+        def runner(_command: list[str], **_kwargs: object) -> object:
+            nonlocal runner_called
+            runner_called = True
+            return object()
+
+        runtime = ActionRuntime(
+            now=lambda: 100.0,
+            runner=runner,
+            append_recovery_log=lambda _config, event: appended.append(event),
+            public_user=lambda _user: {},
+            id_factory=lambda: "invalid-timeout",
+            cwd="C:\\ops-console",
+        )
+
+        status, payload = execute_server_action(
+            {},
+            {"id": "srv1"},
+            {"id": "bad-timeout", "command": ["restart"], "timeoutSeconds": True},
+            invocation="manual",
+            target_type="server",
+            target_id="srv1",
+            target_name="Server 1",
+            reason="manual",
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertFalse(runner_called)
+        self.assertEqual(appended[0]["id"], "invalid-timeout")
+        self.assertIn("timeoutSeconds", payload["message"])
+
     def test_recovery_module_blocks_until_min_failures_and_cooldown_without_app_import(self) -> None:
         from backend.recovery import can_trigger_recovery, recovery_policy_error
 
