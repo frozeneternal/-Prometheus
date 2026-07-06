@@ -197,6 +197,37 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(audit_events[0]["event"], "account-upsert")
         self.assertEqual(audit_events[0]["actor"]["username"], "admin")
 
+    def test_accounts_admin_module_rejects_non_boolean_enabled_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "password": "ops-pass-1",
+                "enabled": "false",
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("enabled", payload["message"])
+        self.assertEqual(saved, [])
+        self.assertEqual(audit_events, [])
+
     def test_accounts_admin_module_revokes_existing_sessions_when_password_changes_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
         from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token

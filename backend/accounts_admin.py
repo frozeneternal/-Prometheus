@@ -61,18 +61,12 @@ def _find_user_index(users: list[dict], username: str) -> int | None:
     return None
 
 
-def _bool_from_body(value: object, default: bool) -> bool:
+def _enabled_from_body(value: object, default: bool) -> tuple[bool | None, str]:
     if isinstance(value, bool):
-        return value
+        return value, ""
     if value is None:
-        return default
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"false", "0", "no", "off", "disabled"}:
-            return False
-        if normalized in {"true", "1", "yes", "on", "enabled"}:
-            return True
-    return bool(value)
+        return default, ""
+    return None, "enabled 必须是 JSON 布尔值 true 或 false。"
 
 
 def _enabled_admin_count(users: list[dict]) -> int:
@@ -145,7 +139,10 @@ def upsert_account_user_payload(
     next_user["username"] = username
     next_user["displayName"] = str(body.get("displayName") or username).strip() or username
     next_user["role"] = normalize_role(body.get("role"))
-    next_user["enabled"] = _bool_from_body(body.get("enabled"), existing.get("enabled", True) is not False)
+    enabled, enabled_error = _enabled_from_body(body.get("enabled"), existing.get("enabled", True) is not False)
+    if enabled_error:
+        return 400, {"ok": False, "message": enabled_error}
+    next_user["enabled"] = enabled
     if password_provided:
         next_user["passwordHash"] = hash_password(password)
         if index is not None:
