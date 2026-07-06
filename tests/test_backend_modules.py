@@ -399,10 +399,12 @@ class BackendModuleTests(unittest.TestCase):
             ],
         }
         saved: list[dict] = []
+        logs: list[dict] = []
         runtime = ResourceRuntime(
             now=lambda: current,
             load_config_raw=lambda: raw_config,
             save_config_raw=lambda config: saved.append(config),
+            append_recovery_log=lambda _config, event: logs.append(event),
         )
 
         status, payload = persist_resource_acknowledgement(
@@ -417,6 +419,11 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(saved[0]["resources"][0]["acknowledgedUntil"], "2026-07-10T00:00:00Z")
         self.assertEqual(saved[0]["resources"][0]["acknowledgedBy"], "ops")
         self.assertEqual(saved[0]["resources"][0]["acknowledgedAt"], "2026-07-03T08:00:00+00:00")
+        self.assertEqual(payload["logId"], logs[0]["id"])
+        self.assertEqual(logs[0]["invocation"], "resource-ack")
+        self.assertEqual(logs[0]["targetType"], "resource")
+        self.assertEqual(logs[0]["targetId"], "license-warning")
+        self.assertEqual(logs[0]["actor"]["username"], "ops")
 
     def test_resources_module_rejects_expired_resource_without_app_import(self) -> None:
         from backend.resources import ResourceRuntime, persist_resource_acknowledgement

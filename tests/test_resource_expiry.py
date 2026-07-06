@@ -215,18 +215,29 @@ class ResourceExpiryTests(unittest.TestCase):
         with (
             patch.object(app, "load_config_raw", return_value=raw_config),
             patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log") as append_recovery_log,
+            patch.object(app, "time") as time_module,
         ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
             status, payload = app.persist_resource_acknowledgement(
                 "license-warning",
                 acknowledged_until="2026-07-10T00:00:00Z",
                 actor={"username": "ops"},
             )
             saved = save_config_raw.call_args.args[0]
+            append_recovery_log.assert_called_once()
+            log_event = append_recovery_log.call_args.args[1]
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["logId"], log_event["id"])
         self.assertEqual(saved["resources"][0]["acknowledgedUntil"], "2026-07-10T00:00:00Z")
         self.assertEqual(saved["resources"][0]["acknowledgedBy"], "ops")
+        self.assertEqual(log_event["invocation"], "resource-ack")
+        self.assertEqual(log_event["targetType"], "resource")
+        self.assertEqual(log_event["targetId"], "license-warning")
+        self.assertEqual(log_event["actor"]["username"], "ops")
+        self.assertIn("2026-07-10T00:00:00Z", log_event["message"])
 
     def test_persist_resource_acknowledgement_rejects_missing_resource(self) -> None:
         with (

@@ -466,6 +466,7 @@ configure_resource_runtime(
         now=lambda: time.time(),
         load_config_raw=lambda: load_config_raw(),
         save_config_raw=lambda raw_config: save_config_raw(raw_config),
+        append_recovery_log=lambda config, event: append_recovery_log(config, event),
     )
 )
 configure_settings_runtime(
