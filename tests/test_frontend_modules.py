@@ -178,6 +178,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("manualCertRenewal?.available", runbook_block)
         self.assertIn("openManualCertRenewalDialog(button.dataset.websiteId)", runbook_block)
 
+    def test_emergency_runbook_backup_items_offer_manual_backup_action(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderEmergencyRunbook()")
+        end = app_js.index("\nfunction renderGroups()", start)
+        runbook_block = app_js[start:end]
+
+        self.assertIn('data-emergency-manual-backup="true"', runbook_block)
+        self.assertIn('item.targetType === "server-backup"', runbook_block)
+        self.assertIn("manualBackup?.available", runbook_block)
+        self.assertIn("openManualBackupDialog(button.dataset.serverId)", runbook_block)
+
     def test_config_validation_panel_uses_backend_field_contract(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         render_config_validation = app_js[
