@@ -358,6 +358,112 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(action["id"], "restart")
         self.assertEqual(message, "")
 
+    def test_recovery_module_triggers_auto_action_with_runtime_without_app_import(self) -> None:
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
+
+        states: dict[str, dict] = {}
+        incident_updates: list[dict] = []
+        executed: list[dict] = []
+        incident_action_updates: list[dict] = []
+        current_time = 1000.0
+
+        def key(target_type: str, target_id: str) -> str:
+            return f"{target_type}:{target_id}"
+
+        def now() -> float:
+            return current_time
+
+        def mark_incident(_config: dict, _target_type: str, _entity: dict, _snapshot: dict, state: dict) -> dict:
+            state["activeIncidentId"] = "incident-1"
+            incident_updates.append({"state": state.copy()})
+            return {"active": True, "id": "incident-1", "lastLogId": ""}
+
+        runtime = RecoveryRuntime(
+            now=now,
+            get_state=lambda target_type, target_id: states.get(key(target_type, target_id), {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(key(target_type, target_id), state.copy()),
+            update_incident_state=mark_incident,
+            execute_server_action=lambda *_args, **kwargs: executed.append(kwargs)
+            or (200, {"ok": True, "message": "restarted", "logId": "log-1"}),
+            upsert_incident_log=lambda _config, event: incident_action_updates.append(event),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "name": "Ops Host",
+                    "actions": [{"id": "restart", "command": ["restart"], "allowAuto": True}],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "restart",
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 1,
+                "cooldownSeconds": 30,
+            },
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["target down"],
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_recovery(config, "server", entity, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "triggered")
+        self.assertEqual(result["message"], "restarted")
+        self.assertEqual(result["lastResult"], "success")
+        self.assertEqual(result["consecutiveFailures"], 0)
+        self.assertEqual(result["lastAttemptAt"], 1000.0)
+        self.assertEqual(result["lastCompletedAt"], 1000.0)
+        self.assertEqual(executed[0]["invocation"], "auto")
+        self.assertEqual(executed[0]["target_type"], "server")
+        self.assertEqual(executed[0]["consecutive_failures"], 1)
+        self.assertEqual(states["server:srv1"]["lastLogId"], "log-1")
+        self.assertEqual(incident_action_updates[0]["id"], "incident-1")
+        self.assertEqual(incident_action_updates[0]["lastLogId"], "log-1")
+        self.assertEqual(incident_action_updates[0]["lastActionResult"], "success")
+
+    def test_recovery_module_blocks_untrusted_data_without_action(self) -> None:
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
+
+        states: dict[str, dict] = {}
+        runtime = RecoveryRuntime(
+            get_state=lambda _target_type, _target_id: {},
+            set_state=lambda target_type, target_id, state: states.__setitem__(f"{target_type}:{target_id}", state.copy()),
+            update_incident_state=lambda *_args, **_kwargs: {"active": False, "summary": "untrusted"},
+            execute_server_action=lambda *_args, **_kwargs: self.fail("untrusted data must not execute recovery"),
+        )
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {"enabled": True, "triggerHealth": ["unknown"], "minimumConsecutiveFailures": 1},
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "unknown",
+            "health": "unknown",
+            "issues": ["no series"],
+            "dataQuality": {"trusted": False, "message": "No Prometheus series."},
+        }
+
+        result = maybe_trigger_recovery({"servers": []}, "server", entity, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["message"], "No Prometheus series.")
+        self.assertEqual(result["consecutiveFailures"], 0)
+        self.assertEqual(states["server:srv1"]["lastReason"], "no series")
+
     def test_incidents_module_tracks_active_and_recovered_incidents_without_app_import(self) -> None:
         from backend.incidents import IncidentRuntime, summarize_incident_reason, target_display_type, update_incident_state
 
@@ -739,6 +845,7 @@ class BackendModuleTests(unittest.TestCase):
         app_source = (root / "app.py").read_text(encoding="utf-8")
         forbidden_functions = [
             "can_trigger_recovery",
+            "maybe_trigger_recovery",
             "recovery_policy_error",
             "resolve_recovery_action",
         ]
@@ -781,6 +888,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.dashboard_payload.__module__, "backend.dashboard")
         self.assertEqual(app.execute_server_action.__module__, "backend.actions")
         self.assertEqual(app.can_trigger_recovery.__module__, "backend.recovery")
+        self.assertEqual(app.maybe_trigger_recovery.__module__, "backend.recovery")
         self.assertEqual(app.recovery_policy_error.__module__, "backend.recovery")
         self.assertEqual(app.resolve_recovery_action.__module__, "backend.recovery")
         self.assertEqual(app.target_display_type.__module__, "backend.incidents")

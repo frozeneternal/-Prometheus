@@ -1,12 +1,49 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
+from typing import Callable
 
 from backend.actions import find_action
 from backend.config import find_server
+from backend.incidents import update_incident_state as default_update_incident_state
 
 
 ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
+
+
+def _empty_state(_target_type: str, _target_id: str) -> dict:
+    return {}
+
+
+def _noop_set_state(_target_type: str, _target_id: str, _state: dict) -> None:
+    return None
+
+
+def _noop_upsert(_config: dict, _event: dict) -> None:
+    return None
+
+
+def _default_execute_server_action(*_args: object, **_kwargs: object) -> tuple[int, dict]:
+    return 500, {"ok": False, "message": "自动恢复动作执行器未配置。"}
+
+
+@dataclass(frozen=True)
+class RecoveryRuntime:
+    now: Callable[[], float] = time.time
+    get_state: Callable[[str, str], dict] = _empty_state
+    set_state: Callable[[str, str, dict], None] = _noop_set_state
+    update_incident_state: Callable[[dict, str, dict, dict, dict], dict] = default_update_incident_state
+    execute_server_action: Callable[..., tuple[int, dict]] = _default_execute_server_action
+    upsert_incident_log: Callable[[dict, dict], object] = _noop_upsert
+
+
+_runtime = RecoveryRuntime()
+
+
+def configure_recovery_runtime(runtime: RecoveryRuntime) -> None:
+    global _runtime
+    _runtime = runtime
 
 
 def strict_int_value(value: object) -> int | None:
@@ -97,3 +134,126 @@ def resolve_recovery_action(config: dict, entity: dict) -> tuple[dict | None, di
         return action_server, action, "自动恢复动作未允许后台自动执行。"
 
     return action_server, action, ""
+
+
+def maybe_trigger_recovery(
+    config: dict,
+    target_type: str,
+    entity: dict,
+    snapshot: dict,
+    *,
+    runtime: RecoveryRuntime | None = None,
+) -> dict:
+    active_runtime = runtime or _runtime
+    target_id = str(entity.get("id") or "")
+    state = active_runtime.get_state(target_type, target_id)
+    health = snapshot.get("health", "unknown")
+    status = snapshot.get("status", "unknown")
+    reason = "; ".join(snapshot.get("issues") or []) or status
+    recovery_config = entity.get("autoRecovery") or {}
+    enabled = bool(recovery_config.get("enabled"))
+    trigger_health = recovery_config.get("triggerHealth") or ["down"]
+    quality = snapshot.get("dataQuality") or {}
+    data_trusted = quality.get("trusted") is not False
+    incident = active_runtime.update_incident_state(config, target_type, entity, snapshot, state)
+
+    if enabled and health in trigger_health and data_trusted:
+        state["consecutiveFailures"] = int(state.get("consecutiveFailures", 0)) + 1
+    else:
+        state["consecutiveFailures"] = 0
+
+    state["lastReason"] = reason
+    action_server, action, resolve_message = resolve_recovery_action(config, entity)
+    allowed, block_message = can_trigger_recovery(entity, health, state, now=active_runtime.now())
+
+    recovery_view = {
+        "enabled": enabled,
+        "status": "idle",
+        "message": "",
+        "consecutiveFailures": state["consecutiveFailures"],
+        "lastAttemptAt": state.get("lastAttemptAt", 0.0),
+        "lastCompletedAt": state.get("lastCompletedAt", 0.0),
+        "lastResult": state.get("lastResult", ""),
+        "lastReason": state.get("lastReason", ""),
+        "lastLogId": state.get("lastLogId", ""),
+        "incident": incident,
+        "dataQuality": quality,
+    }
+
+    if not recovery_view["enabled"]:
+        recovery_view["message"] = "自动恢复未启用。"
+        active_runtime.set_state(target_type, target_id, state)
+        return recovery_view
+
+    if health in trigger_health and not data_trusted:
+        recovery_view["status"] = "blocked"
+        recovery_view["message"] = quality.get("message") or "监控数据不可信，禁止执行自动恢复。"
+        active_runtime.set_state(target_type, target_id, state)
+        return recovery_view
+
+    if resolve_message:
+        recovery_view["status"] = "blocked"
+        recovery_view["message"] = resolve_message
+        active_runtime.set_state(target_type, target_id, state)
+        return recovery_view
+
+    policy_message = recovery_policy_error(recovery_config)
+    if policy_message:
+        recovery_view["status"] = "blocked"
+        recovery_view["message"] = policy_message
+        active_runtime.set_state(target_type, target_id, state)
+        return recovery_view
+
+    if not allowed:
+        recovery_view["status"] = "waiting" if state["consecutiveFailures"] > 0 else "idle"
+        recovery_view["message"] = block_message
+        active_runtime.set_state(target_type, target_id, state)
+        return recovery_view
+
+    state["lastAttemptAt"] = active_runtime.now()
+    http_status, payload = active_runtime.execute_server_action(
+        config,
+        action_server,
+        action,
+        invocation="auto",
+        target_type=target_type,
+        target_id=target_id,
+        target_name=str(entity.get("name") or target_id),
+        reason=reason,
+        consecutive_failures=state["consecutiveFailures"],
+    )
+    state["lastCompletedAt"] = active_runtime.now()
+    state["lastResult"] = "success" if payload.get("ok") else "failed"
+    state["lastLogId"] = payload.get("logId", "")
+    if state.get("activeIncidentId") and state.get("lastLogId"):
+        active_runtime.upsert_incident_log(
+            config,
+            {
+                "id": state["activeIncidentId"],
+                "lastLogId": state["lastLogId"],
+                "lastActionAt": state["lastCompletedAt"],
+                "lastActionResult": state["lastResult"],
+            },
+        )
+    if payload.get("ok"):
+        state["consecutiveFailures"] = 0
+
+    recovery_view.update(
+        {
+            "status": "triggered" if payload.get("ok") else "failed",
+            "message": payload.get("message", ""),
+            "consecutiveFailures": state["consecutiveFailures"],
+            "lastAttemptAt": state["lastAttemptAt"],
+            "lastCompletedAt": state["lastCompletedAt"],
+            "lastResult": state["lastResult"],
+            "lastReason": reason,
+            "lastLogId": state["lastLogId"],
+            "incident": {
+                **incident,
+                "lastLogId": state["lastLogId"],
+            },
+            "lastHttpStatus": http_status,
+        }
+    )
+    active_runtime.set_state(target_type, target_id, state)
+    return recovery_view

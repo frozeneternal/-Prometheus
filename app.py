@@ -349,7 +349,10 @@ from backend.public_view import (  # noqa: E402 - transitional re-export while a
     server_type,
 )
 from backend.recovery import (  # noqa: E402 - transitional re-export while app.py is split.
+    RecoveryRuntime,
     can_trigger_recovery,
+    configure_recovery_runtime,
+    maybe_trigger_recovery,
     recovery_policy_error,
     resolve_recovery_action,
 )
@@ -367,6 +370,18 @@ configure_action_runtime(
 configure_incident_runtime(
     IncidentRuntime(
         now=time.time,
+        upsert_incident_log=lambda config, event: upsert_incident_log(config, event),
+    )
+)
+configure_recovery_runtime(
+    RecoveryRuntime(
+        now=time.time,
+        get_state=get_runtime_entity_state,
+        set_state=set_runtime_entity_state,
+        update_incident_state=lambda config, target_type, entity, snapshot, state: update_incident_state(
+            config, target_type, entity, snapshot, state
+        ),
+        execute_server_action=lambda *args, **kwargs: execute_server_action(*args, **kwargs),
         upsert_incident_log=lambda config, event: upsert_incident_log(config, event),
     )
 )
@@ -1153,121 +1168,6 @@ def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
         "lastReason": state.get("lastReason", ""),
         "lastLogId": state.get("lastLogId", ""),
     }
-
-
-def maybe_trigger_recovery(config: dict, target_type: str, entity: dict, snapshot: dict) -> dict:
-    target_id = str(entity.get("id") or "")
-    state = get_runtime_entity_state(target_type, target_id)
-    health = snapshot.get("health", "unknown")
-    status = snapshot.get("status", "unknown")
-    reason = "; ".join(snapshot.get("issues") or []) or status
-    recovery_config = entity.get("autoRecovery") or {}
-    enabled = bool(recovery_config.get("enabled"))
-    trigger_health = recovery_config.get("triggerHealth") or ["down"]
-    quality = snapshot.get("dataQuality") or {}
-    data_trusted = quality.get("trusted") is not False
-    incident = update_incident_state(config, target_type, entity, snapshot, state)
-
-    if enabled and health in trigger_health and data_trusted:
-        state["consecutiveFailures"] = int(state.get("consecutiveFailures", 0)) + 1
-    else:
-        state["consecutiveFailures"] = 0
-
-    state["lastReason"] = reason
-    action_server, action, resolve_message = resolve_recovery_action(config, entity)
-    allowed, block_message = can_trigger_recovery(entity, health, state)
-
-    recovery_view = {
-        "enabled": enabled,
-        "status": "idle",
-        "message": "",
-        "consecutiveFailures": state["consecutiveFailures"],
-        "lastAttemptAt": state.get("lastAttemptAt", 0.0),
-        "lastCompletedAt": state.get("lastCompletedAt", 0.0),
-        "lastResult": state.get("lastResult", ""),
-        "lastReason": state.get("lastReason", ""),
-        "lastLogId": state.get("lastLogId", ""),
-        "incident": incident,
-        "dataQuality": quality,
-    }
-
-    if not recovery_view["enabled"]:
-        recovery_view["message"] = "自动恢复未启用。"
-        set_runtime_entity_state(target_type, target_id, state)
-        return recovery_view
-
-    if health in trigger_health and not data_trusted:
-        recovery_view["status"] = "blocked"
-        recovery_view["message"] = quality.get("message") or "监控数据不可信，禁止执行自动恢复。"
-        set_runtime_entity_state(target_type, target_id, state)
-        return recovery_view
-
-    if resolve_message:
-        recovery_view["status"] = "blocked"
-        recovery_view["message"] = resolve_message
-        set_runtime_entity_state(target_type, target_id, state)
-        return recovery_view
-
-    policy_message = recovery_policy_error(recovery_config)
-    if policy_message:
-        recovery_view["status"] = "blocked"
-        recovery_view["message"] = policy_message
-        set_runtime_entity_state(target_type, target_id, state)
-        return recovery_view
-
-    if not allowed:
-        recovery_view["status"] = "waiting" if state["consecutiveFailures"] > 0 else "idle"
-        recovery_view["message"] = block_message
-        set_runtime_entity_state(target_type, target_id, state)
-        return recovery_view
-
-    state["lastAttemptAt"] = time.time()
-    http_status, payload = execute_server_action(
-        config,
-        action_server,
-        action,
-        invocation="auto",
-        target_type=target_type,
-        target_id=target_id,
-        target_name=str(entity.get("name") or target_id),
-        reason=reason,
-        consecutive_failures=state["consecutiveFailures"],
-    )
-    state["lastCompletedAt"] = time.time()
-    state["lastResult"] = "success" if payload.get("ok") else "failed"
-    state["lastLogId"] = payload.get("logId", "")
-    if state.get("activeIncidentId") and state.get("lastLogId"):
-        upsert_incident_log(
-            config,
-            {
-                "id": state["activeIncidentId"],
-                "lastLogId": state["lastLogId"],
-                "lastActionAt": state["lastCompletedAt"],
-                "lastActionResult": state["lastResult"],
-            },
-        )
-    if payload.get("ok"):
-        state["consecutiveFailures"] = 0
-
-    recovery_view.update(
-        {
-            "status": "triggered" if payload.get("ok") else "failed",
-            "message": payload.get("message", ""),
-            "consecutiveFailures": state["consecutiveFailures"],
-            "lastAttemptAt": state["lastAttemptAt"],
-            "lastCompletedAt": state["lastCompletedAt"],
-            "lastResult": state["lastResult"],
-            "lastReason": reason,
-            "lastLogId": state["lastLogId"],
-            "incident": {
-                **incident,
-                "lastLogId": state["lastLogId"],
-            },
-            "lastHttpStatus": http_status,
-        }
-    )
-    set_runtime_entity_state(target_type, target_id, state)
-    return recovery_view
 
 
 configure_dashboard_runtime(
