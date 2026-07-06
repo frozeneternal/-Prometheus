@@ -159,12 +159,15 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "error": prometheus_error,
     }
     config_validation = active_runtime.config_validation(config)
+    recovery_logs = active_runtime.get_recovery_logs()
+    incident_logs = active_runtime.get_incident_logs()
     runbook_items = emergency_items(
         prometheus=prometheus,
         config_validation=config_validation,
         servers=snapshots,
         websites=website_snapshots,
         resources=expiry_items,
+        recovery_logs=recovery_logs,
     )
 
     payload = {
@@ -180,8 +183,8 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "resourceExpiryItems": expiry_items,
         "servers": snapshots,
         "websites": website_snapshots,
-        "recoveryLogs": active_runtime.get_recovery_logs(),
-        "incidentLogs": active_runtime.get_incident_logs(),
+        "recoveryLogs": recovery_logs,
+        "incidentLogs": incident_logs,
     }
     active_runtime.set_runtime_dashboard(payload)
     return payload

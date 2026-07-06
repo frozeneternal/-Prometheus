@@ -1065,6 +1065,50 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("ACME", steps)
         self.assertIn("DNS/CDN", steps)
 
+    def test_emergency_module_includes_failed_cert_renewal_log_summary(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "healthy",
+                    "status": "online",
+                    "certRenewal": {
+                        "enabled": True,
+                        "status": "failed",
+                        "message": "certificate renewal command failed",
+                        "lastLogId": "cert-log-1",
+                    },
+                }
+            ],
+            resources=[],
+            recovery_logs=[
+                {
+                    "id": "other-log",
+                    "returnCode": 0,
+                    "stderr": "unrelated",
+                },
+                {
+                    "id": "cert-log-1",
+                    "returnCode": 42,
+                    "durationSeconds": 301,
+                    "stderr": "acme challenge failed\ninvalid dns token",
+                },
+            ],
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("returnCode=42", steps)
+        self.assertIn("duration=301s", steps)
+        self.assertIn("acme challenge failed", steps)
+        self.assertIn("invalid dns token", steps)
+        self.assertNotIn("unrelated", steps)
+
     def test_config_module_loads_local_config_and_normalizes_monitoring(self) -> None:
         from backend import config as backend_config
 

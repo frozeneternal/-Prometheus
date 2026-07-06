@@ -15,6 +15,40 @@ def _text_list(values: object) -> list[str]:
     return [str(value) for value in values if str(value or "").strip()]
 
 
+def _log_lookup(logs: object) -> dict[str, dict]:
+    if not isinstance(logs, list):
+        return {}
+
+    lookup = {}
+    for log in logs:
+        if not isinstance(log, dict):
+            continue
+        log_id = str(log.get("id") or "")
+        if log_id:
+            lookup[log_id] = log
+    return lookup
+
+
+def _short_output(value: object, limit: int = 300) -> str:
+    lines = [line.strip() for line in str(value or "").splitlines() if line.strip()]
+    return " | ".join(lines)[:limit]
+
+
+def _action_log_summary(log: dict | None) -> str:
+    if not log:
+        return ""
+
+    return_code = log.get("returnCode")
+    duration = log.get("durationSeconds")
+    output = _short_output(log.get("stderr")) or _short_output(log.get("stdout"))
+    summary = f"最近动作日志摘要：returnCode={return_code if return_code is not None else '-'}"
+    if duration is not None:
+        summary = f"{summary}；duration={duration}s"
+    if output:
+        summary = f"{summary}；输出摘要：{output}"
+    return summary
+
+
 def _item(
     item_id: str,
     severity: str,
@@ -171,7 +205,7 @@ def _backup_item(server: dict) -> dict | None:
     )
 
 
-def _cert_renewal_item(website: dict) -> dict | None:
+def _cert_renewal_item(website: dict, recovery_log_lookup: dict[str, dict] | None = None) -> dict | None:
     renewal = website.get("certRenewal") or {}
     if not renewal.get("enabled") or str(renewal.get("status") or "") != "failed":
         return None
@@ -185,6 +219,9 @@ def _cert_renewal_item(website: dict) -> dict | None:
         "检查 DNS/CDN 缓存、证书链部署位置和 blackbox exporter 看到的 certExpiresIn 是否已更新。",
         "暂停自动续期或临时拉长 cooldownSeconds，避免失败命令连续重复执行。",
     ]
+    log_summary = _action_log_summary((recovery_log_lookup or {}).get(last_log_id))
+    if log_summary:
+        next_steps.insert(1, log_summary)
     if not last_log_id:
         next_steps.insert(
             0,
@@ -266,8 +303,10 @@ def emergency_items(
     servers: list[dict],
     websites: list[dict],
     resources: list[dict],
+    recovery_logs: list[dict] | None = None,
 ) -> list[dict]:
     items = []
+    recovery_log_lookup = _log_lookup(recovery_logs)
     for candidate in [_prometheus_item(prometheus), _config_item(config_validation)]:
         if candidate:
             items.append(candidate)
@@ -282,7 +321,7 @@ def emergency_items(
         item = _website_item(website)
         if item:
             items.append(item)
-        cert_item = _cert_renewal_item(website)
+        cert_item = _cert_renewal_item(website, recovery_log_lookup)
         if cert_item:
             items.append(cert_item)
     for resource in resources:
