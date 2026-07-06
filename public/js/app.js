@@ -266,9 +266,20 @@ function renderEmergencyRunbook() {
   $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-backup]").forEach((button) => {
     button.addEventListener("click", () => openManualBackupDialog(button.dataset.serverId));
   });
+  $("#emergencyRunbookList").querySelectorAll("[data-emergency-manual-recovery]").forEach((button) => {
+    button.addEventListener("click", () => openManualRecoveryDialog(button.dataset.targetType, button.dataset.targetId));
+  });
 }
 
 function emergencyActionButton(item) {
+  if (["server", "website"].includes(item.targetType)) {
+    const targets = item.targetType === "server" ? (state.config?.servers || []) : (state.config?.websites || []);
+    const target = targets.find((candidate) => candidate.id === item.targetId);
+    const manualRecovery = target?.manualRecovery;
+    if (manualRecovery?.available) {
+      return `<button type="button" class="secondary recovery-trigger compact" data-emergency-manual-recovery="true" data-target-type="${escapeHtml(item.targetType)}" data-target-id="${escapeHtml(target.id)}">${escapeHtml(manualRecovery.label || "手动恢复")}</button>`;
+    }
+  }
   if (item.targetType === "website-cert") {
     const website = (state.config?.websites || []).find((candidate) => candidate.id === item.targetId);
     const manualCertRenewal = website?.manualCertRenewal;
