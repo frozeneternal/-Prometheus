@@ -136,6 +136,32 @@ def resolve_recovery_action(config: dict, entity: dict) -> tuple[dict | None, di
     return action_server, action, ""
 
 
+def record_manual_recovery_result(
+    *,
+    target_type: str,
+    target_id: str,
+    reason: str,
+    payload: dict,
+    runtime: RecoveryRuntime | None = None,
+) -> bool:
+    if not target_type or not target_id:
+        return False
+
+    active_runtime = runtime or _runtime
+    state = active_runtime.get_state(target_type, target_id)
+    now = active_runtime.now()
+    state.setdefault("consecutiveFailures", 0)
+    state["lastAttemptAt"] = now
+    state["lastCompletedAt"] = now
+    state["lastResult"] = "success" if payload.get("ok") else "failed"
+    state["lastReason"] = reason
+    state["lastLogId"] = payload.get("logId", "")
+    if payload.get("ok"):
+        state["consecutiveFailures"] = 0
+    active_runtime.set_state(target_type, target_id, state)
+    return True
+
+
 def maybe_trigger_recovery(
     config: dict,
     target_type: str,

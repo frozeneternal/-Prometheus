@@ -243,6 +243,76 @@ class DataQualityTests(unittest.TestCase):
         self.assertIn("cooldownSeconds", result["message"])
         execute_server_action.assert_not_called()
 
+    def test_manual_recovery_success_blocks_duplicate_auto_recovery(self) -> None:
+        config = {
+            "actionToken": "token",
+            "servers": [
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "actions": [
+                        {
+                            "id": "restart",
+                            "command": ["echo", "restart"],
+                            "allowAuto": True,
+                            "timeoutSeconds": 30,
+                        }
+                    ],
+                    "autoRecovery": {
+                        "enabled": True,
+                        "actionServerId": "srv1",
+                        "actionId": "restart",
+                        "triggerHealth": ["down"],
+                        "minimumConsecutiveFailures": 1,
+                        "cooldownSeconds": 300,
+                    },
+                }
+            ],
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["target still down"],
+            "dataQuality": {"level": "target_down", "trusted": True},
+        }
+
+        with patch.object(
+            app,
+            "execute_server_action",
+            return_value=(200, {"ok": True, "message": "manual restart started", "logId": "manual-log-1"}),
+        ) as manual_action:
+            status, payload = app.run_action(
+                config,
+                {
+                    "serverId": "srv1",
+                    "actionId": "restart",
+                    "token": "token",
+                    "targetType": "server",
+                    "targetId": "srv1",
+                    "targetName": "Server 1",
+                    "invocation": "manual-recovery",
+                    "reason": "手动恢复",
+                },
+            )
+
+        state = app.get_runtime_entity_state("server", "srv1")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(state["lastResult"], "success")
+        self.assertEqual(state["lastLogId"], "manual-log-1")
+        self.assertGreater(state["lastCompletedAt"], 0.0)
+        manual_action.assert_called_once()
+
+        with patch.object(app, "execute_server_action") as duplicate_auto_action:
+            result = app.maybe_trigger_recovery(config, "server", config["servers"][0], snapshot)
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertIn("冷却", result["message"])
+        self.assertEqual(result["lastLogId"], "manual-log-1")
+        duplicate_auto_action.assert_not_called()
+
     def test_cert_renewal_blocks_invalid_policy_without_executing_action(self) -> None:
         config = {
             "servers": [

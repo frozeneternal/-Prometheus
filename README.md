@@ -324,6 +324,8 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 
 如果 `allowAuto` 不是 `true`，后台不会自动执行，面板会显示“配置阻塞”。
 
+手动恢复成功后也会写入自动恢复状态，后台会遵守同一个 `cooldownSeconds`，避免刚手动重启后又马上自动重复执行同一个恢复动作。
+
 如果你只想保留手动恢复，把 `autoRecovery.enabled` 关掉即可；卡片上的小按钮还会保留。
 
 ## 虚拟机恢复

@@ -986,6 +986,73 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(result["consecutiveFailures"], 0)
         self.assertEqual(states["server:srv1"]["lastReason"], "no series")
 
+    def test_recovery_module_records_manual_success_as_cooldown_without_app_import(self) -> None:
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery, record_manual_recovery_result
+
+        states: dict[str, dict] = {}
+        current_time = 1000.0
+        runtime = RecoveryRuntime(
+            now=lambda: current_time,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            update_incident_state=lambda *_args, **_kwargs: {"active": True, "id": "incident-1"},
+            execute_server_action=lambda *_args, **_kwargs: self.fail("manual cooldown should block duplicate auto recovery"),
+        )
+
+        updated = record_manual_recovery_result(
+            target_type="server",
+            target_id="srv1",
+            reason="手动恢复",
+            payload={"ok": True, "logId": "manual-log-1"},
+            runtime=runtime,
+        )
+
+        state = states["server:srv1"]
+        self.assertTrue(updated)
+        self.assertEqual(state["lastResult"], "success")
+        self.assertEqual(state["lastAttemptAt"], 1000.0)
+        self.assertEqual(state["lastCompletedAt"], 1000.0)
+        self.assertEqual(state["lastLogId"], "manual-log-1")
+        self.assertEqual(state["consecutiveFailures"], 0)
+
+        current_time = 1010.0
+        result = maybe_trigger_recovery(
+            {
+                "servers": [
+                    {
+                        "id": "srv1",
+                        "actions": [{"id": "restart", "command": ["restart"], "allowAuto": True}],
+                    }
+                ]
+            },
+            "server",
+            {
+                "id": "srv1",
+                "autoRecovery": {
+                    "enabled": True,
+                    "actionServerId": "srv1",
+                    "actionId": "restart",
+                    "triggerHealth": ["down"],
+                    "minimumConsecutiveFailures": 1,
+                    "cooldownSeconds": 300,
+                },
+            },
+            {
+                "id": "srv1",
+                "status": "offline",
+                "health": "down",
+                "issues": ["target still down"],
+                "dataQuality": {"trusted": True},
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertIn("冷却", result["message"])
+        self.assertEqual(result["lastLogId"], "manual-log-1")
+
     def test_certificates_module_waits_for_verified_expiry_after_command_success_without_app_import(self) -> None:
         from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
 
@@ -1636,6 +1703,7 @@ class BackendModuleTests(unittest.TestCase):
         forbidden_functions = [
             "can_trigger_recovery",
             "maybe_trigger_recovery",
+            "record_manual_recovery_result",
             "recovery_policy_error",
             "resolve_recovery_action",
         ]
@@ -1765,6 +1833,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.execute_server_action.__module__, "backend.actions")
         self.assertEqual(app.can_trigger_recovery.__module__, "backend.recovery")
         self.assertEqual(app.maybe_trigger_recovery.__module__, "backend.recovery")
+        self.assertEqual(app.record_manual_recovery_result.__module__, "backend.recovery")
         self.assertEqual(app.recovery_policy_error.__module__, "backend.recovery")
         self.assertEqual(app.resolve_recovery_action.__module__, "backend.recovery")
         self.assertEqual(app.target_display_type.__module__, "backend.incidents")

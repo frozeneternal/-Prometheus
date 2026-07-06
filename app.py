@@ -412,6 +412,7 @@ from backend.recovery import (  # noqa: E402 - transitional re-export while app.
     can_trigger_recovery,
     configure_recovery_runtime,
     maybe_trigger_recovery,
+    record_manual_recovery_result,
     recovery_policy_error,
     resolve_recovery_action,
 )
@@ -601,6 +602,13 @@ def run_action(config: dict, body: dict) -> tuple[int, dict]:
             target_id=target_id,
             reason=reason,
             snapshot=current_website_snapshot(target_id),
+            payload=payload,
+        )
+    if invocation == "manual-recovery" and target_type in {"server", "website"} and target_id:
+        record_manual_recovery_result(
+            target_type=target_type,
+            target_id=target_id,
+            reason=reason,
             payload=payload,
         )
     return status, payload
