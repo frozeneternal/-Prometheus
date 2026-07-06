@@ -239,6 +239,21 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(log_event["actor"]["username"], "ops")
         self.assertIn("2026-07-10T00:00:00Z", log_event["message"])
 
+    def test_settings_response_preserves_resource_ack_log_id(self) -> None:
+        with (
+            patch.object(app, "load_config", return_value={"resources": []}),
+            patch.object(app, "dashboard_payload", return_value={"dashboard": True}),
+        ):
+            try:
+                status, payload = app.settings_response("资源到期告警已确认。", {"logId": "resource-log-1"})
+            except TypeError:
+                self.fail("settings_response should preserve operation metadata such as logId")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["logId"], "resource-log-1")
+        self.assertTrue(payload["dashboard"])
+
     def test_persist_resource_acknowledgement_rejects_missing_resource(self) -> None:
         with (
             patch.object(app, "load_config_raw", return_value={"resources": []}),

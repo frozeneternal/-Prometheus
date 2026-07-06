@@ -527,10 +527,10 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
     return json.loads(raw.decode("utf-8"))
 
 
-def settings_response(message: str) -> tuple[int, dict]:
+def settings_response(message: str, extra: dict | None = None) -> tuple[int, dict]:
     config = load_config()
     dashboard = dashboard_payload(config)
-    return 200, {"ok": True, "message": message, **dashboard}
+    return 200, {"ok": True, "message": message, **dashboard, **(extra or {})}
 
 
 def monitor_loop() -> None:
@@ -880,7 +880,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             if status != 200:
                 json_response(self, status, payload)
                 return
-            status, payload = settings_response(payload["message"])
+            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
             json_response(self, status, payload)
             return
 
