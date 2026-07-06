@@ -351,11 +351,30 @@ class BackendModuleTests(unittest.TestCase):
                 self.assertNotIn(f"def {function_name}(", app_source)
         self.assertNotIn("ROLE_RANK = {", app_source)
 
+    def test_app_does_not_define_resource_expiry_domain_functions_locally(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        forbidden_functions = [
+            "parse_expiry_datetime",
+            "parse_expiry_timestamp",
+            "resource_expiry_thresholds",
+            "classify_resource_expiry",
+            "resource_expiry_message",
+            "resource_expiry_items",
+            "resource_expiry_summary",
+        ]
+
+        for function_name in forbidden_functions:
+            with self.subTest(function_name=function_name):
+                self.assertNotIn(f"def {function_name}(", app_source)
+
     def test_app_reexports_backend_domain_functions(self) -> None:
         import app
 
         self.assertEqual(app.hash_password.__module__, "backend.auth")
         self.assertEqual(app.resource_expiry_items.__module__, "backend.expiry")
+        self.assertEqual(app.parse_expiry_datetime.__module__, "backend.expiry")
+        self.assertEqual(app.resource_expiry_summary.__module__, "backend.expiry")
         self.assertEqual(app.prom_query.__module__, "backend.prometheus")
         self.assertEqual(app.series_payload.__module__, "backend.prometheus")
         self.assertEqual(app.load_config.__module__, "backend.config")
