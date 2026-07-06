@@ -69,6 +69,52 @@ class BackendModuleTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(saved_attempts[0][username]["failures"], [1000.0])
 
+    def test_auth_api_module_records_successful_login_audit_without_app_import(self) -> None:
+        from backend import auth as auth_backend
+        from backend.auth import hash_password
+        from backend.auth_api import AuthApiRuntime, login_payload
+
+        username = "module-ops"
+        config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Ops",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass", salt="module-salt", iterations=1000),
+                }
+            ],
+        }
+        audit_events: list[dict] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1000.0,
+            save_login_attempts=lambda _attempts: None,
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        auth_backend.LOGIN_ATTEMPTS.clear()
+        try:
+            status, payload = login_payload(
+                config,
+                {"username": username, "password": "ops-pass", "sourceIp": "203.0.113.200"},
+                source_ip="10.0.0.25",
+                runtime=runtime,
+            )
+        finally:
+            auth_backend.LOGIN_ATTEMPTS.clear()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertIn("sessionToken", payload)
+        self.assertEqual(audit_events[0]["event"], "login-success")
+        self.assertEqual(audit_events[0]["username"], username)
+        self.assertEqual(audit_events[0]["actor"]["username"], username)
+        self.assertEqual(audit_events[0]["sourceIp"], "10.0.0.25")
+        serialized = json.dumps(audit_events, ensure_ascii=False)
+        self.assertNotIn("ops-pass", serialized)
+        self.assertNotIn(payload["sessionToken"], serialized)
+
     def test_auth_api_module_logout_revokes_session_without_app_import(self) -> None:
         from backend import auth as auth_backend
         from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token

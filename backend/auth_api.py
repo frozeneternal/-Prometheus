@@ -146,6 +146,20 @@ def login_payload(
         active_runtime.save_login_attempts(login_attempt_snapshot(now=current))
     except OSError as exc:
         return 500, {"ok": False, "message": f"登录状态保存失败：{exc}"}
+    try:
+        active_runtime.append_auth_audit(
+            config,
+            auth_audit_event(
+                "login-success",
+                username,
+                "账号登录成功。",
+                actor=user,
+                source_ip=source_ip,
+                now=current,
+            ),
+        )
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"账号审计日志保存失败：{exc}"}
     return 200, {
         "ok": True,
         "sessionToken": token,
