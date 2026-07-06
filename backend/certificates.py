@@ -309,12 +309,6 @@ def maybe_trigger_cert_renewal(
         active_runtime.set_state("website-cert", target_id, state)
         return renewal_view
 
-    if invalid_cert_metric:
-        renewal_view["status"] = "blocked"
-        renewal_view["message"] = "证书监控指标 certExpiresIn 不是有效数字，禁止执行自动续期。"
-        active_runtime.set_state("website-cert", target_id, state)
-        return renewal_view
-
     pending_handled, pending_status, pending_message = maybe_finish_pending_cert_renewal(
         state,
         renewal_config,
@@ -336,6 +330,12 @@ def maybe_trigger_cert_renewal(
             renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
         if "verifiedExpiresIn" in state:
             renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
+        active_runtime.set_state("website-cert", target_id, state)
+        return renewal_view
+
+    if invalid_cert_metric:
+        renewal_view["status"] = "blocked"
+        renewal_view["message"] = "证书监控指标 certExpiresIn 不是有效数字，禁止执行自动续期。"
         active_runtime.set_state("website-cert", target_id, state)
         return renewal_view
 
