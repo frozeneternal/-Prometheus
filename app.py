@@ -351,6 +351,7 @@ from backend.settings import (  # noqa: E402 - transitional re-export while app.
     configure_settings_runtime,
     find_raw_action,
     find_raw_entity,
+    parse_enabled_flag,
     persist_auto_backup_enabled,
     persist_auto_recovery_enabled,
     persist_cert_renewal_enabled,
@@ -815,7 +816,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
             target_type = str(body.get("targetType") or "")
             target_id = str(body.get("targetId") or "")
-            enabled = bool(body.get("enabled"))
+            enabled, enabled_error = parse_enabled_flag(body.get("enabled"))
+            if enabled_error:
+                json_response(self, 400, {"ok": False, "message": enabled_error})
+                return
             if target_type not in {"server", "website"} or not target_id:
                 json_response(self, 400, {"ok": False, "message": "自动恢复参数不正确。"})
                 return
@@ -846,7 +850,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 return
 
             server_id = str(body.get("serverId") or "")
-            enabled = bool(body.get("enabled"))
+            enabled, enabled_error = parse_enabled_flag(body.get("enabled"))
+            if enabled_error:
+                json_response(self, 400, {"ok": False, "message": enabled_error})
+                return
             if not server_id:
                 json_response(self, 400, {"ok": False, "message": "自动备份参数不正确。"})
                 return
@@ -876,7 +883,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 return
 
             website_id = str(body.get("websiteId") or "")
-            enabled = bool(body.get("enabled"))
+            enabled, enabled_error = parse_enabled_flag(body.get("enabled"))
+            if enabled_error:
+                json_response(self, 400, {"ok": False, "message": enabled_error})
+                return
             if not website_id:
                 json_response(self, 400, {"ok": False, "message": "证书续期参数不正确。"})
                 return

@@ -45,6 +45,12 @@ def configure_settings_runtime(runtime: SettingsRuntime) -> None:
     _runtime = runtime
 
 
+def parse_enabled_flag(value: object) -> tuple[bool | None, str]:
+    if isinstance(value, bool):
+        return value, ""
+    return None, "enabled 必须是 JSON 布尔值 true 或 false。"
+
+
 def find_raw_entity(raw_config: dict, target_type: str, target_id: str) -> dict | None:
     key = "servers" if target_type == "server" else "websites"
     for entity in raw_config.get(key, []):

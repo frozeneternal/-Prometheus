@@ -499,6 +499,23 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(logs[0]["actor"]["username"], "ops")
         self.assertIn("启用", logs[0]["message"])
 
+    def test_settings_module_parses_enabled_flags_strictly(self) -> None:
+        from backend.settings import parse_enabled_flag
+
+        self.assertEqual(parse_enabled_flag(True), (True, ""))
+        self.assertEqual(parse_enabled_flag(False), (False, ""))
+        for value in ("true", "false", "0", "1", 0, 1, None):
+            with self.subTest(value=value):
+                enabled, message = parse_enabled_flag(value)
+                self.assertIsNone(enabled)
+                self.assertIn("enabled", message)
+
+    def test_app_setting_routes_do_not_coerce_string_enabled_flags(self) -> None:
+        app_source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+
+        self.assertNotIn('enabled = bool(body.get("enabled"))', app_source)
+        self.assertGreaterEqual(app_source.count('parse_enabled_flag(body.get("enabled"))'), 3)
+
     def test_settings_module_enables_auto_backup_and_primes_first_interval_without_app_import(self) -> None:
         from backend.settings import SettingsRuntime, persist_auto_backup_enabled
 
