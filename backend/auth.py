@@ -248,7 +248,7 @@ def create_session_token(config: dict, user: dict, now: float | None = None, ttl
     secret = session_signing_key(config)
     if not secret:
         raise ValueError("sessionSecret or actionToken is required when users are enabled")
-    issued_at = int(time.time() if now is None else now)
+    issued_at = float(time.time() if now is None else now)
     expires_at = issued_at + max(300, int(ttl_seconds))
     payload = {
         "username": user.get("username", ""),
@@ -284,6 +284,13 @@ def session_payload_from_token(config: dict, token: str, now: float | None = Non
     if float(payload.get("exp", 0)) < current:
         return None
     return payload
+
+
+def sessions_revoked_before(user: dict) -> float:
+    try:
+        return float(user.get("sessionsRevokedBefore") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def prune_revoked_sessions(now: float) -> None:
@@ -350,6 +357,13 @@ def verify_session_token(config: dict, token: str, now: float | None = None) -> 
         return None
     user = find_user(config, str(payload.get("username") or ""))
     if not user:
+        return None
+    try:
+        issued_at = float(payload.get("iat") or 0)
+    except (TypeError, ValueError):
+        return None
+    revoked_before = sessions_revoked_before(user)
+    if revoked_before and issued_at < revoked_before:
         return None
     role = normalize_role(user.get("role"))
     if normalize_role(payload.get("role")) != role:

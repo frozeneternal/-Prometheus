@@ -148,6 +148,8 @@ def upsert_account_user_payload(
     next_user["enabled"] = _bool_from_body(body.get("enabled"), existing.get("enabled", True) is not False)
     if password_provided:
         next_user["passwordHash"] = hash_password(password)
+        if index is not None:
+            next_user["sessionsRevokedBefore"] = float(active_runtime.now())
 
     if _user_key(username) == _auth_username(auth_payload):
         if next_user.get("enabled", True) is False:

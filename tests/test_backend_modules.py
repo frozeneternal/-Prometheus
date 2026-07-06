@@ -144,6 +144,49 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(audit_events[0]["event"], "account-upsert")
         self.assertEqual(audit_events[0]["actor"]["username"], "admin")
 
+    def test_accounts_admin_module_revokes_existing_sessions_when_password_changes_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+        from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].append(
+            {
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "passwordHash": hash_password("ops-pass-1", salt="ops-salt", iterations=1000),
+            }
+        )
+        config = json.loads(json.dumps(raw_config))
+        ops_user = authenticate_user(config, "ops", "ops-pass-1")
+        ops_token = create_session_token(config, ops_user, now=1000)
+        saved: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+
+        self.assertEqual(verify_session_token(config, ops_token, now=1005)["username"], "ops")
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "password": "ops-pass-2",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertIsNone(verify_session_token(saved[0], ops_token, now=1011))
+        self.assertIsNotNone(authenticate_user(saved[0], "ops", "ops-pass-2"))
+
     def test_accounts_admin_module_blocks_last_admin_disable_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
 
