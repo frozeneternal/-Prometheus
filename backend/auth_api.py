@@ -23,6 +23,10 @@ from backend.auth import (
 from backend.auth_audit import auth_audit_event
 
 
+DEFAULT_AUTH_AUDIT_LIMIT = 50
+MAX_AUTH_AUDIT_LIMIT = 200
+
+
 def _noop_save_login_attempts(_attempts: dict) -> None:
     return None
 
@@ -54,6 +58,32 @@ _runtime = AuthApiRuntime()
 def configure_auth_api_runtime(runtime: AuthApiRuntime) -> None:
     global _runtime
     _runtime = runtime
+
+
+def _safe_range_int(value: object, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if isinstance(value, bool):
+        parsed = default
+    return min(max(parsed, minimum), maximum)
+
+
+def auth_audit_page(logs: list[dict], limit: object = None, offset: object = None) -> dict:
+    total = len(logs)
+    parsed_limit = _safe_range_int(limit, DEFAULT_AUTH_AUDIT_LIMIT, 1, MAX_AUTH_AUDIT_LIMIT)
+    parsed_offset = _safe_range_int(offset, 0, 0, total)
+    end = max(total - parsed_offset, 0)
+    start = max(end - parsed_limit, 0)
+    page_logs = logs[start:end]
+    return {
+        "logs": page_logs,
+        "total": total,
+        "limit": parsed_limit,
+        "offset": parsed_offset,
+        "hasMore": start > 0,
+    }
 
 
 def login_payload(config: dict, body: dict, *, runtime: AuthApiRuntime | None = None) -> tuple[int, dict]:
@@ -169,9 +199,14 @@ def auth_audit_payload(config: dict, body: dict, *, runtime: AuthApiRuntime | No
     allowed, status, auth_payload = authorize_operation(config, body, "admin")
     if not allowed:
         return status, auth_payload
+    page = auth_audit_page(
+        active_runtime.get_auth_audit_logs(),
+        limit=body.get("limit"),
+        offset=body.get("offset"),
+    )
     return 200, {
         "ok": True,
-        "logs": active_runtime.get_auth_audit_logs(),
+        **page,
         "user": auth_payload.get("user"),
     }
 

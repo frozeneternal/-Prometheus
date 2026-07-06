@@ -88,14 +88,22 @@ export async function loadAccountUsers() {
 export async function loadAccountAudit() {
   if (!state.sessionToken || !isAdminUser()) {
     state.accountAuditLogs = [];
+    state.accountAuditPage = { total: 0, limit: 50, offset: 0, hasMore: false };
     return;
   }
 
   try {
-    const payload = await fetchAccountAudit(state.sessionToken);
+    const payload = await fetchAccountAudit(state.sessionToken, { limit: 50, offset: 0 });
     state.accountAuditLogs = payload.logs || [];
+    state.accountAuditPage = {
+      total: payload.total || 0,
+      limit: payload.limit || 50,
+      offset: payload.offset || 0,
+      hasMore: Boolean(payload.hasMore),
+    };
   } catch (error) {
     state.accountAuditLogs = [];
+    state.accountAuditPage = { total: 0, limit: 50, offset: 0, hasMore: false };
   }
 }
 
@@ -151,6 +159,7 @@ export function renderAccountLockouts() {
     $("#accountLockoutList").innerHTML = "";
     $("#accountLockoutSummary").textContent = "";
     $("#accountAuditList").innerHTML = "";
+    $("#accountAuditSummary").textContent = "";
     return;
   }
 
@@ -179,6 +188,10 @@ export function renderAccountLockouts() {
 
 export function renderAccountAudit() {
   const logs = (state.accountAuditLogs || []).slice().reverse();
+  const page = state.accountAuditPage || { total: logs.length, limit: 50, offset: 0, hasMore: false };
+  $("#accountAuditSummary").textContent = page.total
+    ? `最近 ${logs.length} / ${page.total} 条账号安全事件${page.hasMore ? "，还有更早记录" : ""}`
+    : "最近账号安全事件";
   $("#accountAuditList").innerHTML = logs.length
     ? logs.map((log) => `
       <article class="account-audit-item">

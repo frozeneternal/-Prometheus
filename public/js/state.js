@@ -10,4 +10,5 @@ export const state = {
   accountUsers: [],
   accountLockouts: [],
   accountAuditLogs: [],
+  accountAuditPage: { total: 0, limit: 50, offset: 0, hasMore: false },
 };

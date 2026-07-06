@@ -146,10 +146,10 @@ def get_recent_incident_logs(limit: int = 50) -> list[dict]:
     return logs[-limit:]
 
 
-def get_recent_auth_audit_logs(limit: int = 50) -> list[dict]:
+def get_auth_audit_logs(limit: int | None = None) -> list[dict]:
     with RUNTIME_LOCK:
         logs = list(RUNTIME_STATE["authAuditLogs"])
-    return logs[-limit:]
+    return logs if limit is None else logs[-limit:]
 
 
 def append_auth_audit_log(config: dict, event: dict) -> dict:
@@ -484,7 +484,7 @@ configure_auth_api_runtime(
         save_login_attempts=lambda attempts: save_login_attempts_to_disk(attempts),
         save_revoked_sessions=lambda session_ids: save_revoked_sessions_to_disk(session_ids),
         append_auth_audit=lambda config, event: append_auth_audit_log(config, event),
-        get_auth_audit_logs=lambda: get_recent_auth_audit_logs(),
+        get_auth_audit_logs=lambda: get_auth_audit_logs(),
     )
 )
 configure_accounts_admin_runtime(

@@ -106,6 +106,59 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIsNone(revoked_user)
         self.assertTrue(saved_revocations[0])
 
+    def test_auth_api_module_pages_audit_logs_without_app_import(self) -> None:
+        from backend.auth_api import AuthApiRuntime, auth_audit_payload
+
+        config, _raw_config, token = self.account_admin_fixture()
+        logs = [
+            {
+                "id": f"audit-{index}",
+                "event": "account-upsert",
+                "username": f"user-{index}",
+                "actor": {"username": "admin", "displayName": "Admin", "role": "admin"},
+                "timestamp": 1000 + index,
+                "message": "Updated",
+            }
+            for index in range(10)
+        ]
+        runtime = AuthApiRuntime(get_auth_audit_logs=lambda: logs)
+
+        status, payload = auth_audit_payload(
+            config,
+            {"sessionToken": token, "limit": "3", "offset": "2"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual([event["username"] for event in payload["logs"]], ["user-5", "user-6", "user-7"])
+        self.assertEqual(payload["total"], 10)
+        self.assertEqual(payload["limit"], 3)
+        self.assertEqual(payload["offset"], 2)
+        self.assertTrue(payload["hasMore"])
+
+        large_logs = [
+            {
+                "id": f"audit-large-{index}",
+                "event": "account-upsert",
+                "username": f"large-user-{index}",
+                "actor": {"username": "admin", "displayName": "Admin", "role": "admin"},
+                "timestamp": 2000 + index,
+                "message": "Updated",
+            }
+            for index in range(250)
+        ]
+        runtime = AuthApiRuntime(get_auth_audit_logs=lambda: large_logs)
+
+        status, payload = auth_audit_payload(config, {"sessionToken": token, "limit": 500}, runtime=runtime)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["logs"]), 200)
+        self.assertEqual(payload["logs"][0]["username"], "large-user-50")
+        self.assertEqual(payload["total"], 250)
+        self.assertEqual(payload["limit"], 200)
+        self.assertTrue(payload["hasMore"])
+
     def test_accounts_admin_module_creates_user_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
 

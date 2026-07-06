@@ -43,8 +43,8 @@ export function fetchAccountLockouts(sessionToken) {
   return postJson("/api/auth/lockouts", { sessionToken });
 }
 
-export function fetchAccountAudit(sessionToken) {
-  return postJson("/api/auth/audit", { sessionToken });
+export function fetchAccountAudit(sessionToken, { limit = 50, offset = 0 } = {}) {
+  return postJson("/api/auth/audit", { sessionToken, limit, offset });
 }
 
 export function fetchAccountUsers(sessionToken) {

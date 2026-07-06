@@ -283,8 +283,12 @@ class FrontendModuleTests(unittest.TestCase):
         auth_api_py = (ROOT / "backend" / "auth_api.py").read_text(encoding="utf-8")
 
         self.assertIn('id="accountAuditList"', index_html)
+        self.assertIn('id="accountAuditSummary"', index_html)
         self.assertIn('"/api/auth/audit"', client_js)
+        self.assertIn("limit = 50", client_js)
+        self.assertIn("offset = 0", client_js)
         self.assertIn("renderAccountAudit", (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8"))
+        self.assertIn("accountAuditPage", (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8"))
         self.assertIn('parsed.path == "/api/auth/audit"', backend_py)
         self.assertIn("auth_audit_payload", backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', auth_api_py)
