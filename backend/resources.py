@@ -7,7 +7,7 @@ from typing import Callable
 
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
-from backend.expiry import parse_expiry_datetime, resource_expiry_items
+from backend.expiry import parse_expiry_timestamp, resource_expiry_items
 
 
 @dataclass(frozen=True)
@@ -40,15 +40,19 @@ def persist_resource_acknowledgement(
     runtime: ResourceRuntime | None = None,
 ) -> tuple[int, dict]:
     active_runtime = runtime or _runtime
-    if parse_expiry_datetime(acknowledged_until) is None:
+    acknowledged_until_timestamp = parse_expiry_timestamp(acknowledged_until)
+    if acknowledged_until_timestamp is None:
         return 400, {"ok": False, "message": "确认截止时间无效。"}
+
+    current = active_runtime.now()
+    if acknowledged_until_timestamp <= current:
+        return 400, {"ok": False, "message": "确认截止时间必须晚于当前时间。"}
 
     raw_config = active_runtime.load_config_raw()
     resource = find_raw_resource(raw_config, resource_id)
     if resource is None:
         return 404, {"ok": False, "message": "资源不存在。"}
 
-    current = active_runtime.now()
     item_config = {
         "monitoring": raw_config.get("monitoring") or {},
         "resources": [resource],
