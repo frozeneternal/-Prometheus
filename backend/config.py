@@ -8,6 +8,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BASE_DIR / "config" / "servers.json"
 LOCAL_CONFIG_PATH = BASE_DIR / "config" / "servers.local.json"
+CONFIG_OVERRIDE_ENV = "OPS_MONITOR_CONFIG_PATH"
 
 DEFAULT_CONFIG = {
     "appName": "本地服务器监控台",
@@ -67,7 +68,18 @@ def active_config_path(
     config_path: Path = CONFIG_PATH,
     local_config_path: Path = LOCAL_CONFIG_PATH,
 ) -> Path:
+    override_path = override_config_path()
+    if override_path is not None:
+        return override_path
     return local_config_path if local_config_path.exists() else config_path
+
+
+def override_config_path() -> Path | None:
+    value = os.environ.get(CONFIG_OVERRIDE_ENV, "").strip()
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else BASE_DIR / path
 
 
 def load_config(
@@ -75,8 +87,13 @@ def load_config(
     local_config_path: Path = LOCAL_CONFIG_PATH,
 ) -> dict:
     path = active_config_path(config_path, local_config_path)
+    using_override = override_config_path() is not None
     if not path.exists():
-        return DEFAULT_CONFIG.copy()
+        config = DEFAULT_CONFIG.copy()
+        config["_configPath"] = str(path)
+        config["_usingLocalConfig"] = False
+        config["_usingOverrideConfig"] = using_override
+        return config
 
     with path.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
@@ -91,7 +108,8 @@ def load_config(
     config["resources"] = config.get("resources") or []
     config["users"] = config.get("users") or []
     config["_configPath"] = str(path)
-    config["_usingLocalConfig"] = path == local_config_path
+    config["_usingLocalConfig"] = not using_override and path == local_config_path
+    config["_usingOverrideConfig"] = using_override
     return config
 
 
@@ -134,9 +152,11 @@ def config_source_info(
     local_config_path: Path = LOCAL_CONFIG_PATH,
 ) -> dict:
     path = active_config_path(config_path, local_config_path)
+    using_override = override_config_path() is not None
     return {
         "configFile": relative_to_base(path, base_dir),
-        "usingLocalConfig": path == local_config_path,
+        "usingLocalConfig": not using_override and path == local_config_path,
+        "usingOverrideConfig": using_override,
         "localConfigAvailable": local_config_path.exists(),
     }
 

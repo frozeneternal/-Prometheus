@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 import json
@@ -1360,6 +1361,46 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(options["resourceExpiryWarningDays"], 2)
         self.assertEqual(options["resourceExpiryCriticalDays"], 2)
         self.assertEqual(options["resourceAckMaxDays"], 7)
+
+    def test_config_module_environment_override_isolates_runtime_config(self) -> None:
+        from backend import config as backend_config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "servers.json"
+            local_path = root / "servers.local.json"
+            override_path = root / "isolated" / "servers.runtime.json"
+            config_path.write_text('{"appName":"sample","servers":[{"id":"public"}]}', encoding="utf-8")
+            local_path.write_text('{"appName":"local","servers":[{"id":"local"}]}', encoding="utf-8")
+            override_path.parent.mkdir(parents=True)
+            override_path.write_text('{"appName":"override","servers":[{"id":"isolated"}]}', encoding="utf-8")
+
+            with patch.dict(os.environ, {"OPS_MONITOR_CONFIG_PATH": str(override_path)}):
+                self.assertEqual(
+                    backend_config.active_config_path(config_path=config_path, local_config_path=local_path),
+                    override_path,
+                )
+                loaded = backend_config.load_config(config_path=config_path, local_config_path=local_path)
+                source = backend_config.config_source_info(
+                    base_dir=root,
+                    config_path=config_path,
+                    local_config_path=local_path,
+                )
+                backend_config.save_config_raw(
+                    {"appName": "saved-override", "servers": [{"id": "saved"}]},
+                    config_path=config_path,
+                    local_config_path=local_path,
+                )
+
+            self.assertEqual(loaded["appName"], "override")
+            self.assertEqual(loaded["_configPath"], str(override_path))
+            self.assertFalse(loaded["_usingLocalConfig"])
+            self.assertTrue(loaded["_usingOverrideConfig"])
+            self.assertEqual(source["configFile"], "isolated/servers.runtime.json")
+            self.assertFalse(source["usingLocalConfig"])
+            self.assertTrue(source["usingOverrideConfig"])
+            self.assertEqual(json.loads(override_path.read_text(encoding="utf-8"))["appName"], "saved-override")
+            self.assertEqual(json.loads(local_path.read_text(encoding="utf-8"))["appName"], "local")
 
     def test_config_module_tolerates_invalid_monitoring_options(self) -> None:
         from backend import config as backend_config
@@ -3317,6 +3358,21 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.persist_auto_recovery_enabled.__module__, "backend.settings")
         self.assertEqual(app.persist_auto_backup_enabled.__module__, "backend.settings")
         self.assertEqual(app.persist_cert_renewal_enabled.__module__, "backend.settings")
+
+    def test_account_bootstrap_verifier_uses_isolated_runtime(self) -> None:
+        script_path = Path("scripts/verify_account_bootstrap.py")
+
+        self.assertTrue(script_path.exists())
+        script = script_path.read_text(encoding="utf-8")
+        for marker in (
+            "OPS_MONITOR_CONFIG_PATH",
+            "OPS_MONITOR_DATA_DIR",
+            "/api/auth/users/upsert",
+            "/api/auth/login",
+            "/api/auth/users",
+        ):
+            self.assertIn(marker, script)
+        self.assertNotIn("servers.local.json", script)
 
 
 if __name__ == "__main__":

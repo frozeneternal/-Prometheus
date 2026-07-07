@@ -36,7 +36,18 @@ from backend.actions import (
 
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR_ENV = "OPS_MONITOR_DATA_DIR"
+
+
+def runtime_data_dir() -> Path:
+    value = os.environ.get(DATA_DIR_ENV, "").strip()
+    if not value:
+        return BASE_DIR / "data"
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+DATA_DIR = runtime_data_dir()
 RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
 INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
 ENTITY_STATE_PATH = DATA_DIR / "entity_states.json"
