@@ -2,6 +2,7 @@ import {
   fetchAccountAudit,
   fetchAccountLockouts,
   fetchAccountUsers,
+  fetchDashboard,
   fetchSession,
   loginUser,
   logoutSession,
@@ -322,6 +323,7 @@ function editManagedAccount(username) {
 export async function saveAccountUser(event) {
   event.preventDefault();
   const bootstrapFirstAdmin = canBootstrapFirstAdmin();
+  const bootstrapUsername = $("#accountUsername").value.trim();
   $("#accountUserError").textContent = "";
   $("#accountUserSubmitButton").disabled = true;
   try {
@@ -346,10 +348,20 @@ export async function saveAccountUser(event) {
       state.currentUser = null;
       window.localStorage.removeItem("monitorSessionToken");
       $("#tokenInput").value = "";
+      try {
+        state.dashboard = await fetchDashboard();
+      } catch (error) {
+        // The new admin can still log in even if the advisory dashboard refresh fails.
+      }
     }
     resetAccountUserForm();
     if (!bootstrapFirstAdmin) await loadAccountAudit();
     renderAuthControls();
+    if (bootstrapFirstAdmin) {
+      $("#loginUsername").value = bootstrapUsername;
+      $("#loginError").textContent = "管理员账号已创建，请使用新账号登录。";
+      $("#loginPassword").focus();
+    }
   } catch (error) {
     $("#accountUserError").textContent = error.message;
   } finally {

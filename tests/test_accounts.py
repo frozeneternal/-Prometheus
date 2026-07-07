@@ -514,6 +514,56 @@ class AccountAuthTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertNotEqual(saved["config"]["sessionSecret"], raw_config["sessionSecret"])
 
+    def test_first_admin_bootstrap_creates_loginable_admin_and_disables_legacy_token_admin_access(self) -> None:
+        raw_config = {
+            "actionToken": "legacy-token",
+            "sessionSecret": "",
+            "authPolicy": {"passwordMinLength": 8},
+            "users": [],
+        }
+        saved = {}
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: saved.get("config", raw_config),
+            save_config_raw=lambda config: saved.update(config=config),
+            append_auth_audit=lambda _config, event: event,
+        )
+
+        status, payload = app.upsert_account_user_payload(
+            raw_config,
+            {
+                "token": "legacy-token",
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "password": "admin-pass",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+        saved_config = saved["config"]
+
+        login_status, login_payload = app.login_payload(saved_config, {"username": "admin", "password": "admin-pass"})
+        users_status, users_payload = app.account_users_payload(
+            saved_config,
+            {"sessionToken": login_payload.get("sessionToken")},
+            runtime=runtime,
+        )
+        legacy_allowed, legacy_status, _legacy_payload = app.authorize_operation(
+            saved_config,
+            {"token": "legacy-token"},
+            "admin",
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(login_status, 200)
+        self.assertTrue(login_payload["sessionToken"])
+        self.assertEqual(users_status, 200)
+        self.assertEqual(users_payload["users"][0]["username"], "admin")
+        self.assertFalse(legacy_allowed)
+        self.assertEqual(legacy_status, 401)
+
     def test_dashboard_payload_surfaces_account_security_without_secret_values(self) -> None:
         config = {
             "actionToken": "legacy-token",

@@ -594,12 +594,18 @@ class FrontendModuleTests(unittest.TestCase):
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
 
         self.assertIn("function canBootstrapFirstAdmin()", accounts_js)
+        self.assertIn("fetchDashboard", accounts_js)
         self.assertIn('auth.mode === "token"', accounts_js)
         self.assertIn("state.config?.actionsRequireToken === true", accounts_js)
         self.assertIn("创建首个管理员账号", accounts_js)
         self.assertIn("const bootstrapFirstAdmin = canBootstrapFirstAdmin();", accounts_js)
+        self.assertIn("const bootstrapUsername = $(\"#accountUsername\").value.trim();", accounts_js)
         self.assertIn("auth: authPayload()", accounts_js)
+        self.assertIn("state.dashboard = await fetchDashboard();", accounts_js)
         self.assertIn('state.config.auth.mode = "users";', accounts_js)
+        self.assertIn("$(\"#loginUsername\").value = bootstrapUsername;", accounts_js)
+        self.assertIn("管理员账号已创建，请使用新账号登录。", accounts_js)
+        self.assertIn("$(\"#loginPassword\").focus();", accounts_js)
         self.assertIn("window.localStorage.removeItem(\"monitorSessionToken\")", accounts_js)
 
     def test_account_security_summary_has_frontend_panel_and_renderer(self) -> None:
