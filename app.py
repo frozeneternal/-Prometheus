@@ -398,6 +398,7 @@ from backend.incidents import (  # noqa: E402 - transitional re-export while app
     target_display_type,
     update_incident_state,
 )
+from backend.metrics import platform_metrics_text  # noqa: E402 - transitional re-export while app.py is split.
 from backend.prometheus import (  # noqa: E402 - transitional re-export while app.py is split.
     build_metric_queries,
     build_website_queries,
@@ -540,6 +541,19 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, content_type: str) -> None:
+    encoded = body.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(encoded)))
+    handler.end_headers()
+    handler.wfile.write(encoded)
+
+
+def metrics_response(config: dict, now: float | None = None) -> tuple[int, str, str]:
+    return 200, "text/plain; version=0.0.4; charset=utf-8", platform_metrics_text(config, now=now)
 
 
 def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
@@ -706,6 +720,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
         if path == "/api/config":
             json_response(self, 200, {"ok": True, "config": public_config(config)})
+            return
+
+        if path == "/metrics":
+            status, content_type, body = metrics_response(config)
+            text_response(self, status, body, content_type)
             return
 
         if path == "/api/dashboard":

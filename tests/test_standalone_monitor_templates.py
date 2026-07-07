@@ -89,6 +89,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("blackbox_exporter\\blackbox_exporter.exe", status_script)
         self.assertIn("http://127.0.0.1:19115/metrics", watchdog)
         self.assertIn("job_name: blackbox", prometheus)
+        self.assertIn("job_name: local_ops_platform", prometheus)
+        self.assertIn("127.0.0.1:8787", prometheus)
         self.assertIn("metrics_path: /probe", prometheus)
         self.assertIn("replacement: 127.0.0.1:19115", prometheus)
         self.assertTrue(targets["websites"])
@@ -101,6 +103,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             "目标连通性",
             "服务器/虚拟机可用性",
             "服务器/虚拟机清单",
+            "资源到期风险",
+            "资源到期状态",
             "异常目标",
             "Linux CPU 使用率",
             "Linux 内存使用率",
@@ -129,6 +133,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("异常", json.dumps(dashboard, ensure_ascii=False))
         self.assertIn("up == 0", expressions)
         self.assertIn('job=~"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows"', expressions)
+        self.assertIn("ops_platform_resource_expiry_action_required_total", expressions)
+        self.assertIn("ops_platform_resource_expiry_status_total", expressions)
         self.assertIn("node_cpu_seconds_total", expressions)
         self.assertIn("node_memory_MemAvailable_bytes", expressions)
         self.assertIn("node_filesystem_avail_bytes", expressions)
