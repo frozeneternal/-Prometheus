@@ -1012,6 +1012,35 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(items[0]["severity"], "warning")
         self.assertIn("Prometheus target", " ".join(items[0]["nextSteps"]))
 
+    def test_emergency_module_includes_target_diagnostics_in_server_steps(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[
+                {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "health": "down",
+                    "status": "offline",
+                    "issues": ["node exporter down"],
+                    "targetDiagnostics": {
+                        "category": "timeout",
+                        "message": "Prometheus scrape timed out before the exporter responded.",
+                        "lastError": "context deadline exceeded",
+                    },
+                }
+            ],
+            websites=[],
+            resources=[],
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("target diagnostics", steps)
+        self.assertIn("timeout", steps)
+        self.assertIn("context deadline exceeded", steps)
+
     def test_emergency_module_escalates_failed_auto_recovery_without_app_import(self) -> None:
         from backend.emergency import emergency_items
 

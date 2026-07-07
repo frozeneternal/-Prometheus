@@ -107,6 +107,18 @@ def _config_item(config_validation: dict) -> dict | None:
     )
 
 
+def _target_diagnostics_step(target: dict) -> str:
+    quality = target.get("dataQuality") or {}
+    details = quality.get("details") if isinstance(quality, dict) else {}
+    diagnostics = target.get("targetDiagnostics") or (details or {}).get("targetDiagnostics") or {}
+    if not isinstance(diagnostics, dict) or not diagnostics.get("message"):
+        return ""
+    category = diagnostics.get("category") or "unknown"
+    last_error = diagnostics.get("lastError") or ""
+    suffix = f"; lastError={last_error}" if last_error else ""
+    return f"Prometheus target diagnostics: {category}; {diagnostics.get('message')}{suffix}"
+
+
 def _platform_health_items(platform_health: dict | None) -> list[dict]:
     if not isinstance(platform_health, dict):
         return []
@@ -179,6 +191,9 @@ def _server_item(server: dict, recovery_log_lookup: dict[str, dict] | None = Non
         "先查看数据质量，确认不是 Prometheus 或 node_exporter 缺数导致的误判。",
         "检查该服务器的最近恢复日志和中断事件，确认自动恢复是否已经触发。",
     ]
+    diagnostics_step = _target_diagnostics_step(server)
+    if diagnostics_step:
+        next_steps.append(diagnostics_step)
     if recovery.get("enabled"):
         next_steps.append(f"自动恢复当前状态：{recovery_status}；如已触发，核对日志 ID {recovery.get('lastLogId') or '未记录'}。")
         if recovery_status == "failed":
@@ -289,6 +304,9 @@ def _website_item(website: dict, recovery_log_lookup: dict[str, dict] | None = N
         "先确认 blackbox 探测目标 URL 与配置完全一致。",
         "检查网站状态码、响应时间和证书剩余时间，区分服务中断和证书风险。",
     ]
+    diagnostics_step = _target_diagnostics_step(website)
+    if diagnostics_step:
+        next_steps.append(diagnostics_step)
     if recovery.get("enabled"):
         next_steps.append(f"自动恢复当前状态：{recovery_status}；如已触发，核对日志 ID {last_log_id or '未记录'}。")
         if recovery_status == "failed":
