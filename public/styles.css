@@ -371,6 +371,71 @@ select {
   color: var(--bad);
 }
 
+.platform-health-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #bbe3d2;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--good-bg);
+  box-shadow: var(--shadow);
+}
+
+.platform-health-panel.warning,
+.platform-health-panel.unknown {
+  border-color: #edd48d;
+  background: var(--warn-bg);
+}
+
+.platform-health-panel.critical,
+.platform-health-panel.error {
+  border-color: #f1c2bd;
+  background: var(--bad-bg);
+}
+
+.platform-health-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.platform-health-head strong {
+  font-size: 14px;
+}
+
+.platform-health-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.platform-health-badge {
+  min-width: 72px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #d8f0e5;
+  color: var(--good);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.platform-health-badge.warning,
+.platform-health-badge.unknown {
+  background: #fff3cf;
+  color: var(--warn);
+}
+
+.platform-health-badge.critical,
+.platform-health-badge.error {
+  background: #fde2df;
+  color: var(--bad);
+}
+
 .emergency-runbook-panel {
   display: grid;
   gap: 10px;
@@ -479,6 +544,35 @@ select {
 }
 
 .config-validation-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.platform-health-list {
+  display: grid;
+  gap: 8px;
+}
+
+.platform-health-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.platform-health-item span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.platform-health-item p {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--text);

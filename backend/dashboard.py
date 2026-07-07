@@ -8,6 +8,7 @@ from backend.config import DEFAULT_CONFIG, config_source_info
 from backend.expiry import resource_expiry_items, resource_expiry_summary
 from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
+from backend.platform_health import platform_health_summary
 from backend.prometheus import prometheus_ready_status
 from backend.public_view import server_type
 from backend.snapshots import (
@@ -42,6 +43,10 @@ def _empty_logs() -> list[dict]:
     return []
 
 
+def _default_platform_health(config: dict) -> dict:
+    return platform_health_summary(config)
+
+
 def _ignore_dashboard(_payload: dict) -> None:
     return None
 
@@ -59,6 +64,7 @@ class DashboardRuntime:
     trigger_cert_renewal: Callable[[dict, dict, dict], dict] = _idle_cert_renewal
     config_source: Callable[[], dict] = config_source_info
     config_validation: Callable[[dict], dict] = config_validation_summary
+    platform_health: Callable[[dict], dict] = _default_platform_health
     get_recovery_logs: Callable[[], list[dict]] = _empty_logs
     get_incident_logs: Callable[[], list[dict]] = _empty_logs
     set_runtime_dashboard: Callable[[dict], None] = _ignore_dashboard
@@ -159,6 +165,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "error": prometheus_error,
     }
     config_validation = active_runtime.config_validation(config)
+    platform_health = active_runtime.platform_health(config)
     recovery_logs = active_runtime.get_recovery_logs()
     incident_logs = active_runtime.get_incident_logs()
     runbook_items = emergency_items(
@@ -175,6 +182,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "prometheus": prometheus,
         "configSource": active_runtime.config_source(),
         "configValidation": config_validation,
+        "platformHealth": platform_health,
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),

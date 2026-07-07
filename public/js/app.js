@@ -124,6 +124,8 @@ function renderError(error) {
   $("#recoveryLogList").innerHTML = "";
   $("#configValidationPanel").innerHTML = "";
   $("#configValidationPanel").classList.add("hidden");
+  $("#platformHealthPanel").innerHTML = "";
+  $("#platformHealthPanel").classList.add("hidden");
   $("#emergencyRunbookPanel").classList.add("hidden");
   $("#emergencyRunbookList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
@@ -157,6 +159,7 @@ function render() {
 
   renderSystemNotice();
   renderConfigValidation();
+  renderPlatformHealth();
   renderEmergencyRunbook();
   renderGroups();
   renderServers();
@@ -224,6 +227,56 @@ function renderConfigValidation() {
         <div class="config-validation-item ${escapeHtml(item.severity || "unknown")}">
           <span>${escapeHtml(item.severity || "unknown")}</span>
           <p>${escapeHtml(item.message || "")}</p>
+        </div>
+      `).join("")}
+    </div>` : ""}
+  `;
+}
+
+function renderPlatformHealth() {
+  const panel = $("#platformHealthPanel");
+  const health = state.dashboard?.platformHealth;
+  if (!health) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+
+  const status = health.status || "unknown";
+  const summary = health.summary || {};
+  const issues = health.issues || [];
+  const root = health.rootVolumeHealth || {};
+  const title = {
+    ok: "Platform health",
+    warning: "Platform needs attention",
+    critical: "Platform risk",
+    error: "Platform risk",
+    unknown: "Platform health unknown",
+  }[status] || "Platform health unknown";
+  const summaryText = [
+    `services ${summary.localOk ?? 0}/${summary.localTotal ?? 0}`,
+    `binaries ${summary.binaryOk ?? 0}/${summary.binaryTotal ?? 0}`,
+    `dirs ${summary.directoryOk ?? 0}/${summary.directoryTotal ?? 0}`,
+    `junctions ${summary.junctionCount ?? 0}`,
+  ];
+  const rootText = root.Drive
+    ? `${root.Drive} ${root.OperationalStatus || root.HealthStatus || root.Status || "unknown"}`
+    : "";
+
+  panel.className = `platform-health-panel ${escapeHtml(status)}`;
+  panel.innerHTML = `
+    <div class="platform-health-head">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(summaryText.join(" / "))}${rootText ? ` / ${escapeHtml(rootText)}` : ""}</p>
+      </div>
+      <span class="platform-health-badge ${escapeHtml(status)}">${escapeHtml(status)}</span>
+    </div>
+    ${issues.length ? `<div class="platform-health-list">
+      ${issues.map((item) => `
+        <div class="platform-health-item ${escapeHtml(item.severity || "unknown")}">
+          <span>${escapeHtml(item.severity || "unknown")}</span>
+          <p>${escapeHtml(item.message || item.id || "")}</p>
         </div>
       `).join("")}
     </div>` : ""}

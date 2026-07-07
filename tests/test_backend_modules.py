@@ -1445,6 +1445,10 @@ class BackendModuleTests(unittest.TestCase):
             now=lambda: 1234.0,
             ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
             config_source=lambda: {"configFile": "servers.local.json", "usingLocalConfig": True},
+            platform_health=lambda _config: {
+                "status": "warning",
+                "issues": [{"id": "root-volume-warning", "severity": "warning"}],
+            },
             get_recovery_logs=lambda: [{"id": "log1"}],
             get_incident_logs=lambda: [{"id": "incident1"}],
             set_runtime_dashboard=lambda payload: captured.setdefault("payload", payload),
@@ -1466,6 +1470,8 @@ class BackendModuleTests(unittest.TestCase):
         self.assertFalse(payload["prometheus"]["available"])
         self.assertEqual(payload["prometheus"]["error"], "collector unavailable")
         self.assertEqual(payload["configSource"]["configFile"], "servers.local.json")
+        self.assertEqual(payload["platformHealth"]["status"], "warning")
+        self.assertEqual(payload["platformHealth"]["issues"][0]["id"], "root-volume-warning")
         self.assertEqual(payload["summary"]["total"], 1)
         self.assertEqual(payload["summary"]["unknown"], 1)
         self.assertEqual(payload["websiteSummary"]["total"], 1)
@@ -1478,6 +1484,38 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["emergencyItems"][0]["id"], "prometheus-unavailable")
         self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
         self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
+
+    def test_platform_health_summary_reports_root_volume_warning(self) -> None:
+        from backend.platform_health import summarize_status_payload
+
+        summary = summarize_status_payload(
+            {
+                "localStack": [
+                    {"Name": "Grafana", "Status": 200},
+                    {"Name": "Prometheus", "Status": 200},
+                ],
+                "runtimeBinaryHealth": [
+                    {"Name": "Prometheus", "Status": "ok"},
+                    {"Name": "Grafana", "Status": "ok"},
+                ],
+                "appDirectoryHealth": [
+                    {"Name": "Grafana app dir", "Status": "ok", "LinkType": "Junction"},
+                ],
+                "rootVolumeHealth": {
+                    "Status": "warning",
+                    "Drive": "E:",
+                    "HealthStatus": "Warning",
+                    "OperationalStatus": "Full Repair Needed",
+                    "FreePercent": 71.17,
+                },
+            }
+        )
+
+        self.assertEqual(summary["status"], "warning")
+        self.assertEqual(summary["summary"]["localOk"], 2)
+        self.assertEqual(summary["summary"]["binaryOk"], 2)
+        self.assertEqual(summary["issues"][0]["id"], "root-volume-warning")
+        self.assertIn("Full Repair Needed", summary["issues"][0]["message"])
 
     def test_actions_module_executes_actions_with_injected_runtime_without_app_import(self) -> None:
         from backend.actions import ActionRuntime, execute_server_action, normalize_success_codes

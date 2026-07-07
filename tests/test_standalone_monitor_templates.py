@@ -110,6 +110,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
 
         self.assertIn("Get-ExecutableVersionStatus", status_script)
         self.assertIn("Get-RootVolumeStatus", status_script)
+        self.assertIn("[switch]$LocalOnly", status_script)
+        self.assertIn("-not $LocalOnly", status_script)
         self.assertIn("Runtime binary health", status_script)
         self.assertIn("Root volume health", status_script)
         self.assertIn("prometheus\\prometheus.exe", status_script)

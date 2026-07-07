@@ -1,7 +1,8 @@
 param(
   [string]$Root = "E:\ops-monitor",
   [switch]$Json,
-  [switch]$DeepDiskScan
+  [switch]$DeepDiskScan,
+  [switch]$LocalOnly
 )
 
 $ErrorActionPreference = "Continue"
@@ -203,7 +204,8 @@ $appDirectoryHealth = @(
 
 $rootVolumeHealth = Get-RootVolumeStatus
 
-if (Test-Path $TargetsFile) {
+$remote = @()
+if (-not $LocalOnly -and (Test-Path $TargetsFile)) {
   $inventory = Get-Content -Raw -Encoding UTF8 -LiteralPath $TargetsFile | ConvertFrom-Json
   $remote = foreach ($server in $inventory.servers) {
     $metricsPort = if ($server.os -eq "windows") { 9182 } else { 9100 }
@@ -216,23 +218,24 @@ if (Test-Path $TargetsFile) {
       MetricsOpen = Test-PortFast $server.ip $metricsPort
     }
   }
-  Write-Host ""
 }
 
-try {
-  $targets = Invoke-RestMethod -Uri "http://127.0.0.1:19090/api/v1/targets" -TimeoutSec 5
-  $active = $targets.data.activeTargets | ForEach-Object {
-    [pscustomobject]@{
-      Job = $_.labels.job
-      Instance = $_.labels.instance
-      Name = $_.labels.name
-      Health = $_.health
-      LastError = $_.lastError
+$active = @()
+if (-not $LocalOnly) {
+  try {
+    $targets = Invoke-RestMethod -Uri "http://127.0.0.1:19090/api/v1/targets" -TimeoutSec 5
+    $active = $targets.data.activeTargets | ForEach-Object {
+      [pscustomobject]@{
+        Job = $_.labels.job
+        Instance = $_.labels.instance
+        Name = $_.labels.name
+        Health = $_.health
+        LastError = $_.lastError
+      }
     }
+  } catch {
+    $prometheusTargetsError = $_.Exception.Message
   }
-} catch {
-  $active = @()
-  $prometheusTargetsError = $_.Exception.Message
 }
 
 if ($Json) {

@@ -153,6 +153,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderConfigValidation();", app_js)
         self.assertIn(".config-validation-panel", styles_css)
 
+    def test_platform_health_panel_is_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="platformHealthPanel"', index_html)
+        self.assertIn("function renderPlatformHealth()", app_js)
+        self.assertIn("state.dashboard?.platformHealth", app_js)
+        self.assertIn("renderPlatformHealth();", app_js)
+        self.assertIn(".platform-health-panel", styles_css)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
