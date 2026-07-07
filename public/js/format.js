@@ -133,6 +133,13 @@ export function formatDate(value) {
   return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
+export function formatDateTime(value) {
+  if (!value) return "--";
+  const date = new Date(isFiniteNumber(value) ? value * 1000 : value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
 export function metricValue(metric, value) {
   if (["cpu", "memory", "disk"].includes(metric)) return formatPercent(value);
   if (["rx", "tx"].includes(metric)) return formatBytesPerSecond(value);

@@ -31,6 +31,7 @@ import {
   dataQualityLabels,
   formatCert,
   formatDate,
+  formatDateTime,
   formatElapsed,
   formatSeconds,
   formatStatusCode,
@@ -591,8 +592,10 @@ function resourceExpiryCard(item) {
     ? `<a href="${escapeHtml(item.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`
     : "";
   const canAcknowledge = item.actionRequired && ["critical", "warning"].includes(status);
+  const ackActorText = item.acknowledgedBy ? `，确认人 ${item.acknowledgedBy}` : "";
+  const ackAtText = item.acknowledgedAt ? `，确认时间 ${formatDateTime(item.acknowledgedAt)}` : "";
   const ackText = item.acknowledged
-    ? `已确认至 ${formatDate(item.acknowledgedUntil)}`
+    ? `已确认至 ${formatDate(item.acknowledgedUntil)}${ackActorText}${ackAtText}`
     : "";
   const missingHandlingFields = Array.isArray(item.missingHandlingFields)
     ? item.missingHandlingFields.join(", ")

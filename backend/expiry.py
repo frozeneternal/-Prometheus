@@ -143,6 +143,7 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
                 "acknowledgedUntil": resource.get("acknowledgedUntil") or "",
                 "acknowledgedUntilTimestamp": acknowledged_until,
                 "acknowledgedBy": resource.get("acknowledgedBy", ""),
+                "acknowledgedAt": resource.get("acknowledgedAt", ""),
                 "actionRequired": action_required,
                 "handlingReady": handling_ready,
                 "missingHandlingFields": missing_handling_fields,

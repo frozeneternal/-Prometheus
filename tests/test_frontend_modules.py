@@ -333,6 +333,16 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("item.handlingMessage", resource_block)
         self.assertIn("missingHandlingFields", resource_block)
 
+    def test_resource_expiry_card_surfaces_acknowledgement_actor_context(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function resourceExpiryCard(")
+        end = app_js.index("\nfunction recoveryBlock", start)
+        resource_block = app_js[start:end]
+
+        self.assertIn("item.acknowledgedBy", resource_block)
+        self.assertIn("item.acknowledgedAt", resource_block)
+        self.assertIn("formatDateTime(item.acknowledgedAt)", resource_block)
+
     def test_recovery_log_labels_include_cert_renewal_toggle(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function recoveryLogCard(")

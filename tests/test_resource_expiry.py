@@ -128,6 +128,8 @@ class ResourceExpiryTests(unittest.TestCase):
                     "name": "Acked Warning",
                     "expiresAt": "2026-07-20",
                     "acknowledgedUntil": "2026-07-10T00:00:00Z",
+                    "acknowledgedBy": "ops",
+                    "acknowledgedAt": "2026-07-03T08:30:00+00:00",
                 },
                 {
                     "id": "expired-even-if-acked",
@@ -150,6 +152,8 @@ class ResourceExpiryTests(unittest.TestCase):
 
         self.assertTrue(by_id["acked-warning"]["acknowledged"])
         self.assertFalse(by_id["acked-warning"]["actionRequired"])
+        self.assertEqual(by_id["acked-warning"]["acknowledgedBy"], "ops")
+        self.assertEqual(by_id["acked-warning"]["acknowledgedAt"], "2026-07-03T08:30:00+00:00")
         self.assertFalse(by_id["expired-even-if-acked"]["acknowledged"])
         self.assertTrue(by_id["expired-even-if-acked"]["actionRequired"])
         self.assertFalse(by_id["ack-expired"]["acknowledged"])
