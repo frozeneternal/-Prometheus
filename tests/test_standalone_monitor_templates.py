@@ -105,6 +105,23 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("windows_logical_disk_free_bytes", expressions)
         self.assertIn("scrape_duration_seconds", expressions)
 
+    def test_status_script_reports_runtime_safety_without_restart(self) -> None:
+        status_script = (STANDALONE / "status-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("Get-ExecutableVersionStatus", status_script)
+        self.assertIn("Get-RootVolumeStatus", status_script)
+        self.assertIn("Runtime binary health", status_script)
+        self.assertIn("Root volume health", status_script)
+        self.assertIn("prometheus\\prometheus.exe", status_script)
+        self.assertIn("grafana\\bin\\grafana.exe", status_script)
+        self.assertIn("windows_exporter\\windows_exporter.exe", status_script)
+        self.assertIn(".WaitForExit(", status_script)
+        self.assertIn("$versionOutput", status_script)
+        self.assertIn("$errorMessage = if ($result.Status -eq \"ok\")", status_script)
+        self.assertNotIn("Wait-Process -Id $proc.Id -Timeout", status_script)
+        self.assertNotIn("start-local-monitor.ps1", status_script.lower())
+        self.assertNotIn("watchdog-local-monitor.ps1", status_script.lower())
+
     def test_ssh_tunnel_script_uses_environment_credentials_and_loopback_listeners(self) -> None:
         tunnel_script = (STANDALONE / "ssh_metrics_tunnel.py").read_text(encoding="utf-8")
         tunnel_example = (STANDALONE / "tunnels.example.json").read_text(encoding="utf-8")
