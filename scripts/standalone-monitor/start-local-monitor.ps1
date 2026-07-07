@@ -1,8 +1,8 @@
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$Root = "E:\ops-monitor"
 )
+
+$ErrorActionPreference = "Stop"
 
 $Config = Join-Path $Root "config"
 $Apps = Join-Path $Root "apps"

@@ -36,6 +36,16 @@ scrape_configs:
           os: linux
           role: git
 
+  - job_name: linux_servers_ssh_tunnel
+    static_configs:
+      - targets:
+          - 127.0.0.1:19130
+        labels:
+          name: linux-blocked-exporter-example
+          os: linux
+          role: blocked-exporter
+          tunnel: ssh
+
   - job_name: windows_servers
     static_configs:
       - targets:

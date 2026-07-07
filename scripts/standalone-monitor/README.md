@@ -39,6 +39,19 @@ powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\status-local-mon
 powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\stop-local-monitor.ps1
 ```
 
+SSH tunnel commands for hosts where exporter ports are blocked:
+
+```powershell
+$env:OPS_SSH_USER = "<private user>"
+$env:OPS_SSH_PASSWORD = "<private password>"
+powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\start-ssh-tunnels.ps1
+powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\stop-ssh-tunnels.ps1
+```
+
+Prometheus should scrape the tunnel listeners as `127.0.0.1:19xxx` targets.
+This avoids opening remote firewall ports while keeping metrics collection
+centralized.
+
 Default local endpoints:
 
 - Grafana: `http://127.0.0.1:3000`

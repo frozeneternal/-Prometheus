@@ -1,0 +1,29 @@
+{
+  "notes": [
+    "Public-safe example. Copy to E:\\ops-monitor\\config\\tunnels.local.json and replace hosts locally.",
+    "Credentials are read from OPS_SSH_USER and OPS_SSH_PASSWORD environment variables.",
+    "Each listener binds to 127.0.0.1 so only the local Prometheus can use it."
+  ],
+  "tunnels": [
+    {
+      "name": "linux-example-1",
+      "enabled": true,
+      "sshHost": "10.0.0.10",
+      "sshPort": 22,
+      "localHost": "127.0.0.1",
+      "localPort": 19110,
+      "remoteHost": "127.0.0.1",
+      "remotePort": 9100
+    },
+    {
+      "name": "linux-example-2",
+      "enabled": false,
+      "sshHost": "10.0.0.11",
+      "sshPort": 22,
+      "localHost": "127.0.0.1",
+      "localPort": 19111,
+      "remoteHost": "127.0.0.1",
+      "remotePort": 9100
+    }
+  ]
+}

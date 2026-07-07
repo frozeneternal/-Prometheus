@@ -1,8 +1,8 @@
-$ErrorActionPreference = "Continue"
-
 param(
   [string]$Root = "E:\ops-monitor"
 )
+
+$ErrorActionPreference = "Continue"
 
 $TargetsFile = Join-Path $Root "config\targets.local.json"
 
