@@ -352,6 +352,150 @@ class ResourceExpiryTests(unittest.TestCase):
         }
         self.assertEqual(responses, [(200, expected_payload)])
 
+    def test_persist_resource_record_creates_resource_and_logs_actor(self) -> None:
+        raw_config = {"resources": []}
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log") as append_recovery_log,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_record(
+                {
+                    "id": "domain-main",
+                    "name": "Main Domain",
+                    "type": "domain",
+                    "provider": "Registrar",
+                    "owner": "ops@example.com",
+                    "renewUrl": "https://billing.example.com/domain",
+                    "expiresAt": "2026-08-01",
+                    "notes": "renew manually",
+                },
+                actor={"username": "ops"},
+                source_ip="10.0.0.20",
+            )
+            saved = save_config_raw.call_args.args[0]
+            log_event = append_recovery_log.call_args.args[1]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["logId"], log_event["id"])
+        self.assertEqual(saved["resources"][0]["id"], "domain-main")
+        self.assertEqual(saved["resources"][0]["renewUrl"], "https://billing.example.com/domain")
+        self.assertEqual(log_event["invocation"], "resource-upsert")
+        self.assertEqual(log_event["targetId"], "domain-main")
+        self.assertEqual(log_event["actor"]["username"], "ops")
+        self.assertEqual(log_event["sourceIp"], "10.0.0.20")
+
+    def test_persist_resource_record_rejects_unsafe_renew_url(self) -> None:
+        with (
+            patch.object(app, "load_config_raw", return_value={"resources": []}),
+            patch.object(app, "save_config_raw") as save_config_raw,
+        ):
+            status, payload = app.persist_resource_record(
+                {
+                    "id": "unsafe",
+                    "name": "Unsafe",
+                    "expiresAt": "2026-08-01",
+                    "renewUrl": "javascript:alert(1)",
+                },
+                actor={"username": "ops"},
+            )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("renewUrl", payload["message"])
+        save_config_raw.assert_not_called()
+
+    def test_persist_resource_record_recovers_malformed_resource_list(self) -> None:
+        raw_config = {"resources": None}
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log"),
+        ):
+            status, payload = app.persist_resource_record(
+                {"id": "domain-main", "name": "Main Domain", "expiresAt": "2026-08-01"},
+                actor={"username": "ops"},
+            )
+            saved = save_config_raw.call_args.args[0]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved["resources"][0]["id"], "domain-main")
+
+    def test_persist_resource_deletion_removes_resource_and_logs_actor(self) -> None:
+        raw_config = {
+            "resources": [
+                {"id": "domain-main", "name": "Main Domain", "expiresAt": "2026-08-01"},
+                {"id": "keep", "name": "Keep", "expiresAt": "2026-09-01"},
+            ]
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log") as append_recovery_log,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_deletion(
+                "domain-main",
+                actor={"username": "ops"},
+                source_ip="10.0.0.20",
+            )
+            saved = save_config_raw.call_args.args[0]
+            log_event = append_recovery_log.call_args.args[1]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual([resource["id"] for resource in saved["resources"]], ["keep"])
+        self.assertEqual(log_event["invocation"], "resource-delete")
+        self.assertEqual(log_event["targetId"], "domain-main")
+        self.assertEqual(log_event["actor"]["username"], "ops")
+
+    def test_resource_upsert_route_returns_dashboard_and_log_id(self) -> None:
+        responses: list[tuple[int, dict]] = []
+        body = {"resource": {"id": "domain-main", "name": "Main Domain", "expiresAt": "2026-08-01"}}
+        handler = type(
+            "RouteHarness",
+            (),
+            {
+                "path": "/api/settings/resource-upsert",
+                "client_address": ("10.0.0.30", 52100),
+            },
+        )()
+
+        with (
+            patch.object(app, "load_config", return_value={"resources": []}),
+            patch.object(app, "read_json_body", return_value=body),
+            patch.object(
+                app,
+                "authorize_operation",
+                return_value=(True, 200, {"user": {"username": "ops"}}),
+            ),
+            patch.object(
+                app,
+                "persist_resource_record",
+                return_value=(200, {"ok": True, "message": "资源到期记录已保存。", "logId": "resource-log-1"}),
+            ),
+            patch.object(app, "dashboard_payload", return_value={"dashboard": True}),
+            patch.object(
+                app,
+                "json_response",
+                side_effect=lambda _handler, status, payload: responses.append((status, payload)),
+            ),
+        ):
+            app.MonitorHandler.do_POST(handler)
+
+        self.assertEqual(
+            responses,
+            [(200, {"ok": True, "message": "资源到期记录已保存。", "dashboard": True, "logId": "resource-log-1"})],
+        )
+
     def test_persist_resource_acknowledgement_rejects_missing_resource(self) -> None:
         with (
             patch.object(app, "load_config_raw", return_value={"resources": []}),

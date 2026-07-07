@@ -373,6 +373,8 @@ from backend.resources import (  # noqa: E402 - transitional re-export while app
     configure_resource_runtime,
     find_raw_resource,
     persist_resource_acknowledgement,
+    persist_resource_deletion,
+    persist_resource_record,
 )
 from backend.settings import (  # noqa: E402 - transitional re-export while app.py is split.
     SettingsRuntime,
@@ -964,6 +966,60 @@ class MonitorHandler(BaseHTTPRequestHandler):
             status, payload = persist_cert_renewal_enabled(
                 website_id,
                 enabled,
+                actor=auth_payload.get("user"),
+                source_ip=request_source_ip(self),
+            )
+            if status != 200:
+                json_response(self, status, payload)
+                return
+            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/settings/resource-upsert":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 鏍煎紡涓嶆纭€?"})
+                return
+
+            resource = body.get("resource") if isinstance(body.get("resource"), dict) else body
+            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
+            if not allowed:
+                json_response(self, auth_status, auth_payload)
+                return
+
+            status, payload = persist_resource_record(
+                resource,
+                actor=auth_payload.get("user"),
+                source_ip=request_source_ip(self),
+            )
+            if status != 200:
+                json_response(self, status, payload)
+                return
+            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/settings/resource-delete":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 鏍煎紡涓嶆纭€?"})
+                return
+
+            resource_id = str(body.get("resourceId") or "")
+            if not resource_id:
+                json_response(self, 400, {"ok": False, "message": "资源删除参数不正确。"})
+                return
+
+            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
+            if not allowed:
+                json_response(self, auth_status, auth_payload)
+                return
+
+            status, payload = persist_resource_deletion(
+                resource_id,
                 actor=auth_payload.get("user"),
                 source_ip=request_source_ip(self),
             )

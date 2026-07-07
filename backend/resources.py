@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -9,7 +10,10 @@ from backend.auth import public_user
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import monitoring_options
 from backend.config import save_config_raw as default_save_config_raw
-from backend.expiry import parse_expiry_timestamp, resource_expiry_items
+from backend.expiry import parse_expiry_timestamp, resource_expiry_items, safe_resource_renew_url
+
+
+RESOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 def _noop_append_recovery_log(_config: dict, event: dict) -> dict:
@@ -74,6 +78,171 @@ def resource_ack_log_event(
         "acknowledgedUntil": acknowledged_until,
         "resourceStatus": item.get("status", ""),
     }
+
+
+def _resource_operation_log_event(
+    invocation: str,
+    resource: dict,
+    *,
+    actor: dict | None,
+    source_ip: str,
+    now: float,
+) -> dict:
+    resource_id = str(resource.get("id") or "")
+    target_name = str(resource.get("name") or resource_id)
+    action_name = "保存资源到期记录" if invocation == "resource-upsert" else "删除资源到期记录"
+    return {
+        "id": f"{int(now * 1000)}-resource-{resource_id}-{invocation}",
+        "timestamp": now,
+        "invocation": invocation,
+        "targetType": "resource",
+        "targetId": resource_id,
+        "targetName": target_name,
+        "actionServerId": "",
+        "actionServerName": "",
+        "actionId": invocation,
+        "actionName": action_name,
+        "reason": action_name,
+        "consecutiveFailures": 0,
+        "ok": True,
+        "message": f"{action_name}：{target_name}",
+        "returnCode": None,
+        "durationSeconds": 0,
+        "stdout": "",
+        "stderr": "",
+        "actor": public_user(actor or {}) if actor else {},
+        "sourceIp": str(source_ip or ""),
+        "resourceStatus": "",
+    }
+
+
+def _clean_optional_text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _clean_optional_int(value: object) -> int | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def normalize_resource_record(resource: dict) -> tuple[dict | None, str]:
+    resource_id = _clean_optional_text(resource.get("id"))
+    if not resource_id or not RESOURCE_ID_PATTERN.match(resource_id):
+        return None, "资源 ID 不能为空，且只能包含字母、数字、点、横线、下划线或冒号。"
+
+    name = _clean_optional_text(resource.get("name")) or resource_id
+    expires_at = _clean_optional_text(resource.get("expiresAt") or resource.get("expiresOn") or resource.get("expiryDate"))
+    if parse_expiry_timestamp(expires_at) is None:
+        return None, "expiresAt 必须是有效的日期或时间。"
+
+    raw_renew_url = _clean_optional_text(resource.get("renewUrl"))
+    renew_url = safe_resource_renew_url(raw_renew_url)
+    if raw_renew_url and not renew_url:
+        return None, "renewUrl 必须使用 http 或 https 绝对地址。"
+
+    cleaned = {
+        "id": resource_id,
+        "name": name,
+        "type": _clean_optional_text(resource.get("type")) or "resource",
+        "provider": _clean_optional_text(resource.get("provider")),
+        "owner": _clean_optional_text(resource.get("owner")),
+        "linkedTarget": _clean_optional_text(resource.get("linkedTarget")),
+        "renewUrl": renew_url,
+        "notes": _clean_optional_text(resource.get("notes")),
+        "expiresAt": expires_at,
+    }
+    for key in ("warningDays", "criticalDays"):
+        parsed = _clean_optional_int(resource.get(key))
+        if parsed is not None:
+            cleaned[key] = parsed
+    return cleaned, ""
+
+
+def persist_resource_record(
+    resource: dict,
+    *,
+    actor: dict | None = None,
+    source_ip: str = "",
+    runtime: ResourceRuntime | None = None,
+) -> tuple[int, dict]:
+    cleaned, error = normalize_resource_record(resource)
+    if cleaned is None:
+        return 400, {"ok": False, "message": error}
+
+    active_runtime = runtime or _runtime
+    raw_config = active_runtime.load_config_raw()
+    resources = raw_config.get("resources")
+    if not isinstance(resources, list):
+        resources = []
+        raw_config["resources"] = resources
+    existing_index = next(
+        (index for index, item in enumerate(resources) if str(item.get("id") or "") == cleaned["id"]),
+        None,
+    )
+    if existing_index is None:
+        resources.append(cleaned)
+        changed_resource = cleaned
+    else:
+        existing = dict(resources[existing_index])
+        previous_expiry = existing.get("expiresAt")
+        existing.update(cleaned)
+        if previous_expiry != cleaned.get("expiresAt"):
+            for key in ("acknowledgedUntil", "acknowledgedBy", "acknowledgedAt"):
+                existing.pop(key, None)
+        resources[existing_index] = existing
+        changed_resource = existing
+
+    active_runtime.save_config_raw(raw_config)
+    log_event = _resource_operation_log_event(
+        "resource-upsert",
+        changed_resource,
+        actor=actor,
+        source_ip=source_ip,
+        now=active_runtime.now(),
+    )
+    try:
+        active_runtime.append_recovery_log(raw_config, log_event)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"资源到期记录已保存，但操作日志保存失败：{exc}"}
+    return 200, {"ok": True, "message": "资源到期记录已保存。", "logId": log_event["id"]}
+
+
+def persist_resource_deletion(
+    resource_id: str,
+    *,
+    actor: dict | None = None,
+    source_ip: str = "",
+    runtime: ResourceRuntime | None = None,
+) -> tuple[int, dict]:
+    active_runtime = runtime or _runtime
+    raw_config = active_runtime.load_config_raw()
+    resources = raw_config.get("resources")
+    if not isinstance(resources, list):
+        resources = []
+        raw_config["resources"] = resources
+    index = next((i for i, item in enumerate(resources) if str(item.get("id") or "") == resource_id), None)
+    if index is None:
+        return 404, {"ok": False, "message": "资源不存在。"}
+
+    removed = resources.pop(index)
+    active_runtime.save_config_raw(raw_config)
+    log_event = _resource_operation_log_event(
+        "resource-delete",
+        removed,
+        actor=actor,
+        source_ip=source_ip,
+        now=active_runtime.now(),
+    )
+    try:
+        active_runtime.append_recovery_log(raw_config, log_event)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"资源到期记录已删除，但操作日志保存失败：{exc}"}
+    return 200, {"ok": True, "message": "资源到期记录已删除。", "logId": log_event["id"]}
 
 
 def persist_resource_acknowledgement(
