@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-07-07",
+  "notes": [
+    "Public-safe example inventory.",
+    "Copy this shape to the runtime root and fill private values there.",
+    "Do not store SSH passwords in this file."
+  ],
+  "servers": [
+    {
+      "name": "linux-example-1",
+      "ip": "10.0.0.10",
+      "os": "linux",
+      "role": "app"
+    },
+    {
+      "name": "linux-example-2",
+      "ip": "10.0.0.11",
+      "os": "linux",
+      "role": "git"
+    },
+    {
+      "name": "windows-example-1",
+      "ip": "10.0.0.20",
+      "os": "windows",
+      "role": "desktop"
+    }
+  ]
+}

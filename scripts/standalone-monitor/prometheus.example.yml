@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - 127.0.0.1:19090
+        labels:
+          name: prometheus-local
+          os: windows
+          role: local-monitor
+
+  - job_name: local_windows
+    static_configs:
+      - targets:
+          - 127.0.0.1:9182
+        labels:
+          name: local-windows
+          os: windows
+          role: grafana-prometheus-host
+
+  - job_name: linux_servers
+    static_configs:
+      - targets:
+          - 10.0.0.10:9100
+        labels:
+          name: linux-example-1
+          os: linux
+          role: app
+      - targets:
+          - 10.0.0.11:9100
+        labels:
+          name: linux-example-2
+          os: linux
+          role: git
+
+  - job_name: windows_servers
+    static_configs:
+      - targets:
+          - 10.0.0.20:9182
+        labels:
+          name: windows-example-1
+          os: windows
+          role: desktop
