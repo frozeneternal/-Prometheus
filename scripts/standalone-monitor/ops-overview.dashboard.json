@@ -43,11 +43,11 @@
               "options": {
                 "0": {
                   "color": "red",
-                  "text": "Down"
+                  "text": "异常"
                 },
                 "1": {
                   "color": "green",
-                  "text": "Up"
+                  "text": "正常"
                 }
               },
               "type": "value"
@@ -105,7 +105,7 @@
           "refId": "A"
         }
       ],
-      "title": "Target Reachability",
+      "title": "目标连通性",
       "type": "stat"
     },
     {
@@ -139,7 +139,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 15
       },
       "id": 2,
       "options": {
@@ -169,7 +169,7 @@
           "refId": "A"
         }
       ],
-      "title": "Unhealthy Targets",
+      "title": "异常目标",
       "type": "table"
     },
     {
@@ -189,7 +189,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 22
       },
       "id": 3,
       "options": {
@@ -220,7 +220,7 @@
           "refId": "A"
         }
       ],
-      "title": "Linux CPU Usage",
+      "title": "Linux CPU 使用率",
       "type": "timeseries"
     },
     {
@@ -240,7 +240,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 22
       },
       "id": 4,
       "options": {
@@ -271,7 +271,7 @@
           "refId": "A"
         }
       ],
-      "title": "Linux Memory Usage",
+      "title": "Linux 内存使用率",
       "type": "timeseries"
     },
     {
@@ -291,7 +291,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "id": 5,
       "options": {
@@ -322,7 +322,7 @@
           "refId": "A"
         }
       ],
-      "title": "Linux Disk Usage",
+      "title": "Linux 磁盘使用率",
       "type": "timeseries"
     },
     {
@@ -340,7 +340,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 30
       },
       "id": 6,
       "options": {
@@ -382,7 +382,7 @@
           "refId": "B"
         }
       ],
-      "title": "Linux Network Throughput",
+      "title": "Linux 网络吞吐",
       "type": "timeseries"
     },
     {
@@ -402,7 +402,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "id": 7,
       "options": {
@@ -433,7 +433,7 @@
           "refId": "A"
         }
       ],
-      "title": "Windows CPU Usage",
+      "title": "Windows CPU 使用率",
       "type": "timeseries"
     },
     {
@@ -453,7 +453,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 38
       },
       "id": 8,
       "options": {
@@ -484,7 +484,7 @@
           "refId": "A"
         }
       ],
-      "title": "Windows Memory Usage",
+      "title": "Windows 内存使用率",
       "type": "timeseries"
     },
     {
@@ -504,7 +504,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 46
       },
       "id": 9,
       "options": {
@@ -535,7 +535,7 @@
           "refId": "A"
         }
       ],
-      "title": "Windows Disk Usage",
+      "title": "Windows 磁盘使用率",
       "type": "timeseries"
     },
     {
@@ -553,7 +553,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 46
       },
       "id": 10,
       "options": {
@@ -584,7 +584,235 @@
           "refId": "A"
         }
       ],
-      "title": "Scrape Duration",
+      "title": "采集耗时",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "text": "异常"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "正常"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 7
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "probe_success{job=\"blackbox\"}",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "网站可用性",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 7
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "probe_duration_seconds{job=\"blackbox\"}",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "网站响应时间",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 7
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "probe_http_status_code{job=\"blackbox\"}",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "网站状态码",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 7
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(probe_ssl_earliest_cert_expiry{job=\"blackbox\"} - time()) / 86400",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "证书剩余天数",
       "type": "timeseries"
     }
   ],
@@ -603,7 +831,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Local Ops Overview",
+  "title": "本地运维总览",
   "uid": "local-ops-overview",
   "version": 2,
   "weekStart": ""

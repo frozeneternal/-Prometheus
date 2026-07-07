@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Root = "E:\ops-monitor",
   [int]$ScriptTimeoutSeconds = 45
 )
@@ -118,6 +118,7 @@ exit `$exitCode
 $localChecks = @(
   @{Name="grafana"; Url="http://127.0.0.1:3000/api/health"},
   @{Name="prometheus"; Url="http://127.0.0.1:19090/-/ready"},
+  @{Name="blackbox_exporter"; Url="http://127.0.0.1:19115/metrics"},
   @{Name="windows_exporter"; Url="http://127.0.0.1:9182/metrics"}
 )
 

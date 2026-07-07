@@ -1,4 +1,4 @@
-# Standalone Prometheus + Grafana Stack
+﻿# Standalone Prometheus + Grafana Stack
 
 This folder contains public-safe templates for a local Windows-based
 Prometheus + Grafana stack. The private runtime installation can live outside
@@ -18,10 +18,12 @@ Typical runtime layout:
 ```text
 E:\ops-monitor
   apps\
+    blackbox_exporter\
     grafana\
     prometheus\
     windows_exporter\
   config\
+    blackbox.yml
     prometheus.yml
     targets.local.json
     grafana-custom.ini
@@ -63,4 +65,5 @@ Default local endpoints:
 - Grafana: `http://127.0.0.1:3000`
 - Grafana operations dashboard: `http://127.0.0.1:3000/d/local-ops-overview/local-ops-overview`
 - Prometheus: `http://127.0.0.1:19090`
+- Blackbox exporter: `http://127.0.0.1:19115/metrics`
 - Local Windows exporter: `http://127.0.0.1:9182/metrics`

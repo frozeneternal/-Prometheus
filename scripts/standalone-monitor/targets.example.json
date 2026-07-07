@@ -24,5 +24,12 @@
       "os": "windows",
       "role": "desktop"
     }
+  ],
+  "websites": [
+    {
+      "name": "website-example",
+      "url": "https://example.com/",
+      "role": "website"
+    }
   ]
 }

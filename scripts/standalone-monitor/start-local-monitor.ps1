@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Root = "E:\ops-monitor"
 )
 
@@ -130,9 +130,48 @@ providers:
   }
 }
 
+function Ensure-GrafanaDefaultLanguage {
+  $grafanaConfig = Join-Path $Config "grafana-custom.ini"
+  if (-not (Test-Path $grafanaConfig)) {
+    return
+  }
+
+  $content = Get-Content -Raw -Encoding UTF8 -LiteralPath $grafanaConfig
+  if ($content -match "(?m)^default_language\s*=") {
+    $content = [regex]::Replace($content, "(?m)^default_language\s*=.*$", "default_language = zh-Hans")
+  } elseif ($content -match "(?m)^\[users\]\s*$") {
+    $content = $content -replace "(?m)^\[users\]\s*$", "[users]`r`ndefault_language = zh-Hans"
+  } else {
+    $content = $content.TrimEnd() + "`r`n`r`n[users]`r`ndefault_language = zh-Hans`r`n"
+  }
+  Set-Content -LiteralPath $grafanaConfig -Value $content -Encoding UTF8
+}
+
+function Ensure-BlackboxConfig {
+  $blackboxConfig = Join-Path $Config "blackbox.yml"
+  if (Test-Path $blackboxConfig) {
+    return
+  }
+
+  @"
+modules:
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions:
+        - HTTP/1.1
+        - HTTP/2.0
+      follow_redirects: true
+      preferred_ip_protocol: ip4
+"@ | Set-Content -LiteralPath $blackboxConfig -Encoding UTF8
+}
+
 Ensure-SecretFile (Join-Path $Config "grafana-admin-password.txt") 18
 Ensure-SecretFile (Join-Path $Config "grafana-secret-key.txt") 32
+Ensure-GrafanaDefaultLanguage
 Ensure-GrafanaProvisioning
+Ensure-BlackboxConfig
 
 Start-ManagedProcess `
   -Name "windows_exporter" `
@@ -140,6 +179,16 @@ Start-ManagedProcess `
   -ArgumentList @("--web.listen-address=127.0.0.1:9182") `
   -WorkingDirectory (Join-Path $Apps "windows_exporter") `
   -Port 9182
+
+Start-ManagedProcess `
+  -Name "blackbox_exporter" `
+  -FilePath (Join-Path $Apps "blackbox_exporter\blackbox_exporter.exe") `
+  -ArgumentList @(
+    "--config.file=$(Join-Path $Config 'blackbox.yml')",
+    "--web.listen-address=127.0.0.1:19115"
+  ) `
+  -WorkingDirectory (Join-Path $Apps "blackbox_exporter") `
+  -Port 19115
 
 Start-ManagedProcess `
   -Name "prometheus" `
@@ -161,5 +210,6 @@ Start-ManagedProcess `
   -Port 3000
 
 Write-Host "Prometheus: http://127.0.0.1:19090"
+Write-Host "Blackbox:   http://127.0.0.1:19115"
 Write-Host "Grafana:    http://127.0.0.1:3000"
 Write-Host "Grafana admin password file: $(Join-Path $Config 'grafana-admin-password.txt')"

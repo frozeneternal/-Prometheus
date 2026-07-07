@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $Run = Join-Path $Root "run"
 
-foreach ($name in @("grafana", "prometheus", "windows_exporter")) {
+foreach ($name in @("grafana", "prometheus", "blackbox_exporter", "windows_exporter")) {
   $pidFile = Join-Path $Run "$name.pid"
   if (-not (Test-Path $pidFile)) {
     Write-Host "$name: no pid file"

@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Root = "E:\ops-monitor",
   [switch]$Json,
   [switch]$DeepDiskScan,
@@ -187,18 +187,21 @@ function Get-HttpStatus($Url) {
 $local = @(
   [pscustomobject]@{Name="Grafana"; Url="http://127.0.0.1:3000/api/health"; Status=Get-HttpStatus "http://127.0.0.1:3000/api/health"},
   [pscustomobject]@{Name="Prometheus"; Url="http://127.0.0.1:19090/-/ready"; Status=Get-HttpStatus "http://127.0.0.1:19090/-/ready"},
+  [pscustomobject]@{Name="Blackbox exporter"; Url="http://127.0.0.1:19115/metrics"; Status=Get-HttpStatus "http://127.0.0.1:19115/metrics"},
   [pscustomobject]@{Name="Windows exporter"; Url="http://127.0.0.1:9182/metrics"; Status=Get-HttpStatus "http://127.0.0.1:9182/metrics"}
 )
 
 $binaryHealth = @(
   Get-ExecutableVersionStatus -Name "Prometheus" -RelativePath "prometheus\prometheus.exe" -ArgumentList @("--version")
   Get-ExecutableVersionStatus -Name "Grafana" -RelativePath "grafana\bin\grafana.exe" -ArgumentList @("-v")
+  Get-ExecutableVersionStatus -Name "Blackbox exporter" -RelativePath "blackbox_exporter\blackbox_exporter.exe" -ArgumentList @("--version")
   Get-ExecutableVersionStatus -Name "Windows exporter" -RelativePath "windows_exporter\windows_exporter.exe" -ArgumentList @("--version")
 )
 
 $appDirectoryHealth = @(
   Get-AppDirectoryStatus -Name "Prometheus app dir" -RelativePath "prometheus"
   Get-AppDirectoryStatus -Name "Grafana app dir" -RelativePath "grafana"
+  Get-AppDirectoryStatus -Name "Blackbox exporter app dir" -RelativePath "blackbox_exporter"
   Get-AppDirectoryStatus -Name "Windows exporter app dir" -RelativePath "windows_exporter"
 )
 

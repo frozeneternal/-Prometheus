@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 import json
@@ -65,25 +65,53 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
 
         self.assertIn("Ensure-GrafanaProvisioning", start_script)
+        self.assertIn("Ensure-GrafanaDefaultLanguage", start_script)
+        self.assertIn("default_language = zh-Hans", start_script)
+        self.assertIn("Ensure-BlackboxConfig", start_script)
         self.assertIn("grafana-provisioning", start_script)
         self.assertIn("grafana-dashboards", start_script)
         self.assertIn("ops-overview.dashboard.json", start_script)
         self.assertIn("local-prometheus", start_script)
 
+    def test_standalone_stack_manages_blackbox_exporter(self) -> None:
+        start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
+        stop_script = (STANDALONE / "stop-local-monitor.ps1").read_text(encoding="utf-8")
+        status_script = (STANDALONE / "status-local-monitor.ps1").read_text(encoding="utf-8")
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+        prometheus = (STANDALONE / "prometheus.example.yml").read_text(encoding="utf-8")
+        targets = json.loads((STANDALONE / "targets.example.json").read_text(encoding="utf-8"))
+
+        self.assertIn("blackbox_exporter", start_script)
+        self.assertIn("--config.file=$(Join-Path $Config 'blackbox.yml')", start_script)
+        self.assertIn("--web.listen-address=127.0.0.1:19115", start_script)
+        self.assertIn('"blackbox_exporter"', stop_script)
+        self.assertIn("Blackbox exporter", status_script)
+        self.assertIn("blackbox_exporter\\blackbox_exporter.exe", status_script)
+        self.assertIn("http://127.0.0.1:19115/metrics", watchdog)
+        self.assertIn("job_name: blackbox", prometheus)
+        self.assertIn("metrics_path: /probe", prometheus)
+        self.assertIn("replacement: 127.0.0.1:19115", prometheus)
+        self.assertTrue(targets["websites"])
+        self.assertIn("url", targets["websites"][0])
+
     def test_ops_overview_dashboard_covers_core_resource_views(self) -> None:
         dashboard = json.loads((STANDALONE / "ops-overview.dashboard.json").read_text(encoding="utf-8"))
         panel_titles = {panel["title"] for panel in dashboard["panels"]}
         expected_titles = {
-            "Target Reachability",
-            "Unhealthy Targets",
-            "Linux CPU Usage",
-            "Linux Memory Usage",
-            "Linux Disk Usage",
-            "Linux Network Throughput",
-            "Windows CPU Usage",
-            "Windows Memory Usage",
-            "Windows Disk Usage",
-            "Scrape Duration",
+            "目标连通性",
+            "异常目标",
+            "Linux CPU 使用率",
+            "Linux 内存使用率",
+            "Linux 磁盘使用率",
+            "Linux 网络吞吐",
+            "Windows CPU 使用率",
+            "Windows 内存使用率",
+            "Windows 磁盘使用率",
+            "采集耗时",
+            "网站可用性",
+            "网站响应时间",
+            "网站状态码",
+            "证书剩余天数",
         }
         expressions = "\n".join(
             target.get("expr", "")
@@ -93,7 +121,10 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
 
         self.assertTrue(expected_titles.issubset(panel_titles))
         self.assertEqual("local-ops-overview", dashboard["uid"])
+        self.assertEqual("本地运维总览", dashboard["title"])
         self.assertIn("local-prometheus", json.dumps(dashboard))
+        self.assertIn("正常", json.dumps(dashboard, ensure_ascii=False))
+        self.assertIn("异常", json.dumps(dashboard, ensure_ascii=False))
         self.assertIn("up == 0", expressions)
         self.assertIn("node_cpu_seconds_total", expressions)
         self.assertIn("node_memory_MemAvailable_bytes", expressions)
@@ -104,6 +135,18 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("windows_memory_physical_total_bytes", expressions)
         self.assertIn("windows_logical_disk_free_bytes", expressions)
         self.assertIn("scrape_duration_seconds", expressions)
+        self.assertIn("probe_success", expressions)
+        self.assertIn("probe_duration_seconds", expressions)
+        self.assertIn("probe_http_status_code", expressions)
+        self.assertIn("probe_ssl_earliest_cert_expiry", expressions)
+
+    def test_ops_overview_dashboard_prioritizes_website_panels_on_first_screen(self) -> None:
+        dashboard = json.loads((STANDALONE / "ops-overview.dashboard.json").read_text(encoding="utf-8"))
+        positions = {panel["title"]: panel["gridPos"] for panel in dashboard["panels"]}
+
+        for title in ("网站可用性", "网站响应时间", "网站状态码", "证书剩余天数"):
+            with self.subTest(title=title):
+                self.assertLessEqual(positions[title]["y"], 15)
 
     def test_status_script_reports_runtime_safety_without_restart(self) -> None:
         status_script = (STANDALONE / "status-local-monitor.ps1").read_text(encoding="utf-8")
@@ -117,6 +160,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("prometheus\\prometheus.exe", status_script)
         self.assertIn("grafana\\bin\\grafana.exe", status_script)
         self.assertIn("windows_exporter\\windows_exporter.exe", status_script)
+        self.assertIn("blackbox_exporter\\blackbox_exporter.exe", status_script)
         self.assertIn(".WaitForExit(", status_script)
         self.assertIn("$versionOutput", status_script)
         self.assertIn("$errorMessage = if ($result.Status -eq \"ok\")", status_script)
