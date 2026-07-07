@@ -9,6 +9,7 @@ $ScriptPath = Join-Path $Root "scripts\ssh_metrics_tunnel.py"
 $Run = Join-Path $Root "run"
 $Logs = Join-Path $Root "logs"
 $PidFile = Join-Path $Run "ssh_metrics_tunnel.pid"
+$CredentialFile = Join-Path $Root "config\ssh-credential.local.xml"
 
 New-Item -ItemType Directory -Force -Path $Run, $Logs | Out-Null
 
@@ -18,8 +19,13 @@ if (-not (Test-Path $ConfigPath)) {
 if (-not (Test-Path $ScriptPath)) {
   throw "Missing tunnel script: $ScriptPath"
 }
+if ((-not $env:OPS_SSH_USER -or -not $env:OPS_SSH_PASSWORD) -and (Test-Path $CredentialFile)) {
+  $credential = Import-Clixml -LiteralPath $CredentialFile
+  $env:OPS_SSH_USER = $credential.UserName
+  $env:OPS_SSH_PASSWORD = $credential.GetNetworkCredential().Password
+}
 if (-not $env:OPS_SSH_USER -or -not $env:OPS_SSH_PASSWORD) {
-  throw "OPS_SSH_USER and OPS_SSH_PASSWORD must be set before starting tunnels."
+  throw "OPS_SSH_USER and OPS_SSH_PASSWORD must be set, or $CredentialFile must exist."
 }
 
 function Get-ProcessCommandLine($ProcessId) {

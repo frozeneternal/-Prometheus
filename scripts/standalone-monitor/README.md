@@ -43,10 +43,15 @@ powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\stop-local-monit
 SSH tunnel commands for hosts where exporter ports are blocked:
 
 ```powershell
+$ua = Get-Credential
+powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\set-ssh-credential.ps1 -Credential $ua
+$securePassword = Read-Host "SSH password" -AsSecureString
+powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\set-ssh-credential.ps1 -UserName "<private user>" -Password $securePassword
 $env:OPS_SSH_USER = "<private user>"
 $env:OPS_SSH_PASSWORD = "<private password>"
 powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\start-ssh-tunnels.ps1
 powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\stop-ssh-tunnels.ps1
+powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\clear-ssh-credential.ps1
 ```
 
 Prometheus should scrape the tunnel listeners as `127.0.0.1:19xxx` targets.

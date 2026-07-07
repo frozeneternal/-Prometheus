@@ -16,6 +16,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "stop-local-monitor.ps1",
             STANDALONE / "status-local-monitor.ps1",
             STANDALONE / "ssh_metrics_tunnel.py",
+            STANDALONE / "set-ssh-credential.ps1",
+            STANDALONE / "clear-ssh-credential.ps1",
             STANDALONE / "start-ssh-tunnels.ps1",
             STANDALONE / "stop-ssh-tunnels.ps1",
             STANDALONE / "watchdog-local-monitor.ps1",
@@ -84,6 +86,34 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("start-ssh-tunnels.ps1", watchdog)
         self.assertIn("127.0.0.1", watchdog)
         self.assertIn("watchdog-local-monitor.log", watchdog)
+        self.assertIn("Invoke-MonitorScript", watchdog)
+        self.assertIn("Start-Process", watchdog)
+        self.assertIn("WaitForExit", watchdog)
+        self.assertIn("RedirectStandardOutput", watchdog)
+        self.assertIn("RedirectStandardError", watchdog)
+        self.assertIn("ExitCodeFile", watchdog)
+        self.assertIn("Set-Content -LiteralPath", watchdog)
+        self.assertIn(".exitcode", watchdog)
+        self.assertNotIn("System.Diagnostics.ProcessStartInfo", watchdog)
+        self.assertNotIn("StandardOutput.ReadToEnd", watchdog)
         self.assertNotIn("Stop-Process", watchdog)
         self.assertNotIn("docker", watchdog.lower())
         self.assertNotIn(" || ", watchdog)
+        self.assertNotIn("| ForEach-Object { Write-WatchdogLog $_ }", watchdog)
+
+    def test_ssh_credentials_use_dpapi_export_file_not_plaintext(self) -> None:
+        setter = (STANDALONE / "set-ssh-credential.ps1").read_text(encoding="utf-8")
+        clearer = (STANDALONE / "clear-ssh-credential.ps1").read_text(encoding="utf-8")
+        starter = (STANDALONE / "start-ssh-tunnels.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("ssh-credential.local.xml", setter)
+        self.assertIn("Export-Clixml", setter)
+        self.assertIn("Get-Credential", setter)
+        self.assertIn("[string]$UserName", setter)
+        self.assertIn("[SecureString]$Password", setter)
+        self.assertIn("ssh-credential.local.xml", starter)
+        self.assertIn("Import-Clixml", starter)
+        self.assertIn("GetNetworkCredential().Password", starter)
+        self.assertIn("Remove-Item", clearer)
+        for script in (setter, clearer, starter):
+            self.assertNotIn("-AsPlainText", script)
