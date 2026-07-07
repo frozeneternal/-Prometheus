@@ -472,6 +472,28 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("persist_resource_acknowledgement", backend_py)
         self.assertIn('authorize_operation(config, body, "operator")', backend_py)
 
+    def test_resource_management_has_frontend_and_backend_routes(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="resourceManagementPanel"', index_html)
+        self.assertIn('id="resourceExpiryForm"', index_html)
+        self.assertIn('id="resourceId"', index_html)
+        self.assertIn("saveResourceExpiryRecord", actions_js)
+        self.assertIn("deleteResourceExpiryRecord", actions_js)
+        self.assertIn("upsertResourceExpiryRecord", client_js)
+        self.assertIn("removeResourceExpiryRecord", client_js)
+        self.assertIn('"/api/settings/resource-upsert"', client_js)
+        self.assertIn('"/api/settings/resource-delete"', client_js)
+        self.assertIn('data-resource-edit="true"', app_js)
+        self.assertIn('data-resource-delete="true"', app_js)
+        self.assertIn("populateResourceForm", app_js)
+        self.assertIn('parsed.path == "/api/settings/resource-upsert"', backend_py)
+        self.assertIn('parsed.path == "/api/settings/resource-delete"', backend_py)
+
     def test_logout_calls_backend_session_revocation_route(self) -> None:
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")

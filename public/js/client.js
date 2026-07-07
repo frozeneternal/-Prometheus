@@ -79,6 +79,14 @@ export function acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, a
   return postJson("/api/settings/resource-ack", { resourceId, acknowledgedUntil, ...auth });
 }
 
+export function upsertResourceExpiryRecord({ resource, auth }) {
+  return postJson("/api/settings/resource-upsert", { resource, ...auth });
+}
+
+export function removeResourceExpiryRecord({ resourceId, auth }) {
+  return postJson("/api/settings/resource-delete", { resourceId, ...auth });
+}
+
 export function runServerAction(payload) {
   return postJson("/api/actions/run", payload);
 }

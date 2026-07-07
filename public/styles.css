@@ -725,6 +725,31 @@ select {
   gap: 12px;
 }
 
+.resource-management-panel {
+  margin-bottom: 12px;
+}
+
+.resource-expiry-form {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(140px, 1.2fr) minmax(90px, 0.7fr) minmax(130px, 0.9fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.resource-expiry-form input,
+.resource-expiry-form select {
+  width: 100%;
+}
+
+.resource-expiry-form #resourceRenewUrl,
+.resource-expiry-form #resourceNotes {
+  grid-column: span 2;
+}
+
+.resource-expiry-form .login-error {
+  min-width: 120px;
+}
+
 .expiry-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1400,5 +1425,14 @@ button.secondary:hover,
 
   .account-user-form {
     grid-template-columns: 1fr;
+  }
+
+  .resource-expiry-form {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-expiry-form #resourceRenewUrl,
+  .resource-expiry-form #resourceNotes {
+    grid-column: auto;
   }
 }

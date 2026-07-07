@@ -10,11 +10,13 @@ import {
 import {
   acknowledgeResourceExpiry,
   configureActionRuntime,
+  deleteResourceExpiryRecord,
   openActionDialog,
   openManualBackupDialog,
   openManualCertRenewalDialog,
   openManualRecoveryDialog,
   runCurrentAction,
+  saveResourceExpiryRecord,
   toggleAutoBackup,
   toggleAutoRecovery,
   toggleCertRenewal,
@@ -498,6 +500,65 @@ function renderResourceExpiry() {
   $("#resourceExpiryList").querySelectorAll("[data-resource-ack]").forEach((button) => {
     button.addEventListener("click", () => acknowledgeResourceExpiry(button.dataset.resourceId));
   });
+  $("#resourceExpiryList").querySelectorAll("[data-resource-edit]").forEach((button) => {
+    button.addEventListener("click", () => populateResourceForm(button.dataset.resourceId));
+  });
+  $("#resourceExpiryList").querySelectorAll("[data-resource-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteResourceExpiryRecord(button.dataset.resourceId));
+  });
+}
+
+function resourceDateInputValue(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function resetResourceForm() {
+  $("#resourceExpiryForm").reset();
+  $("#resourceId").readOnly = false;
+  $("#resourceFormError").textContent = "";
+}
+
+function populateResourceForm(resourceId) {
+  const item = (state.dashboard?.resourceExpiryItems || []).find((candidate) => candidate.id === resourceId);
+  if (!item) return;
+  $("#resourceId").value = item.id || "";
+  $("#resourceId").readOnly = true;
+  $("#resourceName").value = item.name || "";
+  $("#resourceType").value = item.type || "resource";
+  $("#resourceExpiresAt").value = resourceDateInputValue(item.expiresAt);
+  $("#resourceProvider").value = item.provider || "";
+  $("#resourceOwner").value = item.owner || "";
+  $("#resourceRenewUrl").value = item.renewUrl || "";
+  $("#resourceNotes").value = item.notes || "";
+  $("#resourceFormError").textContent = "";
+}
+
+function resourceFormPayload() {
+  return {
+    id: $("#resourceId").value.trim(),
+    name: $("#resourceName").value.trim(),
+    type: $("#resourceType").value,
+    expiresAt: $("#resourceExpiresAt").value,
+    provider: $("#resourceProvider").value.trim(),
+    owner: $("#resourceOwner").value.trim(),
+    renewUrl: $("#resourceRenewUrl").value.trim(),
+    notes: $("#resourceNotes").value.trim(),
+  };
+}
+
+async function submitResourceForm(event) {
+  event.preventDefault();
+  $("#resourceFormError").textContent = "";
+  const button = $("#resourceSaveButton");
+  button.disabled = true;
+  try {
+    await saveResourceExpiryRecord(resourceFormPayload());
+    resetResourceForm();
+  } catch (error) {
+    $("#resourceFormError").textContent = error.payload?.message || error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderIncidentLogs() {
@@ -687,6 +748,10 @@ function resourceExpiryCard(item) {
   const ackButton = canAcknowledge
     ? `<button type="button" class="secondary recovery-trigger compact" data-resource-ack="true" data-resource-id="${escapeHtml(item.id)}">确认 7 天</button>`
     : "";
+  const manageButtons = `
+    <button type="button" class="secondary recovery-trigger compact" data-resource-edit="true" data-resource-id="${escapeHtml(item.id)}">编辑</button>
+    <button type="button" class="secondary recovery-trigger compact high" data-resource-delete="true" data-resource-id="${escapeHtml(item.id)}">删除</button>
+  `;
   return `<article class="expiry-card ${escapeHtml(status)}">
     <div class="expiry-head">
       <div>
@@ -702,7 +767,7 @@ function resourceExpiryCard(item) {
       <span>临界 ${escapeHtml(String(item.criticalDays ?? 7))} 天</span>
       ${meta.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}
     </div>
-    ${item.notes || handlingWarning || renewLink || ackText || ackButton ? `<div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${handlingWarning ? `<span>${escapeHtml(handlingWarning)}</span>` : ""}${ackText ? `<span>${escapeHtml(ackText)}</span>` : ""}${renewLink}${ackButton}</div>` : ""}
+    <div class="expiry-notes">${item.notes ? `<span>${escapeHtml(item.notes)}</span>` : ""}${handlingWarning ? `<span>${escapeHtml(handlingWarning)}</span>` : ""}${ackText ? `<span>${escapeHtml(ackText)}</span>` : ""}${renewLink}${ackButton}${manageButtons}</div>
   </article>`;
 }
 
@@ -984,6 +1049,8 @@ configureActionRuntime({ loadConfig, refreshDashboard, render });
 $("#refreshButton").addEventListener("click", refreshDashboard);
 $("#loginForm").addEventListener("submit", (event) => loginCurrentUser(event, { refreshDashboard }));
 $("#logoutButton").addEventListener("click", logoutCurrentUser);
+$("#resourceExpiryForm").addEventListener("submit", submitResourceForm);
+$("#resourceResetButton").addEventListener("click", resetResourceForm);
 $("#actionForm").addEventListener("submit", async (event) => {
   if (event.submitter?.value !== "run") return;
   event.preventDefault();

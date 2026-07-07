@@ -163,6 +163,28 @@
             <div id="websiteGrid" class="website-grid"></div>
 
             <h2 class="section-title section-gap">资源到期</h2>
+            <div id="resourceManagementPanel" class="resource-management-panel">
+              <form id="resourceExpiryForm" class="resource-expiry-form" autocomplete="off">
+                <input id="resourceId" name="resourceId" autocomplete="off" placeholder="资源 ID">
+                <input id="resourceName" name="resourceName" autocomplete="off" placeholder="名称">
+                <select id="resourceType" name="resourceType">
+                  <option value="resource">资源</option>
+                  <option value="domain">域名</option>
+                  <option value="server">服务器</option>
+                  <option value="account">账号</option>
+                  <option value="license">授权</option>
+                  <option value="contract">合同</option>
+                </select>
+                <input id="resourceExpiresAt" name="resourceExpiresAt" type="date">
+                <input id="resourceProvider" name="resourceProvider" autocomplete="off" placeholder="供应商">
+                <input id="resourceOwner" name="resourceOwner" autocomplete="off" placeholder="负责人">
+                <input id="resourceRenewUrl" name="resourceRenewUrl" autocomplete="off" placeholder="续费入口">
+                <input id="resourceNotes" name="resourceNotes" autocomplete="off" placeholder="备注">
+                <button id="resourceSaveButton" type="submit">保存</button>
+                <button id="resourceResetButton" class="secondary" type="button">清空</button>
+                <span id="resourceFormError" class="login-error"></span>
+              </form>
+            </div>
             <div id="resourceExpiryEmptyState" class="empty-state hidden">
               <h2>还没有资源到期记录</h2>
               <p>资源、账号、域名、合同或授权到期后会显示在这里。</p>

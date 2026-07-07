@@ -1,7 +1,9 @@
 import { authPayload } from "./accounts.js";
 import {
   acknowledgeResourceExpiryRisk,
+  removeResourceExpiryRecord,
   runServerAction,
+  upsertResourceExpiryRecord,
   updateAutoBackup,
   updateAutoRecovery,
   updateCertRenewal,
@@ -140,6 +142,35 @@ export async function acknowledgeResourceExpiry(resourceId) {
     runtime.render();
   } catch (error) {
     await runtime.refreshDashboard();
+  }
+}
+
+export async function saveResourceExpiryRecord(resource) {
+  try {
+    const payload = await upsertResourceExpiryRecord({ resource, auth: authPayload() });
+    state.dashboard = payload;
+    state.dashboard.ok = true;
+    await runtime.loadConfig();
+    runtime.render();
+    return payload;
+  } catch (error) {
+    await runtime.refreshDashboard();
+    throw error;
+  }
+}
+
+export async function deleteResourceExpiryRecord(resourceId) {
+  if (!resourceId || !window.confirm("确认删除这条资源到期记录？")) return null;
+  try {
+    const payload = await removeResourceExpiryRecord({ resourceId, auth: authPayload() });
+    state.dashboard = payload;
+    state.dashboard.ok = true;
+    await runtime.loadConfig();
+    runtime.render();
+    return payload;
+  } catch (error) {
+    await runtime.refreshDashboard();
+    throw error;
   }
 }
 
