@@ -36,6 +36,7 @@ Common commands:
 ```powershell
 powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\start-local-monitor.ps1
 powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\status-local-monitor.ps1
+powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\watchdog-local-monitor.ps1
 powershell -ExecutionPolicy Bypass -File E:\ops-monitor\scripts\stop-local-monitor.ps1
 ```
 

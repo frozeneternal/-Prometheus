@@ -18,6 +18,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "ssh_metrics_tunnel.py",
             STANDALONE / "start-ssh-tunnels.ps1",
             STANDALONE / "stop-ssh-tunnels.ps1",
+            STANDALONE / "watchdog-local-monitor.ps1",
             STANDALONE / "prometheus.example.yml",
             STANDALONE / "targets.example.json",
             STANDALONE / "tunnels.example.json",
@@ -75,3 +76,14 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             if any(line.startswith("param(") for line in lines):
                 with self.subTest(path=path.relative_to(ROOT)):
                     self.assertTrue(lines[0].startswith("param("), "param block must be first statement")
+
+    def test_watchdog_only_starts_owned_local_components(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("start-local-monitor.ps1", watchdog)
+        self.assertIn("start-ssh-tunnels.ps1", watchdog)
+        self.assertIn("127.0.0.1", watchdog)
+        self.assertIn("watchdog-local-monitor.log", watchdog)
+        self.assertNotIn("Stop-Process", watchdog)
+        self.assertNotIn("docker", watchdog.lower())
+        self.assertNotIn(" || ", watchdog)
