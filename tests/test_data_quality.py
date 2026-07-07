@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +24,15 @@ def vector(value: float | None) -> dict:
 
 class DataQualityTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        entity_state_patch = patch.object(
+            app,
+            "ENTITY_STATE_PATH",
+            Path(self._tmpdir.name) / "entity_states.json",
+        )
+        entity_state_patch.start()
+        self.addCleanup(entity_state_patch.stop)
         with app.RUNTIME_LOCK:
             app.RUNTIME_STATE["entityStates"] = {}
             app.RUNTIME_STATE["recoveryLogs"] = []
@@ -312,6 +323,43 @@ class DataQualityTests(unittest.TestCase):
         self.assertIn("冷却", result["message"])
         self.assertEqual(result["lastLogId"], "manual-log-1")
         duplicate_auto_action.assert_not_called()
+
+    def test_runtime_entity_state_persists_and_bootstrap_restores(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "entity_states.json"
+            with patch.object(app, "ENTITY_STATE_PATH", state_path):
+                app.set_runtime_entity_state(
+                    "server",
+                    "srv1",
+                    {
+                        "consecutiveFailures": 2,
+                        "activeIncidentId": "incident-1",
+                        "incidentStartedAt": 1000.0,
+                        "incidentReason": "node exporter down",
+                    },
+                )
+
+                saved = json.loads(state_path.read_text(encoding="utf-8"))
+                self.assertEqual(saved["server:srv1"]["activeIncidentId"], "incident-1")
+
+                app.RUNTIME_STATE["entityStates"] = {}
+                with (
+                    patch.object(app, "load_recovery_logs_from_disk", return_value=[]),
+                    patch.object(app, "load_incident_logs_from_disk", return_value=[]),
+                    patch.object(app, "load_auth_audit_logs_from_disk", return_value=[]),
+                    patch.object(app, "load_revoked_sessions_from_disk", return_value={}),
+                    patch.object(app, "load_login_attempts_from_disk", return_value={}),
+                ):
+                    app.bootstrap_runtime_state()
+
+                restored = app.get_runtime_entity_state("server", "srv1")
+                self.assertEqual(restored["activeIncidentId"], "incident-1")
+                self.assertEqual(restored["consecutiveFailures"], 2)
+
+                app.reset_runtime_entity_state("server", "srv1", "target recovered")
+                reset_saved = json.loads(state_path.read_text(encoding="utf-8"))
+                self.assertNotIn("activeIncidentId", reset_saved["server:srv1"])
+                self.assertEqual(reset_saved["server:srv1"]["lastReason"], "target recovered")
 
     def test_manual_backup_success_blocks_duplicate_auto_backup(self) -> None:
         config = {

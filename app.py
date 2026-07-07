@@ -39,6 +39,7 @@ PUBLIC_DIR = BASE_DIR / "public"
 DATA_DIR = BASE_DIR / "data"
 RECOVERY_LOG_PATH = DATA_DIR / "recovery_logs.json"
 INCIDENT_LOG_PATH = DATA_DIR / "incident_logs.json"
+ENTITY_STATE_PATH = DATA_DIR / "entity_states.json"
 SESSION_REVOCATION_PATH = DATA_DIR / "revoked_sessions.json"
 LOGIN_ATTEMPT_PATH = DATA_DIR / "login_attempts.json"
 AUTH_AUDIT_LOG_PATH = DATA_DIR / "auth_audit_logs.json"
@@ -114,6 +115,30 @@ def save_incident_logs_to_disk(logs: list[dict]) -> None:
     ensure_data_dir()
     with INCIDENT_LOG_PATH.open("w", encoding="utf-8") as fh:
         json.dump(logs, fh, ensure_ascii=False, indent=2)
+
+
+def load_entity_states_from_disk() -> dict[str, dict]:
+    ensure_data_dir()
+    if not ENTITY_STATE_PATH.exists():
+        return {}
+
+    try:
+        with ENTITY_STATE_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): value for key, value in data.items() if isinstance(value, dict)}
+
+
+def save_entity_states_to_disk(states: dict[str, dict]) -> None:
+    ensure_data_dir()
+    temp_path = ENTITY_STATE_PATH.with_name(f"{ENTITY_STATE_PATH.name}.tmp")
+    with temp_path.open("w", encoding="utf-8") as fh:
+        json.dump(states, fh, ensure_ascii=False, indent=2)
+    temp_path.replace(ENTITY_STATE_PATH)
 
 
 def load_auth_audit_logs_from_disk() -> list[dict]:
@@ -204,6 +229,8 @@ def set_runtime_entity_state(target_type: str, target_id: str, state: dict) -> N
     key = runtime_entity_key(target_type, target_id)
     with RUNTIME_LOCK:
         RUNTIME_STATE["entityStates"][key] = state
+        states = dict(RUNTIME_STATE["entityStates"])
+    save_entity_states_to_disk(states)
 
 
 def reset_runtime_entity_state(target_type: str, target_id: str, reason: str = "") -> None:
@@ -552,6 +579,7 @@ def bootstrap_runtime_state() -> None:
     logs = load_recovery_logs_from_disk()
     incident_logs = load_incident_logs_from_disk()
     auth_audit_logs = load_auth_audit_logs_from_disk()
+    entity_states = load_entity_states_from_disk()
     current = time.time()
     load_revoked_sessions(load_revoked_sessions_from_disk(), now=current)
     load_login_attempts(load_login_attempts_from_disk(), now=current)
@@ -559,6 +587,7 @@ def bootstrap_runtime_state() -> None:
         RUNTIME_STATE["recoveryLogs"] = logs
         RUNTIME_STATE["incidentLogs"] = incident_logs
         RUNTIME_STATE["authAuditLogs"] = auth_audit_logs
+        RUNTIME_STATE["entityStates"] = entity_states
 
 
 def run_action(config: dict, body: dict, *, source_ip: str = "") -> tuple[int, dict]:
