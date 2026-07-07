@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from .auth import ROLE_RANK, login_attempt_key
-from .expiry import parse_expiry_datetime
+from .expiry import parse_expiry_datetime, safe_resource_renew_url
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -983,11 +983,23 @@ def config_validation_summary(config: dict) -> dict:
                     resource_id,
                 )
             )
+        raw_renew_url = str(resource.get("renewUrl") or "").strip()
+        safe_renew_url = safe_resource_renew_url(raw_renew_url)
         handling_paths = (
-            str(resource.get("renewUrl") or "").strip(),
+            safe_renew_url,
             str(resource.get("owner") or "").strip(),
             str(resource.get("provider") or "").strip(),
         )
+        if raw_renew_url and not safe_renew_url:
+            issues.append(
+                make_issue(
+                    f"resource-renew-url-invalid:{resource_id}",
+                    "warning",
+                    "资源 renewUrl 必须是 http 或 https 绝对地址；不安全链接不会在前端展示。",
+                    "resource",
+                    resource_id,
+                )
+            )
         if not any(handling_paths):
             issues.append(
                 make_issue(

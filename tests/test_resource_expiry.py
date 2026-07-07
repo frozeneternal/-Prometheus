@@ -97,6 +97,26 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertIn("owner", item.get("handlingMessage", ""))
         self.assertIn("provider", item.get("handlingMessage", ""))
 
+    def test_resource_expiry_does_not_surface_unsafe_renewal_links(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {
+                    "id": "unsafe-renewal",
+                    "name": "Unsafe Renewal",
+                    "expiresAt": "2026-07-05",
+                    "renewUrl": "javascript:alert(1)",
+                },
+            ],
+        }
+
+        item = app.resource_expiry_items(config, now=now)[0]
+
+        self.assertEqual(item["renewUrl"], "")
+        self.assertIs(item["handlingReady"], False)
+        self.assertIn("renewUrl", item["missingHandlingFields"])
+        self.assertIn("http", item["handlingMessage"].lower())
+
     def test_resource_expiry_summary_counts_actionable_items(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {

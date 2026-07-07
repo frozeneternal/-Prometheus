@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import urllib.parse
 from datetime import datetime, timezone
 
 
@@ -97,13 +98,36 @@ def resource_requires_action(status: str, acknowledged: bool) -> bool:
     return False
 
 
+def safe_resource_renew_url(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return ""
+    if not parsed.netloc:
+        return ""
+    return text
+
+
 def resource_handling_state(resource: dict) -> tuple[bool, list[str], str]:
-    required_paths = ("renewUrl", "owner", "provider")
-    missing = [field for field in required_paths if not str(resource.get(field) or "").strip()]
-    ready = len(missing) < len(required_paths)
+    raw_renew_url = str(resource.get("renewUrl") or "").strip()
+    renew_url = safe_resource_renew_url(raw_renew_url)
+    owner = str(resource.get("owner") or "").strip()
+    provider = str(resource.get("provider") or "").strip()
+    missing = []
+    if not renew_url:
+        missing.append("renewUrl")
+    if not owner:
+        missing.append("owner")
+    if not provider:
+        missing.append("provider")
+    ready = bool(renew_url or owner or provider)
     message = ""
+    if raw_renew_url and not renew_url:
+        message = "renewUrl 必须使用 http 或 https 绝对地址，当前链接已被隐藏。"
     if not ready:
-        message = "未配置 renewUrl、owner 或 provider，资源到期后没有明确续费入口或联系人。"
+        message = message or "未配置 renewUrl、owner 或 provider，资源到期后没有明确续费入口或联系人。"
     return ready, missing, message
 
 
@@ -122,6 +146,7 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
         acknowledged = status in {"critical", "warning"} and acknowledged_until is not None
         action_required = resource_requires_action(status, acknowledged)
         handling_ready, missing_handling_fields, handling_message = resource_handling_state(resource)
+        renew_url = safe_resource_renew_url(resource.get("renewUrl", ""))
         items.append(
             {
                 "id": str(resource.get("id") or resource.get("name") or ""),
@@ -130,7 +155,7 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
                 "provider": resource.get("provider", ""),
                 "owner": resource.get("owner", ""),
                 "linkedTarget": resource.get("linkedTarget", ""),
-                "renewUrl": resource.get("renewUrl", ""),
+                "renewUrl": renew_url,
                 "notes": resource.get("notes", ""),
                 "expiresAt": expires_raw or "",
                 "expiresAtTimestamp": expires_at,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.auth import auth_policy, configured_users, public_user, users_enabled
 from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
+from backend.expiry import safe_resource_renew_url
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -269,7 +270,7 @@ def public_config(config: dict) -> dict:
                 "expiresAt": resource.get("expiresAt") or resource.get("expiresOn") or resource.get("expiryDate") or "",
                 "warningDays": resource.get("warningDays", ""),
                 "criticalDays": resource.get("criticalDays", ""),
-                "renewUrl": resource.get("renewUrl", ""),
+                "renewUrl": safe_resource_renew_url(resource.get("renewUrl", "")),
                 "notes": resource.get("notes", ""),
             }
             for resource in config.get("resources", [])

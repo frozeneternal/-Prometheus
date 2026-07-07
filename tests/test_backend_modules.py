@@ -2593,6 +2593,7 @@ class BackendModuleTests(unittest.TestCase):
                     "id": "domain",
                     "name": "Domain",
                     "expiresAt": "2026-08-01",
+                    "renewUrl": "javascript:alert(1)",
                     "secret": "private",
                 }
             ],
@@ -2613,6 +2614,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(view["servers"][0]["manualRecovery"]["available"])
         self.assertTrue(view["servers"][0]["manualBackup"]["available"])
         self.assertTrue(view["websites"][0]["manualCertRenewal"]["available"])
+        self.assertEqual(view["resources"][0]["renewUrl"], "")
         self.assertNotIn("sample-action-token-for-redaction", serialized)
         self.assertNotIn("sample-session-key-for-redaction", serialized)
         self.assertNotIn("sample-password-hash-for-redaction", serialized)
