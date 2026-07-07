@@ -2329,6 +2329,59 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIsNone(result["expiresInDays"])
         self.assertIn("certExpiresIn", result["message"])
 
+    def test_certificates_module_marks_http_site_certificate_not_applicable_without_app_import(self) -> None:
+        from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
+
+        states: dict[str, dict] = {}
+        runtime = CertRenewalRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **_kwargs: self.fail("HTTP sites must not run certificate renewal"),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "renew-cert", "command": ["renew"], "allowAuto": True}],
+                }
+            ]
+        }
+        website = {
+            "id": "site1",
+            "name": "HTTP Site",
+            "url": "http://example.test/",
+            "serverId": "ops-host",
+            "certRenewal": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "renew-cert",
+                "renewBeforeDays": 14,
+                "cooldownSeconds": 86400,
+            },
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "HTTP Site",
+            "status": "online",
+            "health": "healthy",
+            "issues": [],
+            "metrics": {"certExpiresIn": None},
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_cert_renewal(config, website, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertFalse(result["tlsEnabled"])
+        self.assertTrue(result["notApplicable"])
+        self.assertIsNone(result["expiresInDays"])
+        self.assertIn("HTTP", result["message"])
+        self.assertIn("HTTPS", result["message"])
+        self.assertIn("HTTP", states["website-cert:site1"]["lastReason"])
+
     def test_certificates_module_times_out_pending_verification_without_cert_metric_without_app_import(self) -> None:
         from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
 

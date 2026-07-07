@@ -399,6 +399,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('"cert-renewal-toggle"', recovery_log_block)
         self.assertIn("证书开关", recovery_log_block)
 
+    def test_cert_renewal_block_surfaces_http_certificate_not_applicable(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function certRenewalBlock(")
+        end = app_js.index("\nfunction toggleControl", start)
+        cert_block = app_js[start:end]
+
+        self.assertIn("certRenewal.notApplicable", cert_block)
+        self.assertIn("HTTP 无 HTTPS 证书", cert_block)
+
     def test_recovery_log_labels_include_auto_recovery_toggle(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function recoveryLogCard(")

@@ -767,10 +767,12 @@ function certRenewalBlock(certRenewal, manualCertRenewal, website) {
     ? `<button type="button" class="secondary recovery-trigger compact" data-manual-cert-renewal="true" data-website-id="${escapeHtml(website.id)}">${escapeHtml(manualCertRenewal.label || "手动续期")}</button>`
     : "";
   const status = certRenewal.status || "idle";
-  const statusText = certRenewal.enabled ? (certRenewalLabels[status] || status) : "未启用";
-  const expireText = certRenewal.expiresInDays === null || certRenewal.expiresInDays === undefined
-    ? "证书天数未知"
-    : `剩余 ${certRenewal.expiresInDays} 天`;
+  const statusText = certRenewal.notApplicable ? "不适用" : (certRenewal.enabled ? (certRenewalLabels[status] || status) : "未启用");
+  const expireText = certRenewal.notApplicable
+    ? "HTTP 无 HTTPS 证书"
+    : (certRenewal.expiresInDays === null || certRenewal.expiresInDays === undefined
+      ? "证书天数未知"
+      : `剩余 ${certRenewal.expiresInDays} 天`);
   const logText = certRenewal.lastLogId || "--";
   return `<div class="recovery-block">
     <div class="recovery-head">

@@ -78,7 +78,24 @@ def has_invalid_cert_expiry_metric(snapshot: dict | None) -> bool:
     return value is not None and cert_expiry_metric(snapshot) is None
 
 
-def certificate_reason(snapshot: dict) -> str:
+def website_uses_https(website: dict | None) -> bool:
+    url = str((website or {}).get("url") or "").strip().lower()
+    return url.startswith("https://")
+
+
+def certificate_not_applicable_reason(website: dict | None, snapshot: dict | None) -> str:
+    metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else {}
+    if isinstance(metrics, dict) and metrics.get("certExpiresIn") is not None:
+        return ""
+    if website_uses_https(website):
+        return ""
+    return "当前站点使用 HTTP，没有 HTTPS 证书到期数据。"
+
+
+def certificate_reason(snapshot: dict, website: dict | None = None) -> str:
+    not_applicable = certificate_not_applicable_reason(website, snapshot)
+    if not_applicable:
+        return not_applicable
     cert_expires_in = cert_expiry_metric(snapshot)
     if cert_expires_in is None:
         return "当前没有可用的证书到期数据。"
@@ -130,7 +147,7 @@ def can_trigger_cert_renewal(
 
     cert_expires_in = cert_expiry_metric(snapshot)
     if cert_expires_in is None:
-        return False, "当前没有可用的证书到期数据。"
+        return False, certificate_reason(snapshot, website)
 
     renew_before_days = strict_positive_int_value(renewal.get("renewBeforeDays", 14)) or 14
     if cert_expires_in > renew_before_days * 86400:
@@ -269,11 +286,12 @@ def maybe_trigger_cert_renewal(
     active_runtime = runtime or _runtime
     target_id = str(website.get("id") or "")
     state = active_runtime.get_state("website-cert", target_id)
-    reason = certificate_reason(snapshot)
+    reason = certificate_reason(snapshot, website)
     renewal_config = website.get("certRenewal") or {}
     enabled = bool(renewal_config.get("enabled"))
     cert_expires_in = cert_expiry_metric(snapshot)
     invalid_cert_metric = has_invalid_cert_expiry_metric(snapshot)
+    not_applicable_reason = certificate_not_applicable_reason(website, snapshot)
     quality = snapshot.get("dataQuality") or {}
     data_trusted = quality.get("trusted") is not False
     now = active_runtime.now()
@@ -284,6 +302,8 @@ def maybe_trigger_cert_renewal(
         "enabled": enabled,
         "status": "idle",
         "message": "",
+        "tlsEnabled": website_uses_https(website),
+        "notApplicable": bool(not_applicable_reason),
         "expiresInDays": None if cert_expires_in is None else max(0, int(cert_expires_in / 86400)),
         "renewBeforeDays": safe_positive_int(renewal_config.get("renewBeforeDays", 14), 14),
         "lastAttemptAt": state.get("lastAttemptAt", 0.0),
@@ -299,7 +319,11 @@ def maybe_trigger_cert_renewal(
         renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
 
     if not renewal_view["enabled"]:
-        renewal_view["message"] = "证书自动续期未启用。"
+        renewal_view["message"] = (
+            f"证书自动续期未启用。{not_applicable_reason}"
+            if not_applicable_reason
+            else "证书自动续期未启用。"
+        )
         active_runtime.set_state("website-cert", target_id, state)
         return renewal_view
 
@@ -330,6 +354,12 @@ def maybe_trigger_cert_renewal(
             renewal_view["pendingExpiresIn"] = state.get("pendingExpiresIn")
         if "verifiedExpiresIn" in state:
             renewal_view["verifiedExpiresIn"] = state.get("verifiedExpiresIn")
+        active_runtime.set_state("website-cert", target_id, state)
+        return renewal_view
+
+    if not_applicable_reason:
+        renewal_view["status"] = "blocked"
+        renewal_view["message"] = not_applicable_reason
         active_runtime.set_state("website-cert", target_id, state)
         return renewal_view
 
