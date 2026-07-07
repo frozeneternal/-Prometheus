@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 from pathlib import Path
 
 
@@ -21,6 +22,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "start-ssh-tunnels.ps1",
             STANDALONE / "stop-ssh-tunnels.ps1",
             STANDALONE / "watchdog-local-monitor.ps1",
+            STANDALONE / "ops-overview.dashboard.json",
             STANDALONE / "prometheus.example.yml",
             STANDALONE / "targets.example.json",
             STANDALONE / "tunnels.example.json",
@@ -58,6 +60,50 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("Win32_Process", tunnel_stop_script)
         self.assertIn(".Contains($Root", tunnel_stop_script)
         self.assertNotIn("docker", start_script.lower())
+
+    def test_start_script_provisions_grafana_dashboards(self) -> None:
+        start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("Ensure-GrafanaProvisioning", start_script)
+        self.assertIn("grafana-provisioning", start_script)
+        self.assertIn("grafana-dashboards", start_script)
+        self.assertIn("ops-overview.dashboard.json", start_script)
+        self.assertIn("local-prometheus", start_script)
+
+    def test_ops_overview_dashboard_covers_core_resource_views(self) -> None:
+        dashboard = json.loads((STANDALONE / "ops-overview.dashboard.json").read_text(encoding="utf-8"))
+        panel_titles = {panel["title"] for panel in dashboard["panels"]}
+        expected_titles = {
+            "Target Reachability",
+            "Unhealthy Targets",
+            "Linux CPU Usage",
+            "Linux Memory Usage",
+            "Linux Disk Usage",
+            "Linux Network Throughput",
+            "Windows CPU Usage",
+            "Windows Memory Usage",
+            "Windows Disk Usage",
+            "Scrape Duration",
+        }
+        expressions = "\n".join(
+            target.get("expr", "")
+            for panel in dashboard["panels"]
+            for target in panel.get("targets", [])
+        )
+
+        self.assertTrue(expected_titles.issubset(panel_titles))
+        self.assertEqual("local-ops-overview", dashboard["uid"])
+        self.assertIn("local-prometheus", json.dumps(dashboard))
+        self.assertIn("up == 0", expressions)
+        self.assertIn("node_cpu_seconds_total", expressions)
+        self.assertIn("node_memory_MemAvailable_bytes", expressions)
+        self.assertIn("node_filesystem_avail_bytes", expressions)
+        self.assertIn("node_network_receive_bytes_total", expressions)
+        self.assertIn("windows_cpu_time_total", expressions)
+        self.assertIn("windows_memory_available_bytes", expressions)
+        self.assertIn("windows_memory_physical_total_bytes", expressions)
+        self.assertIn("windows_logical_disk_free_bytes", expressions)
+        self.assertIn("scrape_duration_seconds", expressions)
 
     def test_ssh_tunnel_script_uses_environment_credentials_and_loopback_listeners(self) -> None:
         tunnel_script = (STANDALONE / "ssh_metrics_tunnel.py").read_text(encoding="utf-8")

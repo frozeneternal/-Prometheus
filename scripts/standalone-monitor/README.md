@@ -61,5 +61,6 @@ centralized.
 Default local endpoints:
 
 - Grafana: `http://127.0.0.1:3000`
+- Grafana operations dashboard: `http://127.0.0.1:3000/d/local-ops-overview/local-ops-overview`
 - Prometheus: `http://127.0.0.1:19090`
 - Local Windows exporter: `http://127.0.0.1:9182/metrics`

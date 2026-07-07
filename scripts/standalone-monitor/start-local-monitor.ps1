@@ -9,6 +9,7 @@ $Apps = Join-Path $Root "apps"
 $Data = Join-Path $Root "data"
 $Logs = Join-Path $Root "logs"
 $Run = Join-Path $Root "run"
+$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 New-Item -ItemType Directory -Force -Path $Config, $Data, $Logs, $Run, (Join-Path $Data "prometheus"), (Join-Path $Data "grafana"), (Join-Path $Logs "grafana") | Out-Null
 
@@ -87,8 +88,51 @@ function Start-ManagedProcess($Name, $FilePath, $ArgumentList, $WorkingDirectory
   Write-Host "$Name started: PID $($proc.Id)"
 }
 
+function Ensure-GrafanaProvisioning {
+  $provisioning = Join-Path $Config "grafana-provisioning"
+  $datasources = Join-Path $provisioning "datasources"
+  $dashboardProviders = Join-Path $provisioning "dashboards"
+  $plugins = Join-Path $provisioning "plugins"
+  $alerting = Join-Path $provisioning "alerting"
+  $dashboards = Join-Path $Config "grafana-dashboards"
+  New-Item -ItemType Directory -Force -Path $datasources, $dashboardProviders, $plugins, $alerting, $dashboards | Out-Null
+
+  @"
+apiVersion: 1
+
+datasources:
+  - name: Local Prometheus
+    uid: local-prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:19090
+    isDefault: true
+    editable: true
+"@ | Set-Content -LiteralPath (Join-Path $datasources "prometheus.yml") -Encoding UTF8
+
+  @"
+apiVersion: 1
+
+providers:
+  - name: Local Ops Dashboards
+    orgId: 1
+    folder: Local Ops
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: $dashboards
+"@ | Set-Content -LiteralPath (Join-Path $dashboardProviders "local.yml") -Encoding UTF8
+
+  $dashboardTemplate = Join-Path $ScriptRoot "ops-overview.dashboard.json"
+  if (Test-Path $dashboardTemplate) {
+    Copy-Item -LiteralPath $dashboardTemplate -Destination (Join-Path $dashboards "ops-overview.json") -Force
+  }
+}
+
 Ensure-SecretFile (Join-Path $Config "grafana-admin-password.txt") 18
 Ensure-SecretFile (Join-Path $Config "grafana-secret-key.txt") 32
+Ensure-GrafanaProvisioning
 
 Start-ManagedProcess `
   -Name "windows_exporter" `
