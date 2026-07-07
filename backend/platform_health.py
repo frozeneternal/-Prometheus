@@ -11,7 +11,8 @@ from typing import Callable
 
 DEFAULT_ROOT = r"E:\ops-monitor"
 DEFAULT_CACHE_SECONDS = 60.0
-DEFAULT_TIMEOUT_SECONDS = 15.0
+DEFAULT_TIMEOUT_SECONDS = 30.0
+ERROR_CACHE_SECONDS = 10.0
 
 _CACHE: dict[str, object] = {"expires_at": 0.0, "payload": None}
 _STATUS_RANK = {"ok": 0, "unknown": 1, "warning": 2, "error": 3, "critical": 3}
@@ -222,11 +223,13 @@ def platform_health_summary(
     if cached is not None and current_time < float(_CACHE.get("expires_at", 0.0)):
         return copy.deepcopy(cached)
 
+    cache_seconds = _cache_seconds(config)
     try:
         payload = summarize_status_payload(runner(_monitor_root(config), _timeout_seconds(config)))
     except Exception as exc:
         payload = unavailable_platform_health(str(exc))
+        cache_seconds = min(cache_seconds, ERROR_CACHE_SECONDS)
 
     _CACHE["payload"] = copy.deepcopy(payload)
-    _CACHE["expires_at"] = current_time + _cache_seconds(config)
+    _CACHE["expires_at"] = current_time + cache_seconds
     return payload

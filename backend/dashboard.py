@@ -171,6 +171,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
     runbook_items = emergency_items(
         prometheus=prometheus,
         config_validation=config_validation,
+        platform_health=platform_health,
         servers=snapshots,
         websites=website_snapshots,
         resources=expiry_items,

@@ -1517,6 +1517,63 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["issues"][0]["id"], "root-volume-warning")
         self.assertIn("Full Repair Needed", summary["issues"][0]["message"])
 
+    def test_platform_health_summary_uses_short_cache_for_runner_errors(self) -> None:
+        from backend import platform_health
+
+        platform_health._CACHE["payload"] = None
+        platform_health._CACHE["expires_at"] = 0.0
+        calls: list[str] = []
+
+        def failing_runner(_root, _timeout):
+            calls.append("fail")
+            raise RuntimeError("boom")
+
+        def healthy_runner(_root, _timeout):
+            calls.append("ok")
+            return {
+                "localStack": [],
+                "runtimeBinaryHealth": [],
+                "appDirectoryHealth": [],
+                "rootVolumeHealth": {"Status": "ok"},
+            }
+
+        config = {"monitoring": {"platformHealthCacheSeconds": 60}}
+        first = platform_health.platform_health_summary(config, now=lambda: 100.0, runner=failing_runner)
+        cached = platform_health.platform_health_summary(config, now=lambda: 105.0, runner=healthy_runner)
+        refreshed = platform_health.platform_health_summary(config, now=lambda: 111.0, runner=healthy_runner)
+
+        self.assertEqual(first["status"], "unknown")
+        self.assertEqual(cached["status"], "unknown")
+        self.assertEqual(refreshed["status"], "ok")
+        self.assertEqual(calls, ["fail", "ok"])
+
+    def test_emergency_items_include_platform_health_warnings(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            platform_health={
+                "status": "warning",
+                "issues": [
+                    {
+                        "id": "root-volume-warning",
+                        "severity": "warning",
+                        "message": "E: requires attention: Full Repair Needed",
+                    }
+                ],
+            },
+            servers=[],
+            websites=[],
+            resources=[],
+        )
+
+        self.assertEqual(items[0]["id"], "platform-health:root-volume-warning")
+        self.assertEqual(items[0]["targetType"], "platform-health")
+        self.assertEqual(items[0]["severity"], "warning")
+        self.assertIn("Full Repair Needed", items[0]["message"])
+        self.assertTrue(items[0]["nextSteps"])
+
     def test_actions_module_executes_actions_with_injected_runtime_without_app_import(self) -> None:
         from backend.actions import ActionRuntime, execute_server_action, normalize_success_codes
 

@@ -107,6 +107,37 @@ def _config_item(config_validation: dict) -> dict | None:
     )
 
 
+def _platform_health_items(platform_health: dict | None) -> list[dict]:
+    if not isinstance(platform_health, dict):
+        return []
+
+    items = []
+    for issue in platform_health.get("issues") or []:
+        if not isinstance(issue, dict):
+            continue
+        issue_id = str(issue.get("id") or "issue")
+        severity = str(issue.get("severity") or "warning")
+        if severity not in {"critical", "warning"}:
+            severity = "warning"
+        message = str(issue.get("message") or "Platform health requires attention.")
+        items.append(
+            _item(
+                f"platform-health:{issue_id}",
+                severity,
+                "Platform health risk",
+                message,
+                [
+                    "Run E:\\ops-monitor\\scripts\\status-local-monitor.ps1 -Root E:\\ops-monitor -Json -LocalOnly to confirm the current local platform state.",
+                    "If this is a root volume warning, run a deep disk scan from an elevated maintenance shell before moving binaries or data back to that volume.",
+                    "Keep Prometheus and Grafana binaries on the known-good app path until the volume health warning is cleared and verified.",
+                ],
+                target_type="platform-health",
+                target_id=issue_id,
+            )
+        )
+    return items
+
+
 def _data_quality_item(target: dict, target_type: str) -> dict | None:
     data_quality = target.get("dataQuality") or {}
     health = str(target.get("health") or target.get("status") or "unknown")
@@ -317,6 +348,7 @@ def emergency_items(
     *,
     prometheus: dict,
     config_validation: dict,
+    platform_health: dict | None = None,
     servers: list[dict],
     websites: list[dict],
     resources: list[dict],
@@ -327,6 +359,7 @@ def emergency_items(
     for candidate in [_prometheus_item(prometheus), _config_item(config_validation)]:
         if candidate:
             items.append(candidate)
+    items.extend(_platform_health_items(platform_health))
     for server in servers:
         item = _server_item(server, recovery_log_lookup)
         if item:
