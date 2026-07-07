@@ -1540,6 +1540,7 @@ class BackendModuleTests(unittest.TestCase):
     def test_dashboard_payload_attaches_target_diagnostics(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 
+        recovery_snapshots: list[dict] = []
         runtime = DashboardRuntime(
             now=lambda: 1234.0,
             ready_status=lambda _config, timeout=1.5: (True, ""),
@@ -1563,6 +1564,8 @@ class BackendModuleTests(unittest.TestCase):
                 }
             ],
             platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_recovery=lambda _config, _target_type, _entity, snapshot: recovery_snapshots.append(snapshot)
+            or {"enabled": True, "status": "idle"},
         )
 
         payload = dashboard_payload(
@@ -1585,6 +1588,12 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("refused", diagnostics["message"])
         self.assertEqual(
             payload["servers"][0]["dataQuality"]["details"]["targetDiagnostics"]["category"],
+            "connection_refused",
+        )
+        self.assertIn("targetDiagnostics", recovery_snapshots[0])
+        self.assertEqual(recovery_snapshots[0]["targetDiagnostics"]["category"], "connection_refused")
+        self.assertEqual(
+            recovery_snapshots[0]["dataQuality"]["details"]["targetDiagnostics"]["category"],
             "connection_refused",
         )
 
@@ -1951,6 +1960,11 @@ class BackendModuleTests(unittest.TestCase):
             "status": "offline",
             "health": "down",
             "issues": ["target down"],
+            "targetDiagnostics": {
+                "category": "timeout",
+                "message": "Prometheus scrape timed out",
+                "lastError": "context deadline exceeded",
+            },
             "dataQuality": {"trusted": True},
         }
 
@@ -1965,6 +1979,10 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(executed[0]["invocation"], "auto")
         self.assertEqual(executed[0]["target_type"], "server")
         self.assertEqual(executed[0]["consecutive_failures"], 1)
+        self.assertIn("target down", executed[0]["reason"])
+        self.assertIn("Prometheus target diagnostics: timeout", executed[0]["reason"])
+        self.assertIn("Prometheus scrape timed out", executed[0]["reason"])
+        self.assertIn("lastError=context deadline exceeded", executed[0]["reason"])
         self.assertEqual(states["server:srv1"]["lastLogId"], "log-1")
         self.assertEqual(incident_action_updates[0]["id"], "incident-1")
         self.assertEqual(incident_action_updates[0]["lastLogId"], "log-1")

@@ -165,40 +165,31 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
     server_by_id = {server.get("id"): server for server in servers}
     website_by_id = {website.get("id"): website for website in websites}
 
-    snapshots = [
-        {
-            **_attach_target_diagnostics(
-                server_by_id.get(snapshot["id"], {}),
-                _enrich_server_snapshot(snapshot, server_by_id),
-                active_targets,
-            ),
-            "autoRecovery": active_runtime.trigger_recovery(
-                config,
-                "server",
-                server_by_id.get(snapshot["id"], {}),
-                snapshot,
-            ),
-            "autoBackup": active_runtime.trigger_backup(config, server_by_id.get(snapshot["id"], {}), snapshot),
-        }
-        for snapshot in snapshots
-    ]
-    website_snapshots = [
-        {
-            **_attach_target_diagnostics(website_by_id.get(snapshot["id"], {}), snapshot, active_targets),
-            "autoRecovery": active_runtime.trigger_recovery(
-                config,
-                "website",
-                website_by_id.get(snapshot["id"], {}),
-                snapshot,
-            ),
-            "certRenewal": active_runtime.trigger_cert_renewal(
-                config,
-                website_by_id.get(snapshot["id"], {}),
-                snapshot,
-            ),
-        }
-        for snapshot in website_snapshots
-    ]
+    enriched_snapshots = []
+    for snapshot in snapshots:
+        server = server_by_id.get(snapshot["id"], {})
+        enriched = _attach_target_diagnostics(server, _enrich_server_snapshot(snapshot, server_by_id), active_targets)
+        enriched_snapshots.append(
+            {
+                **enriched,
+                "autoRecovery": active_runtime.trigger_recovery(config, "server", server, enriched),
+                "autoBackup": active_runtime.trigger_backup(config, server, enriched),
+            }
+        )
+    snapshots = enriched_snapshots
+
+    enriched_website_snapshots = []
+    for snapshot in website_snapshots:
+        website = website_by_id.get(snapshot["id"], {})
+        enriched = _attach_target_diagnostics(website, snapshot, active_targets)
+        enriched_website_snapshots.append(
+            {
+                **enriched,
+                "autoRecovery": active_runtime.trigger_recovery(config, "website", website, enriched),
+                "certRenewal": active_runtime.trigger_cert_renewal(config, website, enriched),
+            }
+        )
+    website_snapshots = enriched_website_snapshots
 
     prometheus = {
         "available": prometheus_available,

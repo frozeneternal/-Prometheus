@@ -172,6 +172,37 @@ def record_manual_recovery_result(
     return True
 
 
+def _target_diagnostics(snapshot: dict) -> dict:
+    quality = snapshot.get("dataQuality") or {}
+    details = quality.get("details") if isinstance(quality, dict) else {}
+    if not isinstance(details, dict):
+        details = {}
+
+    diagnostics = snapshot.get("targetDiagnostics")
+    if not isinstance(diagnostics, dict):
+        diagnostics = details.get("targetDiagnostics")
+    return diagnostics if isinstance(diagnostics, dict) else {}
+
+
+def _recovery_reason(snapshot: dict) -> str:
+    base_reason = "; ".join(str(issue) for issue in snapshot.get("issues") or [] if issue)
+    if not base_reason:
+        base_reason = str(snapshot.get("status") or "unknown")
+
+    diagnostics = _target_diagnostics(snapshot)
+    message = str(diagnostics.get("message") or "")
+    if not message:
+        return base_reason
+
+    category = str(diagnostics.get("category") or "unknown")
+    diagnostic_reason = f"Prometheus target diagnostics: {category}; {message}"
+    last_error = str(diagnostics.get("lastError") or "")
+    if last_error:
+        diagnostic_reason = f"{diagnostic_reason}; lastError={last_error}"
+
+    return f"{base_reason}; {diagnostic_reason}" if base_reason else diagnostic_reason
+
+
 def maybe_trigger_recovery(
     config: dict,
     target_type: str,
@@ -184,8 +215,7 @@ def maybe_trigger_recovery(
     target_id = str(entity.get("id") or "")
     state = active_runtime.get_state(target_type, target_id)
     health = snapshot.get("health", "unknown")
-    status = snapshot.get("status", "unknown")
-    reason = "; ".join(snapshot.get("issues") or []) or status
+    reason = _recovery_reason(snapshot)
     recovery_config = entity.get("autoRecovery") or {}
     enabled = bool(recovery_config.get("enabled"))
     trigger_health = recovery_config.get("triggerHealth") or ["down"]
