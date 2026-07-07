@@ -326,7 +326,7 @@ function emergencyActionButton(item) {
     if (resource.renewUrl) {
       actions.push(`<a class="secondary recovery-trigger compact" href="${escapeHtml(resource.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`);
     }
-    if (resource.actionRequired && ["critical", "warning"].includes(resource.status || "")) {
+    if (canAcknowledgeResource(resource)) {
       actions.push(`<button type="button" class="secondary recovery-trigger compact" data-emergency-resource-ack="true" data-resource-id="${escapeHtml(resource.id)}">确认 7 天</button>`);
     }
     return actions.join("");
@@ -576,6 +576,11 @@ function incidentBlock(incident) {
   </div>`;
 }
 
+function canAcknowledgeResource(item) {
+  const status = item.status || "";
+  return item.actionRequired && item.handlingReady !== false && ["critical", "warning"].includes(status);
+}
+
 function resourceExpiryCard(item) {
   const status = item.status || "unknown";
   const label = resourceExpiryLabels[status] || status;
@@ -591,7 +596,7 @@ function resourceExpiryCard(item) {
   const renewLink = item.renewUrl
     ? `<a href="${escapeHtml(item.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`
     : "";
-  const canAcknowledge = item.actionRequired && ["critical", "warning"].includes(status);
+  const canAcknowledge = canAcknowledgeResource(item);
   const ackActorText = item.acknowledgedBy ? `，确认人 ${item.acknowledgedBy}` : "";
   const ackAtText = item.acknowledgedAt ? `，确认时间 ${formatDateTime(item.acknowledgedAt)}` : "";
   const ackText = item.acknowledged

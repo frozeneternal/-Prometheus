@@ -343,6 +343,22 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("item.acknowledgedAt", resource_block)
         self.assertIn("formatDateTime(item.acknowledgedAt)", resource_block)
 
+    def test_resource_acknowledgement_buttons_require_handling_ready(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        helper_start = app_js.index("function canAcknowledgeResource(")
+        helper_end = app_js.index("\nfunction resourceExpiryCard", helper_start)
+        helper_block = app_js[helper_start:helper_end]
+        runbook_start = app_js.index("function emergencyActionButton(")
+        runbook_end = app_js.index("\nfunction renderGroups()", runbook_start)
+        runbook_block = app_js[runbook_start:runbook_end]
+        card_start = app_js.index("function resourceExpiryCard(")
+        card_end = app_js.index("\nfunction recoveryBlock", card_start)
+        card_block = app_js[card_start:card_end]
+
+        self.assertIn("item.handlingReady !== false", helper_block)
+        self.assertIn("canAcknowledgeResource(resource)", runbook_block)
+        self.assertIn("canAcknowledgeResource(item)", card_block)
+
     def test_recovery_log_labels_include_cert_renewal_toggle(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         start = app_js.index("function recoveryLogCard(")
