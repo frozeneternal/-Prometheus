@@ -135,6 +135,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn('job=~"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows"', expressions)
         self.assertIn("ops_platform_resource_expiry_action_required_total", expressions)
         self.assertIn("ops_platform_resource_expiry_status_total", expressions)
+        self.assertIn('label_replace(up, "instance", "$1", "name", "(.+)")', expressions)
+        self.assertIn('label_replace(up{job=~"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows"}, "instance", "$1", "name", "(.+)")', expressions)
         self.assertIn("node_cpu_seconds_total", expressions)
         self.assertIn("node_memory_MemAvailable_bytes", expressions)
         self.assertIn("node_filesystem_avail_bytes", expressions)
@@ -148,6 +150,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("probe_duration_seconds", expressions)
         self.assertIn("probe_http_status_code", expressions)
         self.assertIn("probe_ssl_earliest_cert_expiry", expressions)
+        self.assertNotIn("{{instance}}", json.dumps(dashboard))
 
     def test_ops_overview_dashboard_prioritizes_website_panels_on_first_screen(self) -> None:
         dashboard = json.loads((STANDALONE / "ops-overview.dashboard.json").read_text(encoding="utf-8"))

@@ -99,8 +99,8 @@
             "uid": "local-prometheus"
           },
           "editorMode": "code",
-          "expr": "up",
-          "legendFormat": "{{job}} {{name}} {{instance}}",
+          "expr": "label_replace(up, \"instance\", \"$1\", \"name\", \"(.+)\")",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -180,7 +180,7 @@
           },
           "editorMode": "code",
           "expr": "probe_success{job=\"blackbox\"}",
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -229,7 +229,7 @@
           },
           "editorMode": "code",
           "expr": "probe_duration_seconds{job=\"blackbox\"}",
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -279,7 +279,7 @@
           },
           "editorMode": "code",
           "expr": "probe_http_status_code{job=\"blackbox\"}",
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -328,7 +328,7 @@
           },
           "editorMode": "code",
           "expr": "(probe_ssl_earliest_cert_expiry{job=\"blackbox\"} - time()) / 86400",
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -407,8 +407,8 @@
             "uid": "local-prometheus"
           },
           "editorMode": "code",
-          "expr": "up{job=~\"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows\"}",
-          "legendFormat": "{{name}} {{instance}}",
+          "expr": "label_replace(up{job=~\"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows\"}, \"instance\", \"$1\", \"name\", \"(.+)\")",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -469,10 +469,10 @@
             "uid": "local-prometheus"
           },
           "editorMode": "code",
-          "expr": "up{job=~\"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows\"}",
+          "expr": "label_replace(up{job=~\"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows\"}, \"instance\", \"$1\", \"name\", \"(.+)\")",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{name}} {{job}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": false,
           "refId": "A"
         }
@@ -679,10 +679,10 @@
             "uid": "local-prometheus"
           },
           "editorMode": "code",
-          "expr": "up == 0",
+          "expr": "label_replace(up == 0, \"instance\", \"$1\", \"name\", \"(.+)\")",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{job}} {{name}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": false,
           "refId": "A"
         }
@@ -733,7 +733,7 @@
           },
           "editorMode": "code",
           "expr": "100 * (1 - avg by (name, instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
-          "legendFormat": "{{name}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -784,7 +784,7 @@
           },
           "editorMode": "code",
           "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
-          "legendFormat": "{{name}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -946,7 +946,7 @@
           },
           "editorMode": "code",
           "expr": "100 * (1 - avg by (name, instance) (rate(windows_cpu_time_total{mode=\"idle\"}[5m])))",
-          "legendFormat": "{{name}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -997,7 +997,7 @@
           },
           "editorMode": "code",
           "expr": "100 * (1 - (windows_memory_available_bytes / windows_memory_physical_total_bytes))",
-          "legendFormat": "{{name}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
@@ -1097,7 +1097,7 @@
           },
           "editorMode": "code",
           "expr": "scrape_duration_seconds",
-          "legendFormat": "{{job}} {{name}} {{instance}}",
+          "legendFormat": "{{name}}",
           "range": true,
           "refId": "A"
         }
