@@ -590,6 +590,18 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("#accountPasswordPolicy", accounts_js)
         self.assertIn("renderAccountPasswordPolicy();", accounts_js)
 
+    def test_legacy_token_mode_can_bootstrap_first_admin_from_account_panel(self) -> None:
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+
+        self.assertIn("function canBootstrapFirstAdmin()", accounts_js)
+        self.assertIn('auth.mode === "token"', accounts_js)
+        self.assertIn("state.config?.actionsRequireToken === true", accounts_js)
+        self.assertIn("创建首个管理员账号", accounts_js)
+        self.assertIn("const bootstrapFirstAdmin = canBootstrapFirstAdmin();", accounts_js)
+        self.assertIn("auth: authPayload()", accounts_js)
+        self.assertIn('state.config.auth.mode = "users";', accounts_js)
+        self.assertIn("window.localStorage.removeItem(\"monitorSessionToken\")", accounts_js)
+
 
 if __name__ == "__main__":
     unittest.main()

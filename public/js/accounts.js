@@ -57,6 +57,12 @@ export function isAdminUser() {
   return state.currentUser?.role === "admin";
 }
 
+function canBootstrapFirstAdmin() {
+  const auth = state.config?.auth || {};
+  const users = auth.users || [];
+  return auth.mode === "token" && state.config?.actionsRequireToken === true && users.length === 0;
+}
+
 export async function loadAccountLockouts() {
   if (!state.sessionToken || !isAdminUser()) {
     state.accountLockouts = [];
@@ -109,7 +115,8 @@ export async function loadAccountAudit() {
 
 export function renderAccountManagement() {
   const panel = $("#accountManagementPanel");
-  if (!isAdminUser()) {
+  const bootstrapFirstAdmin = canBootstrapFirstAdmin();
+  if (!isAdminUser() && !bootstrapFirstAdmin) {
     panel.classList.add("hidden");
     $("#accountUserList").innerHTML = "";
     $("#accountUserSummary").textContent = "";
@@ -120,7 +127,11 @@ export function renderAccountManagement() {
   const users = state.accountUsers || [];
   panel.classList.remove("hidden");
   renderAccountPasswordPolicy();
-  $("#accountUserSummary").textContent = users.length ? `${users.length} 个账号` : "当前没有账号";
+  $("#accountRole").disabled = bootstrapFirstAdmin;
+  if (bootstrapFirstAdmin) $("#accountRole").value = "admin";
+  $("#accountUserSummary").textContent = bootstrapFirstAdmin
+    ? "创建首个管理员账号"
+    : (users.length ? `${users.length} 个账号` : "当前没有账号");
   $("#accountUserList").innerHTML = users.length
     ? users.map((user) => `
       <div class="account-user-item ${user.enabled ? "" : "disabled"}">
@@ -134,7 +145,9 @@ export function renderAccountManagement() {
         </div>
       </div>
     `).join("")
-    : '<p class="muted">暂无账号。</p>';
+    : (bootstrapFirstAdmin
+      ? '<p class="muted">使用顶部操作口令创建首个管理员账号；创建后请用新账号登录。</p>'
+      : '<p class="muted">暂无账号。</p>');
 
   $("#accountUserList").querySelectorAll("[data-edit-user]").forEach((button) => {
     button.addEventListener("click", () => editManagedAccount(button.dataset.editUser));
@@ -158,7 +171,16 @@ function renderAccountPasswordPolicy() {
 
 export function renderAccountLockouts() {
   const panel = $("#accountLockoutPanel");
+  const bootstrapFirstAdmin = canBootstrapFirstAdmin();
   if (!isAdminUser()) {
+    if (bootstrapFirstAdmin) {
+      panel.classList.remove("hidden");
+      $("#accountLockoutList").innerHTML = "";
+      $("#accountLockoutSummary").textContent = "创建管理员后启用锁定处理";
+      $("#accountAuditList").innerHTML = "";
+      $("#accountAuditSummary").textContent = "创建管理员后启用账号审计";
+      return;
+    }
     panel.classList.add("hidden");
     $("#accountManagementPanel").classList.add("hidden");
     $("#accountUserList").innerHTML = "";
@@ -217,10 +239,12 @@ export function renderAccountAudit() {
 }
 
 function resetAccountUserForm() {
+  const bootstrapFirstAdmin = canBootstrapFirstAdmin();
   $("#accountUsername").value = "";
   $("#accountUsername").disabled = false;
   $("#accountDisplayName").value = "";
-  $("#accountRole").value = "operator";
+  $("#accountRole").value = bootstrapFirstAdmin ? "admin" : "operator";
+  $("#accountRole").disabled = bootstrapFirstAdmin;
   $("#accountPassword").value = "";
   $("#accountEnabled").checked = true;
   $("#accountUserError").textContent = "";
@@ -242,6 +266,7 @@ function editManagedAccount(username) {
 
 export async function saveAccountUser(event) {
   event.preventDefault();
+  const bootstrapFirstAdmin = canBootstrapFirstAdmin();
   $("#accountUserError").textContent = "";
   $("#accountUserSubmitButton").disabled = true;
   try {
@@ -249,16 +274,26 @@ export async function saveAccountUser(event) {
       user: {
         username: $("#accountUsername").value,
         displayName: $("#accountDisplayName").value,
-        role: $("#accountRole").value,
+        role: bootstrapFirstAdmin ? "admin" : $("#accountRole").value,
         password: $("#accountPassword").value,
         enabled: $("#accountEnabled").checked,
       },
-      auth: { sessionToken: state.sessionToken },
+      auth: authPayload(),
     });
     state.accountUsers = payload.users || [];
-    if (state.config?.auth) state.config.auth.users = state.accountUsers;
+    if (state.config?.auth) {
+      state.config.auth.users = state.accountUsers;
+      if (bootstrapFirstAdmin) state.config.auth.mode = "users";
+    }
+    if (bootstrapFirstAdmin) {
+      state.config.actionsRequireToken = false;
+      state.sessionToken = "";
+      state.currentUser = null;
+      window.localStorage.removeItem("monitorSessionToken");
+      $("#tokenInput").value = "";
+    }
     resetAccountUserForm();
-    await loadAccountAudit();
+    if (!bootstrapFirstAdmin) await loadAccountAudit();
     renderAuthControls();
   } catch (error) {
     $("#accountUserError").textContent = error.message;
