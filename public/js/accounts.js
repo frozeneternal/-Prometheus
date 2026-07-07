@@ -42,6 +42,7 @@ export function renderAuthControls() {
   if (state.currentUser) {
     $("#accountUserLabel").textContent = `${state.currentUser.displayName || state.currentUser.username} · ${state.currentUser.role}`;
   }
+  renderAccountSecurity();
   renderAccountManagement();
   renderAccountLockouts();
 }
@@ -61,6 +62,60 @@ function canBootstrapFirstAdmin() {
   const auth = state.config?.auth || {};
   const users = auth.users || [];
   return auth.mode === "token" && state.config?.actionsRequireToken === true && users.length === 0;
+}
+
+function accountModeLabel(mode) {
+  return {
+    users: "账号登录模式",
+    token: "旧操作口令模式",
+    unconfigured: "未配置认证",
+  }[mode] || "未知认证模式";
+}
+
+function accountSeverityLabel(severity) {
+  return {
+    ok: "正常",
+    warning: "需核查",
+    error: "高风险",
+  }[severity] || "未知";
+}
+
+export function renderAccountSecurity() {
+  const panel = $("#accountSecurityPanel");
+  const security = state.dashboard?.accountSecurity;
+  if (!security) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+
+  const severity = security.severity || "warning";
+  const secret = security.sessionSecret || {};
+  const secretStatus = secret.configured
+    ? `${secret.source === "sessionSecret" ? "独立会话密钥" : "复用操作口令"}${secret.weak ? "，长度不足" : ""}${secret.placeholder ? "，仍是占位值" : ""}`
+    : "未配置会话密钥";
+  const issues = security.issues || [];
+  const recommendations = security.recommendations || [];
+
+  panel.className = `account-security-panel ${escapeHtml(severity)}`;
+  panel.innerHTML = `
+    <div class="account-security-head">
+      <div>
+        <strong>账号安全</strong>
+        <p>${escapeHtml(accountModeLabel(security.mode))} · 管理员 ${escapeHtml(String(security.adminUsers ?? 0))} · 可操作账号 ${escapeHtml(String(security.operatorUsers ?? 0))}</p>
+      </div>
+      <span class="account-security-badge ${escapeHtml(severity)}">${escapeHtml(accountSeverityLabel(severity))}</span>
+    </div>
+    <div class="account-security-grid">
+      <span>账号数：${escapeHtml(String(security.enabledUsers ?? 0))}</span>
+      <span>会话密钥：${escapeHtml(secretStatus)}</span>
+      <span>${security.requiresBootstrapAdmin ? "建议：创建首个管理员账号" : "建议：定期审查账号权限"}</span>
+    </div>
+    ${(issues.length || recommendations.length) ? `<div class="account-security-list">
+      ${issues.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+      ${recommendations.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+    </div>` : ""}
+  `;
 }
 
 export async function loadAccountLockouts() {

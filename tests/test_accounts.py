@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 import app  # noqa: E402
 from backend import auth as auth_backend  # noqa: E402
 from backend.accounts_admin import AccountsAdminRuntime  # noqa: E402
+from backend.dashboard import DashboardRuntime  # noqa: E402
 
 
 class AccountAuthTests(unittest.TestCase):
@@ -512,6 +513,98 @@ class AccountAuthTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertNotEqual(saved["config"]["sessionSecret"], raw_config["sessionSecret"])
+
+    def test_dashboard_payload_surfaces_account_security_without_secret_values(self) -> None:
+        config = {
+            "actionToken": "legacy-token",
+            "sessionSecret": "",
+            "users": [],
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        dashboard = app.dashboard_payload(
+            config,
+            runtime=DashboardRuntime(
+                now=lambda: 1000.0,
+                ready_status=lambda _config, timeout=1.5: (False, "test"),
+                set_runtime_dashboard=lambda _payload: None,
+            ),
+        )
+
+        security = dashboard["accountSecurity"]
+        serialized = json.dumps(security, ensure_ascii=False)
+        self.assertEqual(security["mode"], "token")
+        self.assertEqual(security["severity"], "warning")
+        self.assertEqual(security["enabledUsers"], 0)
+        self.assertEqual(security["adminUsers"], 0)
+        self.assertEqual(security["sessionSecret"]["source"], "none")
+        self.assertTrue(security["requiresBootstrapAdmin"])
+        self.assertIn("创建首个管理员账号", serialized)
+        self.assertNotIn("legacy-token", serialized)
+
+    def test_dashboard_payload_marks_strong_account_mode_as_ok(self) -> None:
+        config = {
+            "actionToken": "legacy-token",
+            "sessionSecret": "strong-session-secret-value-0123456789",
+            "users": [
+                {
+                    "username": "admin",
+                    "displayName": "Admin",
+                    "role": "admin",
+                    "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+                }
+            ],
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        dashboard = app.dashboard_payload(
+            config,
+            runtime=DashboardRuntime(
+                now=lambda: 1000.0,
+                ready_status=lambda _config, timeout=1.5: (False, "test"),
+                set_runtime_dashboard=lambda _payload: None,
+            ),
+        )
+
+        security = dashboard["accountSecurity"]
+        self.assertEqual(security["mode"], "users")
+        self.assertEqual(security["severity"], "ok")
+        self.assertEqual(security["enabledUsers"], 1)
+        self.assertEqual(security["adminUsers"], 1)
+        self.assertEqual(security["sessionSecret"]["source"], "sessionSecret")
+        self.assertFalse(security["sessionSecret"]["weak"])
+        self.assertFalse(security["requiresBootstrapAdmin"])
+
+    def test_dashboard_payload_marks_unconfigured_auth_as_error(self) -> None:
+        config = {
+            "actionToken": "",
+            "sessionSecret": "",
+            "users": [],
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        dashboard = app.dashboard_payload(
+            config,
+            runtime=DashboardRuntime(
+                now=lambda: 1000.0,
+                ready_status=lambda _config, timeout=1.5: (False, "test"),
+                set_runtime_dashboard=lambda _payload: None,
+            ),
+        )
+
+        security = dashboard["accountSecurity"]
+        self.assertEqual(security["mode"], "unconfigured")
+        self.assertEqual(security["severity"], "error")
+        self.assertIn("未配置账号或操作口令", json.dumps(security, ensure_ascii=False))
 
     def test_resource_acknowledgement_requires_operator(self) -> None:
         config = self.config_with_users()

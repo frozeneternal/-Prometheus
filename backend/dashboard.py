@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from backend.config import DEFAULT_CONFIG, config_source_info
+from backend.auth_security import account_security_summary
 from backend.expiry import resource_expiry_items, resource_expiry_summary
 from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
@@ -217,6 +218,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "grafana": _grafana_links(config),
         "configSource": active_runtime.config_source(),
         "configValidation": config_validation,
+        "accountSecurity": account_security_summary(config),
         "platformHealth": platform_health,
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,

@@ -219,6 +219,94 @@ select {
   box-shadow: var(--shadow);
 }
 
+.account-security-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.account-security-panel.warning {
+  border-color: #edd48d;
+  background: var(--warn-bg);
+}
+
+.account-security-panel.error {
+  border-color: #f3b0b0;
+  background: var(--bad-bg);
+}
+
+.account-security-panel.ok {
+  border-color: #9fd6b0;
+  background: #f0fbf3;
+}
+
+.account-security-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-security-head p,
+.account-security-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.account-security-badge {
+  min-width: 64px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.account-security-badge.ok {
+  background: #dff5e5;
+  color: var(--good);
+}
+
+.account-security-badge.warning {
+  background: #fff2bf;
+  color: #7a5700;
+}
+
+.account-security-badge.error {
+  background: #ffe0e0;
+  color: var(--bad);
+}
+
+.account-security-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-security-grid span {
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.account-security-list {
+  display: grid;
+  gap: 6px;
+}
+
 .account-lockout-head,
 .account-lockout-item {
   display: flex;

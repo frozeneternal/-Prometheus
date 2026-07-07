@@ -602,6 +602,22 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('state.config.auth.mode = "users";', accounts_js)
         self.assertIn("window.localStorage.removeItem(\"monitorSessionToken\")", accounts_js)
 
+    def test_account_security_summary_has_frontend_panel_and_renderer(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountSecurityPanel"', index_html)
+        self.assertIn("function renderAccountSecurity()", accounts_js)
+        self.assertIn("state.dashboard?.accountSecurity", accounts_js)
+        self.assertIn("account-security-panel", accounts_js)
+        self.assertIn("创建首个管理员账号", accounts_js)
+        self.assertIn("会话密钥", accounts_js)
+        self.assertIn("renderAccountSecurity();", accounts_js)
+        self.assertIn('$("#accountSecurityPanel").classList.add("hidden");', app_js)
+        self.assertIn(".account-security-panel", styles_css)
+
 
 if __name__ == "__main__":
     unittest.main()

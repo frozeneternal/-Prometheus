@@ -130,6 +130,8 @@ function renderError(error) {
   $("#monitoringLinks").classList.add("hidden");
   $("#platformHealthPanel").innerHTML = "";
   $("#platformHealthPanel").classList.add("hidden");
+  $("#accountSecurityPanel").innerHTML = "";
+  $("#accountSecurityPanel").classList.add("hidden");
   $("#emergencyRunbookPanel").classList.add("hidden");
   $("#emergencyRunbookList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
@@ -165,6 +167,7 @@ function render() {
   renderSystemNotice();
   renderConfigValidation();
   renderPlatformHealth();
+  renderAuthControls();
   renderEmergencyRunbook();
   renderGroups();
   renderServers();
