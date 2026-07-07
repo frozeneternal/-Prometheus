@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 import app  # noqa: E402
 from backend import auth as auth_backend  # noqa: E402
+from backend.accounts_admin import AccountsAdminRuntime  # noqa: E402
 
 
 class AccountAuthTests(unittest.TestCase):
@@ -444,6 +445,73 @@ class AccountAuthTests(unittest.TestCase):
 
         self.assertEqual(app.authorize_operation(config, {}, "operator")[1], 403)
         self.assertEqual(app.authorize_operation(config, {"token": "legacy-token"}, "operator")[1], 200)
+
+    def test_first_admin_bootstrap_generates_independent_session_secret(self) -> None:
+        raw_config = {
+            "actionToken": "legacy-token",
+            "sessionSecret": "",
+            "authPolicy": {"passwordMinLength": 8},
+            "users": [],
+        }
+        saved = {}
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.update(config=config),
+            append_auth_audit=lambda _config, event: event,
+        )
+
+        status, payload = app.upsert_account_user_payload(
+            raw_config,
+            {
+                "token": "legacy-token",
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "password": "admin-pass",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        saved_config = saved["config"]
+        self.assertTrue(saved_config["sessionSecret"])
+        self.assertNotEqual(saved_config["sessionSecret"], raw_config["actionToken"])
+        self.assertGreaterEqual(len(saved_config["sessionSecret"]), 48)
+
+    def test_first_admin_bootstrap_replaces_placeholder_session_secret(self) -> None:
+        raw_config = {
+            "actionToken": "legacy-token",
+            "sessionSecret": "replace-with-a-strong-local-session-secret",
+            "authPolicy": {"passwordMinLength": 8},
+            "users": [],
+        }
+        saved = {}
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.update(config=config),
+            append_auth_audit=lambda _config, event: event,
+        )
+
+        status, payload = app.upsert_account_user_payload(
+            raw_config,
+            {
+                "token": "legacy-token",
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "password": "admin-pass",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertNotEqual(saved["config"]["sessionSecret"], raw_config["sessionSecret"])
 
     def test_resource_acknowledgement_requires_operator(self) -> None:
         config = self.config_with_users()

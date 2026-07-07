@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -90,6 +91,30 @@ def _enabled_admin_count(users: list[dict]) -> int:
     return count
 
 
+def _enabled_account_count(users: list[dict]) -> int:
+    count = 0
+    for user in users:
+        if user.get("enabled", True) is False:
+            continue
+        if user.get("username") and user.get("passwordHash"):
+            count += 1
+    return count
+
+
+def _session_secret_needs_bootstrap(secret: object) -> bool:
+    value = str(secret or "")
+    return not value or value.startswith("replace-with-") or len(value) < 32
+
+
+def _bootstrap_session_secret_if_needed(raw_config: dict, previous_users: list[dict], next_users: list[dict]) -> None:
+    if _enabled_account_count(previous_users) > 0:
+        return
+    if _enabled_account_count(next_users) < 1:
+        return
+    if _session_secret_needs_bootstrap(raw_config.get("sessionSecret")):
+        raw_config["sessionSecret"] = secrets.token_urlsafe(48)
+
+
 def _auth_username(auth_payload: dict) -> str:
     return _user_key((auth_payload.get("user") or {}).get("username"))
 
@@ -174,6 +199,7 @@ def upsert_account_user_payload(
     if _enabled_admin_count(next_users) < 1:
         return 400, {"ok": False, "message": "至少保留一个启用的管理员账号。"}
 
+    _bootstrap_session_secret_if_needed(raw_config, users, next_users)
     raw_config["users"] = next_users
     try:
         active_runtime.save_config_raw(raw_config)
