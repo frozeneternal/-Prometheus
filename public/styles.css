@@ -966,6 +966,12 @@ select {
   overflow-wrap: anywhere;
 }
 
+.quality-diagnostics {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 6px;
+  font-family: Consolas, "Courier New", monospace;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

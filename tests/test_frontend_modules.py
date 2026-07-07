@@ -175,6 +175,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderMonitoringLinks();", app_js)
         self.assertIn(".monitoring-links", styles_css)
 
+    def test_target_diagnostics_are_visible_in_data_quality_blocks(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("targetDiagnostics", app_js)
+        self.assertIn("diagnostics.message", app_js)
+        self.assertIn("quality-diagnostics", app_js)
+        self.assertIn(".quality-diagnostics", styles_css)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")

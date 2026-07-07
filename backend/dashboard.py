@@ -10,6 +10,7 @@ from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
 from backend.platform_health import platform_health_summary
 from backend.prometheus import prometheus_ready_status
+from backend.prometheus import prometheus_active_targets, target_diagnostics_for_labels
 from backend.public_view import server_type
 from backend.snapshots import (
     metric_snapshot as build_metric_snapshot,
@@ -67,6 +68,7 @@ class DashboardRuntime:
     config_source: Callable[[], dict] = config_source_info
     config_validation: Callable[[dict], dict] = config_validation_summary
     platform_health: Callable[[dict], dict] = _default_platform_health
+    active_targets: Callable[[dict], list[dict]] = prometheus_active_targets
     get_recovery_logs: Callable[[], list[dict]] = _empty_logs
     get_incident_logs: Callable[[], list[dict]] = _empty_logs
     set_runtime_dashboard: Callable[[dict], None] = _ignore_dashboard
@@ -90,6 +92,24 @@ def _enrich_server_snapshot(snapshot: dict, server_by_id: dict[object, dict]) ->
         "hostServerId": host_server_id,
         "hostServerName": host_server.get("name", host_server_id) if host_server else "",
     }
+
+
+def _entity_diagnostics(entity: dict, snapshot: dict, active_targets: list[dict]) -> dict:
+    labels = dict(snapshot.get("labels") or entity.get("labels") or {})
+    if not labels and entity.get("url"):
+        labels = {"job": "blackbox", "instance": entity.get("url")}
+    return target_diagnostics_for_labels(active_targets, labels)
+
+
+def _attach_target_diagnostics(entity: dict, snapshot: dict, active_targets: list[dict]) -> dict:
+    diagnostics = _entity_diagnostics(entity, snapshot, active_targets)
+    quality = snapshot.get("dataQuality")
+    enriched = {**snapshot, "targetDiagnostics": diagnostics}
+    if isinstance(quality, dict):
+        details = dict(quality.get("details") or {})
+        details["targetDiagnostics"] = diagnostics
+        enriched["dataQuality"] = {**quality, "details": details}
+    return enriched
 
 
 def _summary(items: list[dict]) -> dict:
@@ -128,6 +148,10 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
     if prometheus_available:
         snapshots = [active_runtime.metric_snapshot(config, server) for server in servers]
         website_snapshots = [active_runtime.website_snapshot(config, website) for website in websites]
+        try:
+            active_targets = active_runtime.active_targets(config)
+        except Exception:  # noqa: BLE001 - target diagnostics are advisory and must not break the dashboard.
+            active_targets = []
     else:
         snapshots = [
             active_runtime.unavailable_metric_snapshot(server, PROMETHEUS_UNAVAILABLE_MESSAGE) for server in servers
@@ -136,13 +160,18 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
             active_runtime.unavailable_website_snapshot(website, PROMETHEUS_UNAVAILABLE_MESSAGE)
             for website in websites
         ]
+        active_targets = []
 
     server_by_id = {server.get("id"): server for server in servers}
     website_by_id = {website.get("id"): website for website in websites}
 
     snapshots = [
         {
-            **_enrich_server_snapshot(snapshot, server_by_id),
+            **_attach_target_diagnostics(
+                server_by_id.get(snapshot["id"], {}),
+                _enrich_server_snapshot(snapshot, server_by_id),
+                active_targets,
+            ),
             "autoRecovery": active_runtime.trigger_recovery(
                 config,
                 "server",
@@ -155,7 +184,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
     ]
     website_snapshots = [
         {
-            **snapshot,
+            **_attach_target_diagnostics(website_by_id.get(snapshot["id"], {}), snapshot, active_targets),
             "autoRecovery": active_runtime.trigger_recovery(
                 config,
                 "website",

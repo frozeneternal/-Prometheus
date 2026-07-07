@@ -608,12 +608,17 @@ function dataQualityBlock(quality) {
   const trusted = quality.trusted !== false;
   const title = dataQualityLabels[level] || level;
   const trustText = trusted ? "判定可信" : "数据不可信，自动恢复已阻断";
+  const diagnostics = quality.details?.targetDiagnostics;
+  const diagnosticsText = diagnostics?.message
+    ? `${diagnostics.category || "target"}: ${diagnostics.message}${diagnostics.lastError ? ` (${diagnostics.lastError})` : ""}`
+    : "";
   return `<div class="quality-block ${escapeHtml(level)} ${trusted ? "trusted" : "untrusted"}">
     <div class="quality-head">
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(trustText)}</span>
     </div>
     <p>${escapeHtml(quality.message || "暂无数据质量说明")}</p>
+    ${diagnosticsText ? `<p class="quality-diagnostics">${escapeHtml(diagnosticsText)}</p>` : ""}
   </div>`;
 }
 

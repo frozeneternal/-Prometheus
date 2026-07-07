@@ -1381,6 +1381,24 @@ class BackendModuleTests(unittest.TestCase):
                     prometheus.first_value({"data": {"result": [{"value": [0, sample]}]}})
                 )
 
+    def test_prometheus_target_diagnostics_classify_scrape_errors(self) -> None:
+        from backend.prometheus import target_diagnostics_for_labels
+
+        diagnostics = target_diagnostics_for_labels(
+            [
+                {
+                    "labels": {"job": "linux", "instance": "10.0.0.5:9100"},
+                    "health": "down",
+                    "lastError": "Get http://10.0.0.5:9100/metrics: context deadline exceeded",
+                }
+            ],
+            {"job": "linux", "instance": "10.0.0.5:9100"},
+        )
+
+        self.assertEqual(diagnostics["category"], "timeout")
+        self.assertEqual(diagnostics["health"], "down")
+        self.assertIn("timed out", diagnostics["message"])
+
     def test_health_module_classifies_thresholds_without_app_import(self) -> None:
         from backend import health
 
@@ -1489,6 +1507,57 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["emergencyItems"][0]["id"], "prometheus-unavailable")
         self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
         self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
+
+    def test_dashboard_payload_attaches_target_diagnostics(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: {
+                "id": server["id"],
+                "name": server["name"],
+                "labels": server["labels"],
+                "status": "offline",
+                "health": "down",
+                "issues": [],
+                "dataQuality": {"level": "target_down", "trusted": True, "details": {}},
+                "metrics": {"up": 0},
+                "errors": {},
+            },
+            website_snapshot=lambda _config, _website: {},
+            active_targets=lambda _config: [
+                {
+                    "labels": {"job": "linux", "instance": "10.0.0.5:9100"},
+                    "health": "down",
+                    "lastError": "Get http://10.0.0.5:9100/metrics: connect: connection refused",
+                }
+            ],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [
+                    {
+                        "id": "srv1",
+                        "name": "Server 1",
+                        "labels": {"job": "linux", "instance": "10.0.0.5:9100"},
+                    }
+                ],
+                "websites": [],
+            },
+            runtime=runtime,
+        )
+
+        diagnostics = payload["servers"][0]["targetDiagnostics"]
+        self.assertEqual(diagnostics["category"], "connection_refused")
+        self.assertIn("refused", diagnostics["message"])
+        self.assertEqual(
+            payload["servers"][0]["dataQuality"]["details"]["targetDiagnostics"]["category"],
+            "connection_refused",
+        )
 
     def test_platform_health_summary_reports_root_volume_warning(self) -> None:
         from backend.platform_health import summarize_status_payload

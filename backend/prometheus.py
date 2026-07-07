@@ -160,6 +160,67 @@ def data_quality(level: str, message: str, trusted: bool, details: dict | None =
     }
 
 
+def prometheus_active_targets(config: dict) -> list[dict]:
+    payload = prometheus_get(config, "/api/v1/targets", {})
+    return list(payload.get("data", {}).get("activeTargets", []) or [])
+
+
+def _labels_match(target_labels: dict, labels: dict) -> bool:
+    if not labels:
+        return False
+    return all(str(target_labels.get(key, "")) == str(value) for key, value in labels.items())
+
+
+def _target_category(health: str, last_error: str) -> tuple[str, str]:
+    if health == "up":
+        return "healthy", "Prometheus target is healthy."
+
+    error = last_error.lower()
+    if "context deadline exceeded" in error or "timeout" in error or "timed out" in error:
+        return "timeout", "Prometheus scrape timed out before the exporter responded."
+    if "connection refused" in error or "actively refused" in error:
+        return "connection_refused", "Prometheus reached the host, but the exporter port refused the connection."
+    if "no route to host" in error or "host unreachable" in error or "network is unreachable" in error:
+        return "network_unreachable", "Prometheus cannot reach the target network path."
+    if last_error:
+        return "scrape_error", f"Prometheus scrape failed: {last_error}"
+    return "target_down", "Prometheus reports the target as down."
+
+
+def target_diagnostics_for_labels(active_targets: list[dict], labels: dict) -> dict:
+    matches = [target for target in active_targets if _labels_match(target.get("labels") or {}, labels)]
+    if not matches:
+        return {
+            "available": False,
+            "category": "no_target",
+            "health": "unknown",
+            "lastError": "",
+            "message": "No active Prometheus target matched this label set.",
+            "labels": labels,
+        }
+
+    selected = next(
+        (
+            target
+            for target in matches
+            if str(target.get("health") or "") != "up" or str(target.get("lastError") or "")
+        ),
+        matches[0],
+    )
+    health = str(selected.get("health") or "unknown")
+    last_error = str(selected.get("lastError") or "")
+    category, message = _target_category(health, last_error)
+    return {
+        "available": True,
+        "category": category,
+        "health": health,
+        "lastError": last_error,
+        "message": message,
+        "scrapeUrl": selected.get("scrapeUrl", ""),
+        "labels": labels,
+    }
+
+
 def server_data_quality(status: str, values: dict[str, float | None], errors: dict[str, str]) -> dict:
     if errors.get("up"):
         return data_quality(
