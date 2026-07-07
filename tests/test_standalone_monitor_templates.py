@@ -99,6 +99,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         panel_titles = {panel["title"] for panel in dashboard["panels"]}
         expected_titles = {
             "目标连通性",
+            "服务器/虚拟机可用性",
+            "服务器/虚拟机清单",
             "异常目标",
             "Linux CPU 使用率",
             "Linux 内存使用率",
@@ -126,6 +128,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("正常", json.dumps(dashboard, ensure_ascii=False))
         self.assertIn("异常", json.dumps(dashboard, ensure_ascii=False))
         self.assertIn("up == 0", expressions)
+        self.assertIn('job=~"linux_servers_direct|linux_servers_ssh_tunnel|windows_servers|local_windows"', expressions)
         self.assertIn("node_cpu_seconds_total", expressions)
         self.assertIn("node_memory_MemAvailable_bytes", expressions)
         self.assertIn("node_filesystem_avail_bytes", expressions)
