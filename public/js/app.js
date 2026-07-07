@@ -124,6 +124,8 @@ function renderError(error) {
   $("#recoveryLogList").innerHTML = "";
   $("#configValidationPanel").innerHTML = "";
   $("#configValidationPanel").classList.add("hidden");
+  $("#monitoringLinks").innerHTML = "";
+  $("#monitoringLinks").classList.add("hidden");
   $("#platformHealthPanel").innerHTML = "";
   $("#platformHealthPanel").classList.add("hidden");
   $("#emergencyRunbookPanel").classList.add("hidden");
@@ -157,6 +159,7 @@ function render() {
   $("#lastUpdated").textContent = new Date((state.dashboard?.generatedAt || Date.now() / 1000) * 1000)
     .toLocaleTimeString("zh-CN", { hour12: false });
 
+  renderMonitoringLinks();
   renderSystemNotice();
   renderConfigValidation();
   renderPlatformHealth();
@@ -188,6 +191,21 @@ function renderSystemNotice() {
 
   notice.classList.toggle("hidden", messages.length === 0);
   notice.innerHTML = messages.map((message) => `<p>${escapeHtml(message)}</p>`).join("");
+}
+
+function renderMonitoringLinks() {
+  const links = $("#monitoringLinks");
+  const grafana = state.dashboard?.grafana || {};
+  const items = [];
+  if (grafana.url) {
+    items.push(`<a href="${escapeHtml(grafana.url)}" target="_blank" rel="noreferrer">Grafana</a>`);
+  }
+  if (grafana.dashboardUrl) {
+    items.push(`<a href="${escapeHtml(grafana.dashboardUrl)}" target="_blank" rel="noreferrer">Ops dashboard</a>`);
+  }
+
+  links.classList.toggle("hidden", items.length === 0);
+  links.innerHTML = items.join("");
 }
 
 function renderConfigValidation() {

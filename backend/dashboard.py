@@ -21,6 +21,8 @@ from backend.validation import config_validation_summary
 
 
 PROMETHEUS_UNAVAILABLE_MESSAGE = "Prometheus 暂不可用或未启动。"
+DEFAULT_GRAFANA_URL = "http://127.0.0.1:3000"
+DEFAULT_GRAFANA_DASHBOARD_PATH = "/d/local-ops-overview/local-ops-overview"
 
 
 def _default_ready_status(config: dict, timeout: float = 1.5) -> tuple[bool, str]:
@@ -104,6 +106,17 @@ def _summary(items: list[dict]) -> dict:
     }
 
 
+def _grafana_links(config: dict) -> dict:
+    monitoring = config.get("monitoring") or {}
+    url = str(config.get("grafanaUrl") or monitoring.get("grafanaUrl") or DEFAULT_GRAFANA_URL).rstrip("/")
+    dashboard_url = str(
+        config.get("grafanaDashboardUrl")
+        or monitoring.get("grafanaDashboardUrl")
+        or f"{url}{DEFAULT_GRAFANA_DASHBOARD_PATH}"
+    )
+    return {"url": url, "dashboardUrl": dashboard_url}
+
+
 def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> dict:
     active_runtime = runtime or _runtime
     servers = config.get("servers", [])
@@ -181,6 +194,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
     payload = {
         "generatedAt": active_runtime.now(),
         "prometheus": prometheus,
+        "grafana": _grafana_links(config),
         "configSource": active_runtime.config_source(),
         "configValidation": config_validation,
         "platformHealth": platform_health,

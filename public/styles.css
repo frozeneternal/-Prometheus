@@ -88,6 +88,29 @@ h1 {
   font-size: 13px;
 }
 
+.monitoring-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.monitoring-links a {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.monitoring-links a:hover {
+  border-color: #b7c1ce;
+  background: #f8fafc;
+}
+
 .toolbar {
   display: flex;
   align-items: flex-end;

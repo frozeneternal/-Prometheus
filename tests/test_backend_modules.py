@@ -1469,6 +1469,11 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["generatedAt"], 1234.0)
         self.assertFalse(payload["prometheus"]["available"])
         self.assertEqual(payload["prometheus"]["error"], "collector unavailable")
+        self.assertEqual(payload["grafana"]["url"], "http://127.0.0.1:3000")
+        self.assertEqual(
+            payload["grafana"]["dashboardUrl"],
+            "http://127.0.0.1:3000/d/local-ops-overview/local-ops-overview",
+        )
         self.assertEqual(payload["configSource"]["configFile"], "servers.local.json")
         self.assertEqual(payload["platformHealth"]["status"], "warning")
         self.assertEqual(payload["platformHealth"]["issues"][0]["id"], "root-volume-warning")
