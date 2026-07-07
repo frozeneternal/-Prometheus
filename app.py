@@ -135,10 +135,27 @@ def load_entity_states_from_disk() -> dict[str, dict]:
 
 def save_entity_states_to_disk(states: dict[str, dict]) -> None:
     ensure_data_dir()
-    temp_path = ENTITY_STATE_PATH.with_name(f"{ENTITY_STATE_PATH.name}.tmp")
-    with temp_path.open("w", encoding="utf-8") as fh:
-        json.dump(states, fh, ensure_ascii=False, indent=2)
-    temp_path.replace(ENTITY_STATE_PATH)
+    last_error: PermissionError | None = None
+    for attempt in range(5):
+        temp_path = ENTITY_STATE_PATH.with_name(
+            f"{ENTITY_STATE_PATH.name}.{os.getpid()}.{threading.get_ident()}.{attempt}.tmp"
+        )
+        try:
+            with temp_path.open("w", encoding="utf-8") as fh:
+                json.dump(states, fh, ensure_ascii=False, indent=2)
+            temp_path.replace(ENTITY_STATE_PATH)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    if last_error:
+        raise last_error
 
 
 def load_auth_audit_logs_from_disk() -> list[dict]:

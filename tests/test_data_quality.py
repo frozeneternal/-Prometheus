@@ -361,6 +361,28 @@ class DataQualityTests(unittest.TestCase):
                 self.assertNotIn("activeIncidentId", reset_saved["server:srv1"])
                 self.assertEqual(reset_saved["server:srv1"]["lastReason"], "target recovered")
 
+    def test_runtime_entity_state_save_retries_transient_replace_denial(self) -> None:
+        state_path = Path(self._tmpdir.name) / "entity_states.json"
+        original_replace = Path.replace
+        calls = []
+
+        def flaky_replace(path: Path, target: Path) -> Path:
+            calls.append((path, target))
+            if len(calls) == 1:
+                raise PermissionError("temporary Windows file lock")
+            return original_replace(path, target)
+
+        with (
+            patch.object(app, "ENTITY_STATE_PATH", state_path),
+            patch.object(Path, "replace", flaky_replace),
+            patch.object(app.time, "sleep", return_value=None),
+        ):
+            app.save_entity_states_to_disk({"server:srv1": {"consecutiveFailures": 1}})
+
+        saved = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["server:srv1"]["consecutiveFailures"], 1)
+        self.assertGreaterEqual(len(calls), 2)
+
     def test_manual_backup_success_blocks_duplicate_auto_backup(self) -> None:
         config = {
             "actionToken": "token",
