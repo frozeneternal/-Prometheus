@@ -390,6 +390,36 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         save_config_raw.assert_not_called()
 
+    def test_persist_resource_acknowledgement_rejects_deadline_beyond_max_window(self) -> None:
+        raw_config = {
+            "monitoring": {"resourceAckMaxDays": 7},
+            "resources": [
+                {
+                    "id": "license-warning",
+                    "name": "Backup License",
+                    "expiresAt": "2026-07-20",
+                    "renewUrl": "https://billing.example.com/license",
+                },
+            ],
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_acknowledgement(
+                "license-warning",
+                acknowledged_until="2026-07-11T08:00:01Z",
+                actor={"username": "ops"},
+            )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("7", payload["message"])
+        save_config_raw.assert_not_called()
+
     def test_persist_resource_acknowledgement_rejects_expired_resource(self) -> None:
         raw_config = {
             "resources": [

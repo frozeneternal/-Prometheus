@@ -7,6 +7,7 @@ from typing import Callable
 
 from backend.auth import public_user
 from backend.config import load_config_raw as default_load_config_raw
+from backend.config import monitoring_options
 from backend.config import save_config_raw as default_save_config_raw
 from backend.expiry import parse_expiry_timestamp, resource_expiry_items
 
@@ -93,6 +94,11 @@ def persist_resource_acknowledgement(
         return 400, {"ok": False, "message": "确认截止时间必须晚于当前时间。"}
 
     raw_config = active_runtime.load_config_raw()
+    ack_max_days = monitoring_options(raw_config)["resourceAckMaxDays"]
+    max_ack_until = current + ack_max_days * 86400
+    if acknowledged_until_timestamp > max_ack_until:
+        return 400, {"ok": False, "message": f"确认截止时间不能超过 {ack_max_days} 天。"}
+
     resource = find_raw_resource(raw_config, resource_id)
     if resource is None:
         return 404, {"ok": False, "message": "资源不存在。"}

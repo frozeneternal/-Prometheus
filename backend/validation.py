@@ -490,6 +490,17 @@ def monitoring_option_issues(config: dict) -> list[dict]:
             )
         )
 
+    ack_max_days = int_value(monitoring.get("resourceAckMaxDays", 7))
+    if ack_max_days is None or ack_max_days <= 0:
+        issues.append(
+            make_issue(
+                "monitoring-resource-ack-max-days-invalid",
+                "error",
+                "资源确认最大天数 resourceAckMaxDays 必须是大于 0 的整数。",
+                "monitoring",
+            )
+        )
+
     return issues
 
 

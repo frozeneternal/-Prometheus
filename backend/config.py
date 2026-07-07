@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
         "incidentLogLimit": 200,
         "resourceExpiryWarningDays": 30,
         "resourceExpiryCriticalDays": 7,
+        "resourceAckMaxDays": 7,
     },
     "servers": [],
     "websites": [],
@@ -42,6 +43,7 @@ def monitoring_options(config: dict) -> dict:
     incident_log_limit = max(20, min(1000, safe_int(raw.get("incidentLogLimit"), recovery_log_limit)))
     resource_expiry_warning_days = max(1, safe_int(raw.get("resourceExpiryWarningDays"), 30))
     resource_expiry_critical_days = max(0, safe_int(raw.get("resourceExpiryCriticalDays"), 7))
+    resource_ack_max_days = max(1, safe_int(raw.get("resourceAckMaxDays"), 7))
     if resource_expiry_critical_days > resource_expiry_warning_days:
         resource_expiry_critical_days = resource_expiry_warning_days
     return {
@@ -50,6 +52,7 @@ def monitoring_options(config: dict) -> dict:
         "incidentLogLimit": incident_log_limit,
         "resourceExpiryWarningDays": resource_expiry_warning_days,
         "resourceExpiryCriticalDays": resource_expiry_critical_days,
+        "resourceAckMaxDays": resource_ack_max_days,
     }
 
 

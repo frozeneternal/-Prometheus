@@ -638,6 +638,7 @@ class ConfigValidationTests(unittest.TestCase):
                 "incidentLogLimit": True,
                 "resourceExpiryWarningDays": 0,
                 "resourceExpiryCriticalDays": 20,
+                "resourceAckMaxDays": 0,
             },
             "servers": [],
             "websites": [],
@@ -653,6 +654,7 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("monitoring-incident-log-limit-invalid", issue_ids)
         self.assertIn("monitoring-resource-warning-days-invalid", issue_ids)
         self.assertIn("monitoring-resource-critical-days-too-high", issue_ids)
+        self.assertIn("monitoring-resource-ack-max-days-invalid", issue_ids)
 
 
 if __name__ == "__main__":
