@@ -185,6 +185,7 @@ function renderSystemNotice() {
   const coverage = state.dashboard?.targetCoverage;
   const issueSummary = state.dashboard?.targetIssueSummary;
   const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
+  const recoverySummary = state.dashboard?.recoverySummary;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -214,6 +215,10 @@ function renderSystemNotice() {
       ? `，使用上次成功结果${exporterDiagnostics.error ? `（${exporterDiagnostics.error}）` : ""}`
       : "";
     messages.push(`Exporter 诊断：需处理 ${diagnosticSummary.actionRequired ?? 0}，指标正常 ${diagnosticSummary.metricsOpen ?? 0}，SSH 隧道覆盖 ${diagnosticSummary.coveredByTunnel ?? 0}${staleText}。`);
+  }
+
+  if (recoverySummary) {
+    messages.push(`自动恢复：已启用 ${recoverySummary.enabled ?? 0}/${recoverySummary.total ?? 0}，阻断 ${recoverySummary.blocked ?? 0}，等待 ${recoverySummary.waiting ?? 0}，失败 ${recoverySummary.failed ?? 0}，中断中 ${recoverySummary.activeIncidents ?? 0}。`);
   }
 
   if (!configSource.usingLocalConfig) {

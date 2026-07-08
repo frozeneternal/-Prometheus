@@ -1728,6 +1728,72 @@ class BackendModuleTests(unittest.TestCase):
             "connection_refused",
         )
 
+    def test_dashboard_payload_summarizes_auto_recovery_safety_state(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        def recovery_state(_config: dict, _target_type: str, entity: dict, _snapshot: dict) -> dict:
+            states = {
+                "srv-enabled": {"enabled": True, "status": "idle"},
+                "srv-blocked": {"enabled": True, "status": "blocked"},
+                "site-failed": {"enabled": True, "status": "failed", "incident": {"active": True}},
+            }
+            return states.get(entity["id"], {"enabled": False, "status": "idle"})
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: {
+                "id": server["id"],
+                "name": server["name"],
+                "labels": server.get("labels", {}),
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            website_snapshot=lambda _config, website: {
+                "id": website["id"],
+                "name": website["name"],
+                "url": website["url"],
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            active_targets=lambda _config: [],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_recovery=recovery_state,
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [
+                    {"id": "srv-enabled", "name": "Server Enabled"},
+                    {"id": "srv-blocked", "name": "Server Blocked"},
+                    {"id": "srv-disabled", "name": "Server Disabled"},
+                ],
+                "websites": [{"id": "site-failed", "name": "Site Failed", "url": "https://example.test"}],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["recoverySummary"]
+        self.assertEqual(summary["total"], 4)
+        self.assertEqual(summary["enabled"], 3)
+        self.assertEqual(summary["disabled"], 1)
+        self.assertEqual(summary["blocked"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["idle"], 2)
+        self.assertEqual(summary["activeIncidents"], 1)
+        self.assertEqual(summary["statuses"]["blocked"], 1)
+        self.assertEqual(summary["statuses"]["failed"], 1)
+        self.assertEqual(summary["status"], "attention")
+
     def test_dashboard_target_coverage_keeps_collector_down_targets_unknown(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 

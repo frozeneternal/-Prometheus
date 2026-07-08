@@ -228,6 +228,47 @@ def _target_issue_summary(items: list[dict], prometheus_available: bool) -> dict
     }
 
 
+def _recovery_summary(items: list[dict]) -> dict:
+    statuses: dict[str, int] = {}
+    enabled = 0
+    active_incidents = 0
+
+    for item in items:
+        recovery = item.get("autoRecovery") or {}
+        status = str(recovery.get("status") or "idle")
+        statuses[status] = statuses.get(status, 0) + 1
+        if recovery.get("enabled"):
+            enabled += 1
+        incident = recovery.get("incident") or {}
+        if isinstance(incident, dict) and incident.get("active"):
+            active_incidents += 1
+
+    total = len(items)
+    blocked = statuses.get("blocked", 0)
+    failed = statuses.get("failed", 0)
+    waiting = statuses.get("waiting", 0)
+    if failed or blocked or active_incidents:
+        status = "attention"
+    elif waiting:
+        status = "waiting"
+    else:
+        status = "ok"
+
+    return {
+        "status": status,
+        "total": total,
+        "enabled": enabled,
+        "disabled": total - enabled,
+        "idle": statuses.get("idle", 0),
+        "waiting": waiting,
+        "blocked": blocked,
+        "triggered": statuses.get("triggered", 0),
+        "failed": failed,
+        "activeIncidents": active_incidents,
+        "statuses": statuses,
+    }
+
+
 def _grafana_links(config: dict) -> dict:
     monitoring = config.get("monitoring") or {}
     url = str(config.get("grafanaUrl") or monitoring.get("grafanaUrl") or DEFAULT_GRAFANA_URL).rstrip("/")
@@ -326,6 +367,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "exporterDiagnostics": exporter_diagnostics,
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
+        "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),

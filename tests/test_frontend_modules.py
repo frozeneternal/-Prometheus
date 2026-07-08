@@ -235,6 +235,16 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("使用上次成功结果", app_js)
         self.assertIn("exporterDiagnostics.error", app_js)
 
+    def test_auto_recovery_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("state.dashboard?.recoverySummary", app_js)
+        self.assertIn("自动恢复", app_js)
+        self.assertIn("recoverySummary.enabled", app_js)
+        self.assertIn("recoverySummary.blocked", app_js)
+        self.assertIn("recoverySummary.failed", app_js)
+        self.assertIn("recoverySummary.activeIncidents", app_js)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
