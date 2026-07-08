@@ -189,6 +189,7 @@ function renderSystemNotice() {
   const incidentSummary = state.dashboard?.incidentSummary;
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
   const resourceExpirySummary = state.dashboard?.resourceExpirySummary;
+  const accountSecurity = state.dashboard?.accountSecurity;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -241,6 +242,12 @@ function renderSystemNotice() {
 
   if ((resourceExpirySummary?.actionRequired ?? 0) > 0) {
     messages.push(`资源到期：需处理 ${resourceExpirySummary.actionRequired ?? 0}/${resourceExpirySummary.total ?? 0}，已过期 ${resourceExpirySummary.expired ?? 0}，严重 ${resourceExpirySummary.critical ?? 0}，预警 ${resourceExpirySummary.warning ?? 0}，未知 ${resourceExpirySummary.unknown ?? 0}。`);
+  }
+
+  if (accountSecurity && accountSecurity.severity !== "ok") {
+    const accountIssueCount = (accountSecurity.issues || []).length;
+    const accountSeverityText = accountSecurity.severity === "error" ? "严重" : "预警";
+    messages.push(`账号安全：${accountSeverityText}，启用账号 ${accountSecurity.enabledUsers ?? 0}，管理员 ${accountSecurity.adminUsers ?? 0}，运维账号 ${accountSecurity.operatorUsers ?? 0}，问题 ${accountIssueCount}。`);
   }
 
   if (!configSource.usingLocalConfig) {
