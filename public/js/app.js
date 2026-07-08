@@ -188,6 +188,7 @@ function renderSystemNotice() {
   const recoverySummary = state.dashboard?.recoverySummary;
   const incidentSummary = state.dashboard?.incidentSummary;
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
+  const resourceExpirySummary = state.dashboard?.resourceExpirySummary;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -236,6 +237,10 @@ function renderSystemNotice() {
 
   if (certRenewalSummary) {
     messages.push(`证书续期：已启用 ${certRenewalSummary.enabled ?? 0}/${certRenewalSummary.total ?? 0}，失败 ${certRenewalSummary.failed ?? 0}，阻断 ${certRenewalSummary.blocked ?? 0}，即将到期 ${certRenewalSummary.expiring ?? 0}，证书天数未知 ${certRenewalSummary.unknownExpiry ?? 0}。`);
+  }
+
+  if ((resourceExpirySummary?.actionRequired ?? 0) > 0) {
+    messages.push(`资源到期：需处理 ${resourceExpirySummary.actionRequired ?? 0}/${resourceExpirySummary.total ?? 0}，已过期 ${resourceExpirySummary.expired ?? 0}，严重 ${resourceExpirySummary.critical ?? 0}，预警 ${resourceExpirySummary.warning ?? 0}，未知 ${resourceExpirySummary.unknown ?? 0}。`);
   }
 
   if (!configSource.usingLocalConfig) {
