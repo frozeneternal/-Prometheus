@@ -20,6 +20,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "ssh_metrics_tunnel.py",
             STANDALONE / "set-ssh-credential.ps1",
             STANDALONE / "clear-ssh-credential.ps1",
+            STANDALONE / "diagnose-exporters.ps1",
             STANDALONE / "start-ssh-tunnels.ps1",
             STANDALONE / "stop-ssh-tunnels.ps1",
             STANDALONE / "watchdog-local-monitor.ps1",
@@ -90,6 +91,22 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("Register-ScheduledTask", installer)
         self.assertIn("Start-ScheduledTask", installer)
         self.assertNotIn("docker", installer.lower())
+
+    def test_exporter_diagnostics_script_is_read_only(self) -> None:
+        script = (STANDALONE / "diagnose-exporters.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("targets.local.json", script)
+        self.assertIn("tunnels.local.json", script)
+        self.assertIn("Test-PortFast", script)
+        self.assertIn("SuggestedCommands", script)
+        self.assertIn("covered_by_ssh_tunnel", script)
+        self.assertIn("systemctl status node_exporter", script)
+        self.assertIn("Get-Service windows_exporter", script)
+        self.assertNotIn("systemctl restart", script)
+        self.assertNotIn("Restart-Service", script)
+        self.assertNotIn("Invoke-Command", script)
+        self.assertNotIn(" ssh ", script.lower())
+        self.assertNotIn("docker", script.lower())
 
     def test_standalone_stack_manages_blackbox_exporter(self) -> None:
         start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
