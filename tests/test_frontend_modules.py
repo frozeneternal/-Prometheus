@@ -205,6 +205,7 @@ class FrontendModuleTests(unittest.TestCase):
         format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
 
         self.assertIn("targetDiagnosticLabels", format_js)
+        self.assertIn("ssh_tunnel_down", format_js)
         self.assertIn("targetDiagnosticLabels", app_js)
         self.assertIn("state.dashboard?.targetIssueSummary", app_js)
         self.assertIn("Prometheus 异常原因", app_js)

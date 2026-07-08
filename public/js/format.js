@@ -59,6 +59,7 @@ export const targetDiagnosticLabels = {
   healthy: "正常",
   timeout: "采集超时",
   connection_refused: "连接被拒绝",
+  ssh_tunnel_down: "SSH 隧道断开",
   network_unreachable: "网络不可达",
   scrape_error: "采集错误",
   target_down: "目标不可达",

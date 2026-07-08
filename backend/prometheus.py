@@ -171,7 +171,13 @@ def _labels_match(target_labels: dict, labels: dict) -> bool:
     return all(str(target_labels.get(key, "")) == str(value) for key, value in labels.items())
 
 
-def _target_category(health: str, last_error: str) -> tuple[str, str]:
+def _is_ssh_tunnel_target(target_labels: dict) -> bool:
+    job = str(target_labels.get("job") or "")
+    instance = str(target_labels.get("instance") or "")
+    return "ssh_tunnel" in job or instance.startswith("127.0.0.1:191")
+
+
+def _target_category(health: str, last_error: str, target_labels: dict | None = None) -> tuple[str, str]:
     if health == "up":
         return "healthy", "Prometheus target is healthy."
 
@@ -179,6 +185,8 @@ def _target_category(health: str, last_error: str) -> tuple[str, str]:
     if "context deadline exceeded" in error or "timeout" in error or "timed out" in error:
         return "timeout", "Prometheus scrape timed out before the exporter responded."
     if "connection refused" in error or "actively refused" in error:
+        if _is_ssh_tunnel_target(target_labels or {}):
+            return "ssh_tunnel_down", "Prometheus reached the local SSH tunnel port, but the SSH tunnel is not listening."
         return "connection_refused", "Prometheus reached the host, but the exporter port refused the connection."
     if "no route to host" in error or "host unreachable" in error or "network is unreachable" in error:
         return "network_unreachable", "Prometheus cannot reach the target network path."
@@ -192,6 +200,7 @@ def _target_action_hint(category: str) -> str:
         "healthy": "No action needed.",
         "timeout": "Check whether the exporter process is overloaded or blocked by firewall rules, then verify the metrics endpoint from the Prometheus host.",
         "connection_refused": "Start or repair the exporter service on the target, then confirm the exporter port is listening.",
+        "ssh_tunnel_down": "Start or repair the local SSH tunnel for this target, then confirm the 127.0.0.1 tunnel port is listening.",
         "network_unreachable": "Check host power/network reachability and routing between Prometheus and the target.",
         "scrape_error": "Review the Prometheus lastError text, target exporter logs, and scrape endpoint configuration.",
         "target_down": "Check the target exporter status and Prometheus scrape configuration.",
@@ -224,7 +233,7 @@ def target_diagnostics_for_labels(active_targets: list[dict], labels: dict) -> d
     )
     health = str(selected.get("health") or "unknown")
     last_error = str(selected.get("lastError") or "")
-    category, message = _target_category(health, last_error)
+    category, message = _target_category(health, last_error, selected.get("labels") or {})
     return {
         "available": True,
         "category": category,

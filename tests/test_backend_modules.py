@@ -1471,6 +1471,21 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("actionHint", diagnostics)
         self.assertIn("exporter", diagnostics["actionHint"])
 
+        tunnel_diagnostics = target_diagnostics_for_labels(
+            [
+                {
+                    "labels": {"job": "linux_servers_ssh_tunnel", "instance": "127.0.0.1:19126"},
+                    "health": "down",
+                    "lastError": "Get http://127.0.0.1:19126/metrics: connect: connection refused",
+                }
+            ],
+            {"job": "linux_servers_ssh_tunnel", "instance": "127.0.0.1:19126"},
+        )
+
+        self.assertEqual(tunnel_diagnostics["category"], "ssh_tunnel_down")
+        self.assertIn("SSH tunnel", tunnel_diagnostics["message"])
+        self.assertIn("SSH tunnel", tunnel_diagnostics["actionHint"])
+
     def test_health_module_classifies_thresholds_without_app_import(self) -> None:
         from backend import health
 
