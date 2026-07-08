@@ -10,6 +10,15 @@ from backend.incidents import update_incident_state as default_update_incident_s
 
 
 ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
+RECOVERY_BLOCKED_TARGET_CATEGORIES = {
+    "connection_refused",
+    "node_exporter_down",
+    "node_exporter_timeout",
+    "no_target",
+    "ssh_tunnel_down",
+    "windows_exporter_down",
+    "windows_exporter_timeout",
+}
 
 
 def _empty_state(_target_type: str, _target_id: str) -> dict:
@@ -184,6 +193,20 @@ def _target_diagnostics(snapshot: dict) -> dict:
     return diagnostics if isinstance(diagnostics, dict) else {}
 
 
+def _target_diagnostics_recovery_block(snapshot: dict) -> str:
+    diagnostics = _target_diagnostics(snapshot)
+    category = str(diagnostics.get("category") or "")
+    if category not in RECOVERY_BLOCKED_TARGET_CATEGORIES:
+        return ""
+
+    hint = str(diagnostics.get("actionHint") or diagnostics.get("message") or "")
+    suffix = f" {hint}" if hint else ""
+    return (
+        f"Prometheus target diagnostics reported {category}; "
+        f"handle exporter/scrape path before running auto recovery.{suffix}"
+    )
+
+
 def _recovery_reason(snapshot: dict) -> str:
     base_reason = "; ".join(str(issue) for issue in snapshot.get("issues") or [] if issue)
     if not base_reason:
@@ -221,9 +244,10 @@ def maybe_trigger_recovery(
     trigger_health = recovery_config.get("triggerHealth") or ["down"]
     quality = snapshot.get("dataQuality") or {}
     data_trusted = quality.get("trusted") is not False
+    diagnostics_block_message = _target_diagnostics_recovery_block(snapshot)
     incident = active_runtime.update_incident_state(config, target_type, entity, snapshot, state)
 
-    if enabled and health in trigger_health and data_trusted:
+    if enabled and health in trigger_health and data_trusted and not diagnostics_block_message:
         state["consecutiveFailures"] = safe_failure_count(state.get("consecutiveFailures", 0)) + 1
     else:
         state["consecutiveFailures"] = 0
@@ -254,6 +278,12 @@ def maybe_trigger_recovery(
     if health in trigger_health and not data_trusted:
         recovery_view["status"] = "blocked"
         recovery_view["message"] = quality.get("message") or "监控数据不可信，禁止执行自动恢复。"
+        active_runtime.set_state(target_type, target_id, state)
+        return recovery_view
+
+    if health in trigger_health and diagnostics_block_message:
+        recovery_view["status"] = "blocked"
+        recovery_view["message"] = diagnostics_block_message
         active_runtime.set_state(target_type, target_id, state)
         return recovery_view
 

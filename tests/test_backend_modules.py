@@ -2410,6 +2410,61 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(incident_action_updates[0]["lastLogId"], "")
         self.assertEqual(incident_action_updates[0]["lastActionAt"], 1000.0)
 
+    def test_recovery_module_blocks_exporter_diagnostics_without_action(self) -> None:
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
+
+        states: dict[str, dict] = {}
+        runtime = RecoveryRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            update_incident_state=lambda *_args, **_kwargs: {"active": True, "id": "incident-1"},
+            execute_server_action=lambda *_args, **_kwargs: self.fail("exporter diagnostics must block auto recovery"),
+        )
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "restart", "command": ["restart"], "allowAuto": True}],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "restart",
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 1,
+                "cooldownSeconds": 30,
+            },
+        }
+        snapshot = {
+            "id": "srv1",
+            "name": "Server 1",
+            "status": "offline",
+            "health": "down",
+            "issues": ["target down"],
+            "targetDiagnostics": {
+                "category": "node_exporter_down",
+                "message": "Prometheus reached the Linux target, but node_exporter refused the connection.",
+                "actionHint": "Start or repair node_exporter on the Linux target.",
+            },
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_recovery(config, "server", entity, snapshot, runtime=runtime)
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["consecutiveFailures"], 0)
+        self.assertIn("node_exporter_down", result["message"])
+        self.assertIn("exporter", result["message"])
+        self.assertEqual(states["server:srv1"]["consecutiveFailures"], 0)
+
     def test_recovery_module_tolerates_corrupt_failure_counter_without_app_import(self) -> None:
         from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
 
