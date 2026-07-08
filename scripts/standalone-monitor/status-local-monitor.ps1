@@ -1,5 +1,6 @@
 ﻿param(
   [string]$Root = "E:\ops-monitor",
+  [string]$WatchdogTaskName = "OpsMonitorWatchdog",
   [switch]$Json,
   [switch]$DeepDiskScan,
   [switch]$LocalOnly
@@ -204,6 +205,59 @@ function Get-PrometheusStorageHealth {
   }
 }
 
+function Format-TaskTime($Value) {
+  if (-not $Value) {
+    return ""
+  }
+  try {
+    if ($Value.Year -le 1) {
+      return ""
+    }
+    return $Value.ToString("o")
+  } catch {
+    return ""
+  }
+}
+
+function Get-WatchdogTaskHealth {
+  try {
+    $task = Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction Stop
+    $info = Get-ScheduledTaskInfo -TaskName $WatchdogTaskName -ErrorAction Stop
+    $state = [string]$task.State
+    $lastResult = $info.LastTaskResult
+    $status = "ok"
+    $message = "Watchdog scheduled task is registered and healthy."
+    if ($state -eq "Disabled") {
+      $status = "warning"
+      $message = "Watchdog scheduled task is disabled."
+    }
+    if ($lastResult -ne 0) {
+      $status = "warning"
+      $message = "Watchdog scheduled task last run did not finish cleanly."
+    }
+
+    [pscustomobject]@{
+      Status = $status
+      TaskName = $WatchdogTaskName
+      State = $state
+      LastRunTime = Format-TaskTime $info.LastRunTime
+      LastTaskResult = $lastResult
+      NextRunTime = Format-TaskTime $info.NextRunTime
+      Message = $message
+    }
+  } catch {
+    [pscustomobject]@{
+      Status = "critical"
+      TaskName = $WatchdogTaskName
+      State = "missing"
+      LastRunTime = ""
+      LastTaskResult = $null
+      NextRunTime = ""
+      Message = $_.Exception.Message
+    }
+  }
+}
+
 function Test-PortFast($HostName, $Port, $TimeoutMs = 1000) {
   $client = [System.Net.Sockets.TcpClient]::new()
   try {
@@ -251,6 +305,7 @@ $appDirectoryHealth = @(
 
 $rootVolumeHealth = Get-RootVolumeStatus
 $prometheusStorageHealth = Get-PrometheusStorageHealth
+$watchdogTaskHealth = Get-WatchdogTaskHealth
 
 $remote = @()
 if (-not $LocalOnly -and (Test-Path $TargetsFile)) {
@@ -293,6 +348,7 @@ if ($Json) {
     appDirectoryHealth = $appDirectoryHealth
     rootVolumeHealth = $rootVolumeHealth
     prometheusStorageHealth = $prometheusStorageHealth
+    watchdogTaskHealth = $watchdogTaskHealth
     remoteTargets = @($remote)
     prometheusTargets = @($active)
     prometheusTargetsError = $prometheusTargetsError
@@ -318,6 +374,10 @@ $rootVolumeHealth | Format-List
 Write-Host ""
 Write-Host "Prometheus storage health"
 $prometheusStorageHealth | Format-List
+
+Write-Host ""
+Write-Host "Watchdog task health"
+$watchdogTaskHealth | Format-List
 
 if ($remote) {
   Write-Host ""

@@ -1802,6 +1802,36 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["issues"][0]["id"], "prometheus-storage-quarantine")
         self.assertIn("prometheus-corrupt-20260707-212937", summary["issues"][0]["message"])
 
+    def test_platform_health_summary_reports_watchdog_task_failure(self) -> None:
+        from backend.platform_health import summarize_status_payload
+
+        summary = summarize_status_payload(
+            {
+                "localStack": [
+                    {"Name": "Prometheus", "Status": 200},
+                ],
+                "runtimeBinaryHealth": [
+                    {"Name": "Prometheus", "Status": "ok"},
+                ],
+                "appDirectoryHealth": [],
+                "rootVolumeHealth": {"Status": "ok"},
+                "prometheusStorageHealth": {"Status": "ok", "QuarantineCount": 0},
+                "watchdogTaskHealth": {
+                    "Status": "warning",
+                    "TaskName": "OpsMonitorWatchdog",
+                    "State": "Disabled",
+                    "LastTaskResult": 1,
+                    "NextRunTime": "",
+                },
+            }
+        )
+
+        self.assertEqual(summary["status"], "warning")
+        self.assertEqual(summary["summary"]["watchdogStatus"], "warning")
+        self.assertEqual(summary["watchdogTaskHealth"]["TaskName"], "OpsMonitorWatchdog")
+        self.assertEqual(summary["issues"][0]["id"], "watchdog-task-warning")
+        self.assertIn("OpsMonitorWatchdog", summary["issues"][0]["message"])
+
     def test_platform_health_summary_uses_short_cache_for_runner_errors(self) -> None:
         from backend import platform_health
 

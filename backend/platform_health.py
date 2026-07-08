@@ -177,12 +177,37 @@ def _prometheus_storage_issue(storage_health: dict) -> list[dict]:
     ]
 
 
+def _watchdog_task_issue(watchdog_task: dict) -> list[dict]:
+    if not watchdog_task:
+        return []
+
+    status = str(watchdog_task.get("Status") or "unknown").lower()
+    if status == "ok":
+        return []
+
+    severity = "critical" if status in {"critical", "error"} else "warning"
+    task_name = str(watchdog_task.get("TaskName") or "watchdog task")
+    state = str(watchdog_task.get("State") or "unknown")
+    last_result = watchdog_task.get("LastTaskResult")
+    message = str(watchdog_task.get("Message") or "").strip()
+    if not message:
+        message = f"{task_name} scheduled task is unhealthy."
+    return [
+        {
+            "id": f"watchdog-task-{severity}",
+            "severity": severity,
+            "message": f"{task_name}: {message} State={state}; LastTaskResult={last_result}",
+        }
+    ]
+
+
 def summarize_status_payload(status_payload: dict) -> dict:
     local_stack = list(status_payload.get("localStack") or [])
     binary_health = list(status_payload.get("runtimeBinaryHealth") or [])
     directory_health = list(status_payload.get("appDirectoryHealth") or [])
     root_volume = dict(status_payload.get("rootVolumeHealth") or {})
     prometheus_storage = dict(status_payload.get("prometheusStorageHealth") or {})
+    watchdog_task = dict(status_payload.get("watchdogTaskHealth") or {})
 
     issues = [
         *_local_stack_issues(local_stack),
@@ -190,6 +215,7 @@ def summarize_status_payload(status_payload: dict) -> dict:
         *_directory_issues(directory_health),
         *_root_volume_issue(root_volume),
         *_prometheus_storage_issue(prometheus_storage),
+        *_watchdog_task_issue(watchdog_task),
     ]
     status = _worst_status([issue["severity"] for issue in issues]) if issues else "ok"
     junctions = [item for item in directory_health if item.get("LinkType")]
@@ -205,6 +231,7 @@ def summarize_status_payload(status_payload: dict) -> dict:
             "directoryOk": sum(1 for item in directory_health if str(item.get("Status", "")).lower() == "ok"),
             "junctionCount": len(junctions),
             "prometheusQuarantineCount": int(prometheus_storage.get("QuarantineCount") or 0),
+            "watchdogStatus": str(watchdog_task.get("Status") or "unknown").lower(),
         },
         "issues": issues,
         "localStack": local_stack,
@@ -212,6 +239,7 @@ def summarize_status_payload(status_payload: dict) -> dict:
         "appDirectoryHealth": directory_health,
         "rootVolumeHealth": root_volume,
         "prometheusStorageHealth": prometheus_storage,
+        "watchdogTaskHealth": watchdog_task,
     }
 
 
@@ -227,6 +255,7 @@ def unavailable_platform_health(error: str) -> dict:
             "directoryOk": 0,
             "junctionCount": 0,
             "prometheusQuarantineCount": 0,
+            "watchdogStatus": "unknown",
         },
         "issues": [
             {
@@ -240,6 +269,7 @@ def unavailable_platform_health(error: str) -> dict:
         "appDirectoryHealth": [],
         "rootVolumeHealth": {},
         "prometheusStorageHealth": {},
+        "watchdogTaskHealth": {},
     }
 
 

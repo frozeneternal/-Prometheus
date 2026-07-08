@@ -301,6 +301,7 @@ function renderPlatformHealth() {
     `dirs ${summary.directoryOk ?? 0}/${summary.directoryTotal ?? 0}`,
     `junctions ${summary.junctionCount ?? 0}`,
     `prometheus TSDB quarantines ${summary.prometheusQuarantineCount ?? 0}`,
+    `watchdog ${summary.watchdogStatus || "unknown"}`,
   ];
   const rootText = root.Drive
     ? `${root.Drive} ${root.OperationalStatus || root.HealthStatus || root.Status || "unknown"}`

@@ -170,6 +170,12 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("summary.prometheusQuarantineCount", app_js)
         self.assertIn("prometheus TSDB", app_js)
 
+    def test_platform_health_panel_surfaces_watchdog_task_status(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("summary.watchdogStatus", app_js)
+        self.assertIn("watchdog", app_js)
+
     def test_grafana_links_are_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
