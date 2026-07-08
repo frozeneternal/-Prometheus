@@ -12,7 +12,13 @@ DEFAULT_TIMEOUT_SECONDS = 25.0
 ERROR_CACHE_SECONDS = 10.0
 OK_DIAGNOSES = {"metrics_open", "covered_by_ssh_tunnel"}
 
-_CACHE: dict[str, object] = {"key": "", "expires_at": 0.0, "payload": None}
+_CACHE: dict[str, object] = {
+    "key": "",
+    "expires_at": 0.0,
+    "payload": None,
+    "last_success_key": "",
+    "last_success_payload": None,
+}
 
 
 def _ps_quote(value: Path) -> str:
@@ -22,6 +28,7 @@ def _ps_quote(value: Path) -> str:
 def empty_exporter_diagnostics() -> dict:
     return {
         "status": "unknown",
+        "stale": False,
         "summary": {
             "total": 0,
             "metricsOpen": 0,
@@ -31,6 +38,7 @@ def empty_exporter_diagnostics() -> dict:
         "categories": [],
         "items": [],
         "error": "",
+        "message": "",
     }
 
 
@@ -131,6 +139,7 @@ def summarize_diagnostics(records: list[dict]) -> dict:
     action_required = len(items)
     return {
         "status": "ok" if action_required == 0 else "warning",
+        "stale": False,
         "summary": {
             "total": len(records),
             "metricsOpen": metrics_open,
@@ -140,6 +149,7 @@ def summarize_diagnostics(records: list[dict]) -> dict:
         "categories": categories_list,
         "items": items,
         "error": "",
+        "message": "",
     }
 
 
@@ -147,6 +157,15 @@ def unavailable_exporter_diagnostics(error: str) -> dict:
     payload = empty_exporter_diagnostics()
     payload["status"] = "unknown"
     payload["error"] = error
+    return payload
+
+
+def stale_exporter_diagnostics(error: str, last_success: dict) -> dict:
+    payload = json.loads(json.dumps(last_success))
+    payload["status"] = "warning"
+    payload["stale"] = True
+    payload["error"] = error
+    payload["message"] = f"Exporter diagnostics failed; showing last successful result: {error}"
     return payload
 
 
@@ -168,8 +187,15 @@ def exporter_diagnostics_summary(
     try:
         payload = summarize_diagnostics(runner(root, timeout))
         ttl = _cache_seconds(config)
+        _CACHE["last_success_key"] = cache_key
+        _CACHE["last_success_payload"] = payload
     except Exception as exc:  # noqa: BLE001 - diagnostics must not break the dashboard.
-        payload = unavailable_exporter_diagnostics(str(exc))
+        error = str(exc)
+        last_success = _CACHE.get("last_success_payload")
+        if _CACHE.get("last_success_key") == cache_key and isinstance(last_success, dict):
+            payload = stale_exporter_diagnostics(error, last_success)
+        else:
+            payload = unavailable_exporter_diagnostics(error)
         ttl = ERROR_CACHE_SECONDS
 
     _CACHE["key"] = cache_key

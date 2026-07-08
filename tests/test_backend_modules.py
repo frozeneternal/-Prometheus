@@ -1830,6 +1830,39 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(captured["encoding"], "utf-8")
         self.assertEqual(records[0]["Name"], "中文测试服务器")
 
+    def test_exporter_diagnostics_summary_reuses_last_success_after_runner_error(self) -> None:
+        from backend import exporter_diagnostics
+
+        exporter_diagnostics._CACHE.clear()
+        exporter_diagnostics._CACHE.update({"key": "", "expires_at": 0.0, "payload": None})
+
+        def healthy_runner(_root: Path, _timeout: float) -> list[dict]:
+            return [
+                {
+                    "Name": "srv-linux",
+                    "OS": "linux",
+                    "MetricsPort": 9100,
+                    "Diagnosis": "node_exporter_unreachable",
+                    "SuggestedCommands": ["systemctl status node_exporter"],
+                }
+            ]
+
+        def failing_runner(_root: Path, _timeout: float) -> list[dict]:
+            raise RuntimeError("diagnostics failed")
+
+        config = {"monitoring": {"standaloneRoot": "E:\\ops-monitor", "exporterDiagnosticsCacheSeconds": 0}}
+        first = exporter_diagnostics.exporter_diagnostics_summary(config, now=lambda: 100.0, runner=healthy_runner)
+        stale = exporter_diagnostics.exporter_diagnostics_summary(config, now=lambda: 101.0, runner=failing_runner)
+
+        self.assertFalse(first.get("stale", False))
+        self.assertEqual(first["summary"]["actionRequired"], 1)
+        self.assertTrue(stale["stale"])
+        self.assertEqual(stale["status"], "warning")
+        self.assertEqual(stale["summary"]["actionRequired"], 1)
+        self.assertEqual(stale["items"][0]["name"], "srv-linux")
+        self.assertIn("diagnostics failed", stale["error"])
+        self.assertIn("last successful", stale["message"])
+
     def test_emergency_module_includes_exporter_diagnostics_runbook_items(self) -> None:
         from backend.emergency import emergency_items
 

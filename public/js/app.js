@@ -210,7 +210,10 @@ function renderSystemNotice() {
 
   if (exporterDiagnostics?.summary) {
     const diagnosticSummary = exporterDiagnostics.summary;
-    messages.push(`Exporter 诊断：需处理 ${diagnosticSummary.actionRequired ?? 0}，指标正常 ${diagnosticSummary.metricsOpen ?? 0}，SSH 隧道覆盖 ${diagnosticSummary.coveredByTunnel ?? 0}。`);
+    const staleText = exporterDiagnostics.stale
+      ? `，使用上次成功结果${exporterDiagnostics.error ? `（${exporterDiagnostics.error}）` : ""}`
+      : "";
+    messages.push(`Exporter 诊断：需处理 ${diagnosticSummary.actionRequired ?? 0}，指标正常 ${diagnosticSummary.metricsOpen ?? 0}，SSH 隧道覆盖 ${diagnosticSummary.coveredByTunnel ?? 0}${staleText}。`);
   }
 
   if (!configSource.usingLocalConfig) {
