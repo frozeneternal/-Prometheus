@@ -187,15 +187,30 @@ def _target_category(health: str, last_error: str) -> tuple[str, str]:
     return "target_down", "Prometheus reports the target as down."
 
 
+def _target_action_hint(category: str) -> str:
+    hints = {
+        "healthy": "No action needed.",
+        "timeout": "Check whether the exporter process is overloaded or blocked by firewall rules, then verify the metrics endpoint from the Prometheus host.",
+        "connection_refused": "Start or repair the exporter service on the target, then confirm the exporter port is listening.",
+        "network_unreachable": "Check host power/network reachability and routing between Prometheus and the target.",
+        "scrape_error": "Review the Prometheus lastError text, target exporter logs, and scrape endpoint configuration.",
+        "target_down": "Check the target exporter status and Prometheus scrape configuration.",
+        "no_target": "Check that the server or website labels match an active Prometheus target and regenerate the scrape config if needed.",
+    }
+    return hints.get(category, "Review target configuration and Prometheus scrape status.")
+
+
 def target_diagnostics_for_labels(active_targets: list[dict], labels: dict) -> dict:
     matches = [target for target in active_targets if _labels_match(target.get("labels") or {}, labels)]
     if not matches:
+        category = "no_target"
         return {
             "available": False,
-            "category": "no_target",
+            "category": category,
             "health": "unknown",
             "lastError": "",
             "message": "No active Prometheus target matched this label set.",
+            "actionHint": _target_action_hint(category),
             "labels": labels,
         }
 
@@ -216,6 +231,7 @@ def target_diagnostics_for_labels(active_targets: list[dict], labels: dict) -> d
         "health": health,
         "lastError": last_error,
         "message": message,
+        "actionHint": _target_action_hint(category),
         "scrapeUrl": selected.get("scrapeUrl", ""),
         "labels": labels,
     }

@@ -1468,6 +1468,8 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(diagnostics["category"], "timeout")
         self.assertEqual(diagnostics["health"], "down")
         self.assertIn("timed out", diagnostics["message"])
+        self.assertIn("actionHint", diagnostics)
+        self.assertIn("exporter", diagnostics["actionHint"])
 
     def test_health_module_classifies_thresholds_without_app_import(self) -> None:
         from backend import health
@@ -1627,10 +1629,12 @@ class BackendModuleTests(unittest.TestCase):
         diagnostics = payload["servers"][0]["targetDiagnostics"]
         self.assertEqual(diagnostics["category"], "connection_refused")
         self.assertIn("refused", diagnostics["message"])
+        self.assertIn("exporter", diagnostics["actionHint"])
         self.assertEqual(
             payload["servers"][0]["dataQuality"]["details"]["targetDiagnostics"]["category"],
             "connection_refused",
         )
+        self.assertIn("actionHint", payload["servers"][0]["dataQuality"]["details"]["targetDiagnostics"])
         self.assertIn("targetDiagnostics", recovery_snapshots[0])
         self.assertEqual(recovery_snapshots[0]["targetDiagnostics"]["category"], "connection_refused")
         self.assertEqual(

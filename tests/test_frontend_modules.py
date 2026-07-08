@@ -187,6 +187,7 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn("targetDiagnostics", app_js)
         self.assertIn("diagnostics.message", app_js)
+        self.assertIn("diagnostics.actionHint", app_js)
         self.assertIn("quality-diagnostics", app_js)
         self.assertIn(".quality-diagnostics", styles_css)
 

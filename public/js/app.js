@@ -677,6 +677,7 @@ function dataQualityBlock(quality) {
   const diagnosticsText = diagnostics?.message
     ? `${diagnostics.category || "target"}: ${diagnostics.message}${diagnostics.lastError ? ` (${diagnostics.lastError})` : ""}`
     : "";
+  const actionHintText = diagnostics ? diagnostics.actionHint || "" : "";
   return `<div class="quality-block ${escapeHtml(level)} ${trusted ? "trusted" : "untrusted"}">
     <div class="quality-head">
       <strong>${escapeHtml(title)}</strong>
@@ -684,6 +685,7 @@ function dataQualityBlock(quality) {
     </div>
     <p>${escapeHtml(quality.message || "暂无数据质量说明")}</p>
     ${diagnosticsText ? `<p class="quality-diagnostics">${escapeHtml(diagnosticsText)}</p>` : ""}
+    ${actionHintText ? `<p class="quality-diagnostics">建议：${escapeHtml(actionHintText)}</p>` : ""}
   </div>`;
 }
 
