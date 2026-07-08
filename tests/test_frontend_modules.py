@@ -314,6 +314,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("platformCriticalIssues", notice_block)
         self.assertIn("platformWarningIssues", notice_block)
 
+    def test_emergency_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderSystemNotice()")
+        end = app_js.index("\nfunction renderMonitoringLinks()", start)
+        notice_block = app_js[start:end]
+
+        self.assertIn("state.dashboard?.emergencySummary", notice_block)
+        self.assertIn("emergencySummary.total", notice_block)
+        self.assertIn("emergencySummary.critical", notice_block)
+        self.assertIn("emergencySummary.warning", notice_block)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")

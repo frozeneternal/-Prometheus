@@ -186,6 +186,7 @@ function renderSystemNotice() {
   const issueSummary = state.dashboard?.targetIssueSummary;
   const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
   const platformHealth = state.dashboard?.platformHealth;
+  const emergencySummary = state.dashboard?.emergencySummary;
   const recoverySummary = state.dashboard?.recoverySummary;
   const incidentSummary = state.dashboard?.incidentSummary;
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
@@ -227,6 +228,10 @@ function renderSystemNotice() {
     const platformCriticalIssues = platformIssues.filter((issue) => ["critical", "error"].includes(issue.severity)).length;
     const platformWarningIssues = platformIssues.filter((issue) => issue.severity === "warning").length;
     messages.push(`平台健康：${platformHealth.status}，严重 ${platformCriticalIssues}，预警 ${platformWarningIssues}，总问题 ${platformIssues.length}。`);
+  }
+
+  if ((emergencySummary?.total ?? 0) > 0) {
+    messages.push(`应急事项：待处理 ${emergencySummary.total ?? 0}，严重 ${emergencySummary.critical ?? 0}，预警 ${emergencySummary.warning ?? 0}。`);
   }
 
   if (recoverySummary) {
