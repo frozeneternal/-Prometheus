@@ -269,6 +269,42 @@ def _recovery_summary(items: list[dict]) -> dict:
     }
 
 
+def _incident_summary(servers: list[dict], websites: list[dict], incident_logs: list[dict]) -> dict:
+    active_items = []
+    for target_type, items in (("server", servers), ("website", websites)):
+        for item in items:
+            incident = (item.get("autoRecovery") or {}).get("incident") or {}
+            if not isinstance(incident, dict) or not incident.get("active"):
+                continue
+            active_items.append(
+                {
+                    "targetType": target_type,
+                    "targetId": item.get("id", ""),
+                    "targetName": item.get("name") or item.get("id", ""),
+                    "id": incident.get("id", ""),
+                    "startedAt": incident.get("startedAt", 0.0),
+                    "durationSeconds": incident.get("durationSeconds", 0),
+                    "reason": incident.get("reason", ""),
+                    "summary": incident.get("summary", ""),
+                    "lastLogId": incident.get("lastLogId", ""),
+                }
+            )
+
+    recovered_logs = [
+        log for log in incident_logs if isinstance(log, dict) and str(log.get("status") or "") == "recovered"
+    ]
+    active_items.sort(key=lambda item: int(item.get("durationSeconds") or 0), reverse=True)
+    recovered_logs = sorted(recovered_logs, key=lambda item: float(item.get("recoveredAt") or 0.0), reverse=True)
+    return {
+        "status": "active" if active_items else "ok",
+        "active": len(active_items),
+        "recovered": len(recovered_logs),
+        "totalLogs": len(incident_logs),
+        "items": active_items[:10],
+        "recentRecovered": recovered_logs[:5],
+    }
+
+
 def _grafana_links(config: dict) -> dict:
     monitoring = config.get("monitoring") or {}
     url = str(config.get("grafanaUrl") or monitoring.get("grafanaUrl") or DEFAULT_GRAFANA_URL).rstrip("/")
@@ -368,6 +404,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
         "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
+        "incidentSummary": _incident_summary(snapshots, website_snapshots, incident_logs),
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),

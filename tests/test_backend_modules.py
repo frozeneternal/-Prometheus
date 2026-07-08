@@ -1794,6 +1794,80 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["statuses"]["failed"], 1)
         self.assertEqual(summary["status"], "attention")
 
+    def test_dashboard_payload_summarizes_active_and_recovered_incidents(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        def recovery_state(_config: dict, target_type: str, entity: dict, _snapshot: dict) -> dict:
+            if entity["id"] == "srv-active":
+                return {
+                    "enabled": True,
+                    "status": "idle",
+                    "incident": {
+                        "active": True,
+                        "id": "incident-active",
+                        "startedAt": 1000.0,
+                        "durationSeconds": 120,
+                        "reason": "target down",
+                        "summary": "Server Active is down",
+                        "lastLogId": "log-active",
+                    },
+                }
+            return {"enabled": True, "status": "idle", "incident": {"active": False}}
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: {
+                "id": server["id"],
+                "name": server["name"],
+                "labels": server.get("labels", {}),
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            website_snapshot=lambda _config, website: {
+                "id": website["id"],
+                "name": website["name"],
+                "url": website["url"],
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            active_targets=lambda _config: [],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_recovery=recovery_state,
+            get_incident_logs=lambda: [
+                {"id": "incident-old-active", "status": "active"},
+                {"id": "incident-recovered", "status": "recovered", "targetName": "Recovered Target"},
+            ],
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [{"id": "srv-active", "name": "Server Active"}],
+                "websites": [{"id": "site-ok", "name": "Site OK", "url": "https://example.test"}],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["incidentSummary"]
+        self.assertEqual(summary["status"], "active")
+        self.assertEqual(summary["active"], 1)
+        self.assertEqual(summary["recovered"], 1)
+        self.assertEqual(summary["totalLogs"], 2)
+        self.assertEqual(summary["items"][0]["targetType"], "server")
+        self.assertEqual(summary["items"][0]["targetId"], "srv-active")
+        self.assertEqual(summary["items"][0]["targetName"], "Server Active")
+        self.assertEqual(summary["items"][0]["durationSeconds"], 120)
+        self.assertEqual(summary["recentRecovered"][0]["id"], "incident-recovered")
+
     def test_dashboard_target_coverage_keeps_collector_down_targets_unknown(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 
