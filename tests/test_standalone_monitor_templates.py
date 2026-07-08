@@ -23,6 +23,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "start-ssh-tunnels.ps1",
             STANDALONE / "stop-ssh-tunnels.ps1",
             STANDALONE / "watchdog-local-monitor.ps1",
+            STANDALONE / "install-watchdog-task.ps1",
             STANDALONE / "ops-overview.dashboard.json",
             STANDALONE / "prometheus.example.yml",
             STANDALONE / "targets.example.json",
@@ -78,6 +79,17 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
 
         self.assertIn("--collectors.disabled=cpu", start_script)
+
+    def test_watchdog_task_installer_runs_recurring_standalone_watchdog(self) -> None:
+        installer = (STANDALONE / "install-watchdog-task.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("watchdog-local-monitor.ps1", installer)
+        self.assertIn("New-ScheduledTaskTrigger", installer)
+        self.assertIn("-RepetitionInterval", installer)
+        self.assertIn("-RepetitionDuration", installer)
+        self.assertIn("Register-ScheduledTask", installer)
+        self.assertIn("Start-ScheduledTask", installer)
+        self.assertNotIn("docker", installer.lower())
 
     def test_standalone_stack_manages_blackbox_exporter(self) -> None:
         start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
