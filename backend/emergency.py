@@ -7,12 +7,32 @@ TYPE_RANK = {
     "config-validation-error": 1,
     "config-validation-warning": 2,
 }
+EXPORTER_OK_DIAGNOSES = {"metrics_open", "covered_by_ssh_tunnel"}
 
 
 def _text_list(values: object) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value) for value in values if str(value or "").strip()]
+
+
+def _first_value(values: dict, *keys: str) -> object:
+    for key in keys:
+        value = values.get(key)
+        if value is not None and str(value).strip():
+            return value
+    return ""
+
+
+def _safe_id(*parts: object) -> str:
+    raw = "-".join(str(part) for part in parts if str(part or "").strip()) or "target"
+    chars = []
+    for char in raw.lower():
+        if char.isascii() and (char.isalnum() or char in {"-", "_", "."}):
+            chars.append(char)
+        elif chars and chars[-1] != "-":
+            chars.append("-")
+    return "".join(chars).strip("-")[:120] or "target"
 
 
 def _log_lookup(logs: object) -> dict[str, dict]:
@@ -145,6 +165,51 @@ def _platform_health_items(platform_health: dict | None) -> list[dict]:
                 ],
                 target_type="platform-health",
                 target_id=issue_id,
+            )
+        )
+    return items
+
+
+def _exporter_diagnostics_items(exporter_diagnostics: dict | None) -> list[dict]:
+    if not isinstance(exporter_diagnostics, dict):
+        return []
+
+    items = []
+    for index, diagnostic in enumerate(exporter_diagnostics.get("items") or [], start=1):
+        if not isinstance(diagnostic, dict):
+            continue
+
+        diagnosis = str(_first_value(diagnostic, "diagnosis", "Diagnosis") or "unknown")
+        if diagnosis in EXPORTER_OK_DIAGNOSES:
+            continue
+
+        name = str(_first_value(diagnostic, "name", "Name") or f"target-{index}")
+        os_name = str(_first_value(diagnostic, "os", "OS") or "unknown")
+        metrics_port = _first_value(diagnostic, "metricsPort", "MetricsPort") or "-"
+        management_open = _first_value(diagnostic, "managementPortOpen", "ManagementPortOpen")
+        commands = _text_list(_first_value(diagnostic, "suggestedCommands", "SuggestedCommands"))
+        next_steps = [
+            "Run scripts/standalone-monitor/diagnose-exporters.ps1 -Json again to confirm the finding is current.",
+        ]
+        next_steps.extend([f"read-only: {command}" for command in commands])
+        next_steps.append(
+            "Do not restart business services from this item; first confirm whether only the exporter, firewall, or SSH tunnel is affected."
+        )
+        if not commands:
+            next_steps.append("Add read-only suggestedCommands to the exporter diagnostics source for this target.")
+
+        items.append(
+            _item(
+                f"exporter-diagnostics:{_safe_id(name, diagnosis, index)}",
+                "warning",
+                f"Exporter 诊断：{name}",
+                (
+                    f"诊断为 {diagnosis}；os={os_name}；metricsPort={metrics_port}；"
+                    f"managementPortOpen={management_open if management_open != '' else 'unknown'}。"
+                ),
+                next_steps,
+                target_type="exporter-diagnostics",
+                target_id=_safe_id(name, diagnosis),
             )
         )
     return items
@@ -367,6 +432,7 @@ def emergency_items(
     prometheus: dict,
     config_validation: dict,
     platform_health: dict | None = None,
+    exporter_diagnostics: dict | None = None,
     servers: list[dict],
     websites: list[dict],
     resources: list[dict],
@@ -378,6 +444,7 @@ def emergency_items(
         if candidate:
             items.append(candidate)
     items.extend(_platform_health_items(platform_health))
+    items.extend(_exporter_diagnostics_items(exporter_diagnostics))
     for server in servers:
         item = _server_item(server, recovery_log_lookup)
         if item:

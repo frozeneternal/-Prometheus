@@ -15,6 +15,10 @@ OK_DIAGNOSES = {"metrics_open", "covered_by_ssh_tunnel"}
 _CACHE: dict[str, object] = {"key": "", "expires_at": 0.0, "payload": None}
 
 
+def _ps_quote(value: Path) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def empty_exporter_diagnostics() -> dict:
     return {
         "status": "unknown",
@@ -63,17 +67,20 @@ def run_diagnostics_script(root: Path, timeout: float) -> list[dict]:
     if not script.exists():
         raise FileNotFoundError(f"exporter diagnostics script not found: {script}")
 
+    command = (
+        "$ErrorActionPreference = 'Stop'; "
+        "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+        f"& {_ps_quote(script)} -Root {_ps_quote(root)} -Json"
+    )
     completed = subprocess.run(
         [
             "powershell",
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
-            "-File",
-            str(script),
-            "-Root",
-            str(root),
-            "-Json",
+            "-Command",
+            command,
         ],
         capture_output=True,
         text=True,

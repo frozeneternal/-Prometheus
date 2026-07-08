@@ -308,6 +308,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         prometheus=prometheus,
         config_validation=config_validation,
         platform_health=platform_health,
+        exporter_diagnostics=exporter_diagnostics,
         servers=snapshots,
         websites=website_snapshots,
         resources=expiry_items,

@@ -1656,7 +1656,15 @@ class BackendModuleTests(unittest.TestCase):
                 "status": "warning",
                 "summary": {"total": 3, "metricsOpen": 1, "coveredByTunnel": 1, "actionRequired": 1},
                 "categories": [{"diagnosis": "node_exporter_unreachable", "count": 1}],
-                "items": [{"Name": "Server 1", "Diagnosis": "node_exporter_unreachable"}],
+                "items": [
+                    {
+                        "name": "Server 1",
+                        "os": "linux",
+                        "diagnosis": "node_exporter_unreachable",
+                        "metricsPort": 9100,
+                        "suggestedCommands": ["systemctl status node_exporter"],
+                    }
+                ],
             },
             trigger_recovery=lambda _config, _target_type, _entity, snapshot: recovery_snapshots.append(snapshot)
             or {"enabled": True, "status": "idle"},
@@ -1706,6 +1714,13 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("exporter", payload["targetIssueSummary"]["categories"][0]["actionHint"])
         self.assertEqual(payload["exporterDiagnostics"]["summary"]["actionRequired"], 1)
         self.assertEqual(payload["exporterDiagnostics"]["categories"][0]["diagnosis"], "node_exporter_unreachable")
+        exporter_items = [
+            item for item in payload["emergencyItems"] if item["targetType"] == "exporter-diagnostics"
+        ]
+        self.assertEqual(len(exporter_items), 1)
+        self.assertIn("Server 1", exporter_items[0]["title"])
+        self.assertIn("node_exporter_unreachable", exporter_items[0]["message"])
+        self.assertIn("systemctl status node_exporter", " ".join(exporter_items[0]["nextSteps"]))
         self.assertIn("targetDiagnostics", recovery_snapshots[0])
         self.assertEqual(recovery_snapshots[0]["targetDiagnostics"]["category"], "connection_refused")
         self.assertEqual(
@@ -1782,6 +1797,80 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(categories["node_exporter_unreachable"], 1)
         self.assertEqual(categories["windows_exporter_unreachable"], 1)
         self.assertEqual(len(summary["items"]), 2)
+
+    def test_exporter_diagnostics_runner_forces_powershell_utf8_stdout(self) -> None:
+        from backend import exporter_diagnostics
+
+        captured: dict[str, object] = {}
+
+        class Completed:
+            returncode = 0
+            stdout = '[{"Name":"中文测试服务器","Diagnosis":"node_exporter_unreachable"}]'
+            stderr = ""
+
+        def fake_run(command: list[str], **kwargs: object) -> Completed:
+            captured["command"] = command
+            captured["encoding"] = kwargs.get("encoding")
+            return Completed()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            script_dir = root / "scripts"
+            script_dir.mkdir()
+            (script_dir / "diagnose-exporters.ps1").write_text("[]", encoding="utf-8")
+
+            with patch.object(exporter_diagnostics.subprocess, "run", side_effect=fake_run):
+                records = exporter_diagnostics.run_diagnostics_script(root, timeout=5.0)
+
+        command_text = " ".join(str(part) for part in captured["command"])
+        self.assertIn("OutputEncoding", command_text)
+        self.assertIn("UTF8Encoding", command_text)
+        self.assertIn("diagnose-exporters.ps1", command_text)
+        self.assertNotIn("$args", command_text)
+        self.assertEqual(captured["encoding"], "utf-8")
+        self.assertEqual(records[0]["Name"], "中文测试服务器")
+
+    def test_emergency_module_includes_exporter_diagnostics_runbook_items(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            platform_health={"status": "ok", "issues": []},
+            exporter_diagnostics={
+                "status": "warning",
+                "items": [
+                    {
+                        "name": "Server 1",
+                        "os": "linux",
+                        "diagnosis": "node_exporter_unreachable",
+                        "metricsPort": 9100,
+                        "managementPortOpen": False,
+                        "suggestedCommands": [
+                            "ssh ops@server systemctl status node_exporter",
+                            "curl http://server:9100/metrics",
+                        ],
+                    }
+                ],
+            },
+            servers=[],
+            websites=[],
+            resources=[],
+        )
+
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertEqual(item["targetType"], "exporter-diagnostics")
+        self.assertTrue(item["id"].startswith("exporter-diagnostics:"))
+        self.assertEqual(item["severity"], "warning")
+        self.assertIn("Server 1", item["title"])
+        self.assertIn("node_exporter_unreachable", item["message"])
+        self.assertIn("linux", item["message"])
+        self.assertIn("9100", item["message"])
+        steps = " ".join(item["nextSteps"])
+        self.assertIn("ssh ops@server systemctl status node_exporter", steps)
+        self.assertIn("curl http://server:9100/metrics", steps)
+        self.assertIn("read-only", steps)
 
     def test_platform_health_summary_reports_root_volume_warning(self) -> None:
         from backend.platform_health import summarize_status_payload
