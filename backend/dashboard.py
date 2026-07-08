@@ -305,6 +305,67 @@ def _incident_summary(servers: list[dict], websites: list[dict], incident_logs: 
     }
 
 
+def _int_days(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _cert_renewal_summary(websites: list[dict]) -> dict:
+    statuses: dict[str, int] = {}
+    enabled = 0
+    not_applicable = 0
+    expiring = 0
+    unknown_expiry = 0
+
+    for website in websites:
+        renewal = website.get("certRenewal") or {}
+        status = str(renewal.get("status") or "idle")
+        statuses[status] = statuses.get(status, 0) + 1
+        if renewal.get("enabled"):
+            enabled += 1
+
+        if renewal.get("notApplicable"):
+            not_applicable += 1
+            continue
+
+        expires_in_days = _int_days(renewal.get("expiresInDays"))
+        renew_before_days = _int_days(renewal.get("renewBeforeDays")) or 14
+        if expires_in_days is None:
+            unknown_expiry += 1
+        elif expires_in_days <= renew_before_days:
+            expiring += 1
+
+    total = len(websites)
+    failed = statuses.get("failed", 0)
+    blocked = statuses.get("blocked", 0)
+    verifying = statuses.get("verifying", 0)
+    waiting = statuses.get("waiting", 0)
+    if failed or blocked or expiring or unknown_expiry:
+        status = "attention"
+    elif waiting or verifying:
+        status = "waiting"
+    else:
+        status = "ok"
+
+    return {
+        "status": status,
+        "total": total,
+        "enabled": enabled,
+        "disabled": total - enabled,
+        "idle": statuses.get("idle", 0),
+        "waiting": waiting,
+        "blocked": blocked,
+        "verifying": verifying,
+        "triggered": statuses.get("triggered", 0),
+        "failed": failed,
+        "expiring": expiring,
+        "unknownExpiry": unknown_expiry,
+        "notApplicable": not_applicable,
+        "statuses": statuses,
+    }
+
+
 def _grafana_links(config: dict) -> dict:
     monitoring = config.get("monitoring") or {}
     url = str(config.get("grafanaUrl") or monitoring.get("grafanaUrl") or DEFAULT_GRAFANA_URL).rstrip("/")
@@ -405,6 +466,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
         "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
         "incidentSummary": _incident_summary(snapshots, website_snapshots, incident_logs),
+        "certRenewalSummary": _cert_renewal_summary(website_snapshots),
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),

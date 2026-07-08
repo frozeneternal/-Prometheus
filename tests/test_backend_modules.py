@@ -1868,6 +1868,85 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["items"][0]["durationSeconds"], 120)
         self.assertEqual(summary["recentRecovered"][0]["id"], "incident-recovered")
 
+    def test_dashboard_payload_summarizes_cert_renewal_state(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        def cert_renewal_state(_config: dict, website: dict, _snapshot: dict) -> dict:
+            states = {
+                "site-ok": {
+                    "enabled": True,
+                    "status": "idle",
+                    "expiresInDays": 90,
+                    "renewBeforeDays": 14,
+                },
+                "site-failed": {
+                    "enabled": True,
+                    "status": "failed",
+                    "expiresInDays": 5,
+                    "renewBeforeDays": 14,
+                },
+                "site-http": {
+                    "enabled": False,
+                    "status": "idle",
+                    "notApplicable": True,
+                    "expiresInDays": None,
+                    "renewBeforeDays": 14,
+                },
+                "site-unknown": {
+                    "enabled": False,
+                    "status": "blocked",
+                    "expiresInDays": None,
+                    "renewBeforeDays": 14,
+                },
+            }
+            return states[website["id"]]
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            website_snapshot=lambda _config, website: {
+                "id": website["id"],
+                "name": website["name"],
+                "url": website["url"],
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            active_targets=lambda _config: [],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_cert_renewal=cert_renewal_state,
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [],
+                "websites": [
+                    {"id": "site-ok", "name": "Site OK", "url": "https://ok.example.test"},
+                    {"id": "site-failed", "name": "Site Failed", "url": "https://failed.example.test"},
+                    {"id": "site-http", "name": "Site HTTP", "url": "http://plain.example.test"},
+                    {"id": "site-unknown", "name": "Site Unknown", "url": "https://unknown.example.test"},
+                ],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["certRenewalSummary"]
+        self.assertEqual(summary["status"], "attention")
+        self.assertEqual(summary["total"], 4)
+        self.assertEqual(summary["enabled"], 2)
+        self.assertEqual(summary["disabled"], 2)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["blocked"], 1)
+        self.assertEqual(summary["expiring"], 1)
+        self.assertEqual(summary["unknownExpiry"], 1)
+        self.assertEqual(summary["notApplicable"], 1)
+        self.assertEqual(summary["statuses"]["failed"], 1)
+        self.assertEqual(summary["statuses"]["blocked"], 1)
+
     def test_dashboard_target_coverage_keeps_collector_down_targets_unknown(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 

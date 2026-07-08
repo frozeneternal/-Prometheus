@@ -187,6 +187,7 @@ function renderSystemNotice() {
   const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
   const recoverySummary = state.dashboard?.recoverySummary;
   const incidentSummary = state.dashboard?.incidentSummary;
+  const certRenewalSummary = state.dashboard?.certRenewalSummary;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -231,6 +232,10 @@ function renderSystemNotice() {
     const overflowText = (incidentSummary.active || 0) > 3 ? ` 等 ${incidentSummary.active} 个` : "";
     const activeText = activeIncidentNames ? `（${activeIncidentNames}${overflowText}）` : "";
     messages.push(`中断事件：中断中 ${incidentSummary.active ?? 0}${activeText}，已恢复 ${incidentSummary.recovered ?? 0}。`);
+  }
+
+  if (certRenewalSummary) {
+    messages.push(`证书续期：已启用 ${certRenewalSummary.enabled ?? 0}/${certRenewalSummary.total ?? 0}，失败 ${certRenewalSummary.failed ?? 0}，阻断 ${certRenewalSummary.blocked ?? 0}，即将到期 ${certRenewalSummary.expiring ?? 0}，证书天数未知 ${certRenewalSummary.unknownExpiry ?? 0}。`);
   }
 
   if (!configSource.usingLocalConfig) {

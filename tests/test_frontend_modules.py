@@ -263,6 +263,19 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("targetName", notice_block)
         self.assertIn("activeIncidentNames", notice_block)
 
+    def test_cert_renewal_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderSystemNotice()")
+        end = app_js.index("\nfunction renderMonitoringLinks()", start)
+        notice_block = app_js[start:end]
+
+        self.assertIn("state.dashboard?.certRenewalSummary", notice_block)
+        self.assertIn("certRenewalSummary.enabled", notice_block)
+        self.assertIn("certRenewalSummary.failed", notice_block)
+        self.assertIn("certRenewalSummary.blocked", notice_block)
+        self.assertIn("certRenewalSummary.expiring", notice_block)
+        self.assertIn("certRenewalSummary.unknownExpiry", notice_block)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
