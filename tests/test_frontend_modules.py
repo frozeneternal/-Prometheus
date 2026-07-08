@@ -8,6 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public"
 
 
+def notice_js() -> str:
+    return (PUBLIC / "js" / "notices.js").read_text(encoding="utf-8")
+
+
 class FrontendModuleTests(unittest.TestCase):
     def test_index_uses_module_entrypoint(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
@@ -25,6 +29,7 @@ class FrontendModuleTests(unittest.TestCase):
             PUBLIC / "js" / "client.js",
             PUBLIC / "js" / "dom.js",
             PUBLIC / "js" / "format.js",
+            PUBLIC / "js" / "notices.js",
             PUBLIC / "js" / "prometheus.js",
             PUBLIC / "js" / "state.js",
         ]
@@ -39,6 +44,7 @@ class FrontendModuleTests(unittest.TestCase):
             "./client.js",
             "./dom.js",
             "./format.js",
+            "./notices.js",
             "./prometheus.js",
             "./state.js",
         ):
@@ -97,6 +103,18 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("from \"./client.js\"", actions_js)
         self.assertIn("from \"./accounts.js\"", actions_js)
         self.assertIn("from \"./state.js\"", actions_js)
+
+    def test_system_notice_logic_lives_in_frontend_notice_module(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        notices_js = notice_js()
+
+        self.assertIn('from "./notices.js"', app_js)
+        self.assertIn("renderSystemNotice();", app_js)
+        self.assertNotIn("function renderSystemNotice(", app_js)
+        self.assertIn("export function renderSystemNotice()", notices_js)
+        self.assertIn("from \"./dom.js\"", notices_js)
+        self.assertIn("from \"./format.js\"", notices_js)
+        self.assertIn("from \"./state.js\"", notices_js)
 
     def test_app_uses_frontend_client_for_backend_routes(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
@@ -198,7 +216,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn(".quality-diagnostics", styles_css)
 
     def test_target_coverage_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        app_js = notice_js()
 
         self.assertIn("state.dashboard?.targetCoverage", app_js)
         self.assertIn("Prometheus 覆盖", app_js)
@@ -207,7 +225,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("coverage.unknown", app_js)
 
     def test_target_issue_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        app_js = notice_js()
         format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
 
         self.assertIn("targetDiagnosticLabels", format_js)
@@ -221,7 +239,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("category.count", app_js)
 
     def test_exporter_diagnostics_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        app_js = notice_js()
 
         self.assertIn("state.dashboard?.exporterDiagnostics", app_js)
         self.assertIn("Exporter 诊断", app_js)
@@ -229,14 +247,14 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("actionRequired", app_js)
 
     def test_exporter_diagnostics_stale_state_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        app_js = notice_js()
 
         self.assertIn("exporterDiagnostics.stale", app_js)
         self.assertIn("使用上次成功结果", app_js)
         self.assertIn("exporterDiagnostics.error", app_js)
 
     def test_auto_recovery_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        app_js = notice_js()
 
         self.assertIn("state.dashboard?.recoverySummary", app_js)
         self.assertIn("自动恢复", app_js)
@@ -246,10 +264,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("recoverySummary.activeIncidents", app_js)
 
     def test_auto_backup_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("state.dashboard?.backupSummary", notice_block)
         self.assertIn("backupSummary.enabled", notice_block)
@@ -258,7 +273,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("backupSummary.failed", notice_block)
 
     def test_incident_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        app_js = notice_js()
 
         self.assertIn("state.dashboard?.incidentSummary", app_js)
         self.assertIn("中断事件", app_js)
@@ -266,20 +281,14 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("incidentSummary.recovered", app_js)
 
     def test_incident_summary_notice_lists_active_target_names(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("incidentSummary.items", notice_block)
         self.assertIn("targetName", notice_block)
         self.assertIn("activeIncidentNames", notice_block)
 
     def test_cert_renewal_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("state.dashboard?.certRenewalSummary", notice_block)
         self.assertIn("certRenewalSummary.enabled", notice_block)
@@ -289,10 +298,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("certRenewalSummary.unknownExpiry", notice_block)
 
     def test_resource_expiry_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("state.dashboard?.resourceExpirySummary", notice_block)
         self.assertIn("resourceExpirySummary.actionRequired", notice_block)
@@ -302,10 +308,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("resourceExpirySummary.unknown", notice_block)
 
     def test_account_security_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("state.dashboard?.accountSecurity", notice_block)
         self.assertIn("accountSecurity.severity", notice_block)
@@ -315,10 +318,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("accountSecurity.issues", notice_block)
 
     def test_platform_health_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("state.dashboard?.platformHealth", notice_block)
         self.assertIn("platformHealth.status", notice_block)
@@ -327,10 +327,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("platformWarningIssues", notice_block)
 
     def test_emergency_summary_is_visible_in_system_notice(self) -> None:
-        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
-        start = app_js.index("function renderSystemNotice()")
-        end = app_js.index("\nfunction renderMonitoringLinks()", start)
-        notice_block = app_js[start:end]
+        notice_block = notice_js()
 
         self.assertIn("state.dashboard?.emergencySummary", notice_block)
         self.assertIn("emergencySummary.total", notice_block)
