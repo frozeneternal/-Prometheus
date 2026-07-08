@@ -16,6 +16,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "start-local-monitor.ps1",
             STANDALONE / "stop-local-monitor.ps1",
             STANDALONE / "status-local-monitor.ps1",
+            STANDALONE / "recover-prometheus-tsdb.ps1",
             STANDALONE / "ssh_metrics_tunnel.py",
             STANDALONE / "set-ssh-credential.ps1",
             STANDALONE / "clear-ssh-credential.ps1",
@@ -179,6 +180,20 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertNotIn("Wait-Process -Id $proc.Id -Timeout", status_script)
         self.assertNotIn("start-local-monitor.ps1", status_script.lower())
         self.assertNotIn("watchdog-local-monitor.ps1", status_script.lower())
+
+    def test_recover_script_quarantines_corrupt_prometheus_tsdb_without_delete(self) -> None:
+        recover_script = (STANDALONE / "recover-prometheus-tsdb.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("[switch]$StartAfterRecovery", recover_script)
+        self.assertIn("Assert-PathUnderRoot", recover_script)
+        self.assertIn("prometheus-corrupt", recover_script)
+        self.assertIn("Move-Item", recover_script)
+        self.assertIn("fatal error: fault", recover_script)
+        self.assertIn("checkCRC32", recover_script)
+        self.assertIn("Encountered WAL read error", recover_script)
+        self.assertIn("start-local-monitor.ps1", recover_script)
+        self.assertNotIn("Remove-Item -Recurse", recover_script)
+        self.assertNotIn("docker", recover_script.lower())
 
     def test_ssh_tunnel_script_uses_environment_credentials_and_loopback_listeners(self) -> None:
         tunnel_script = (STANDALONE / "ssh_metrics_tunnel.py").read_text(encoding="utf-8")
