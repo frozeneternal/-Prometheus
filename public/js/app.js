@@ -181,11 +181,20 @@ function renderSystemNotice() {
   const notice = $("#systemNotice");
   const messages = [];
   const prometheus = state.dashboard?.prometheus;
+  const coverage = state.dashboard?.targetCoverage;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
     const detail = prometheus.error ? `（${prometheus.error}）` : "";
     messages.push(`Prometheus 当前不可用：${prometheus.message || "无法连接采集服务"}${detail}。这会导致所有目标显示“未知”，不代表服务器全部宕机。`);
+  }
+
+  if (coverage) {
+    if (coverage.prometheusAvailable === false) {
+      messages.push(`Prometheus 覆盖：采集器不可用，${coverage.unknown ?? coverage.total ?? 0} 个配置目标无法核验。`);
+    } else {
+      messages.push(`Prometheus 覆盖：已匹配 ${coverage.matched ?? 0}/${coverage.total ?? 0}，缺失 ${coverage.missing ?? 0}，异常 ${coverage.unhealthy ?? 0}。`);
+    }
   }
 
   if (!configSource.usingLocalConfig) {

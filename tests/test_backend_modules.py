@@ -1635,11 +1635,56 @@ class BackendModuleTests(unittest.TestCase):
             "connection_refused",
         )
         self.assertIn("actionHint", payload["servers"][0]["dataQuality"]["details"]["targetDiagnostics"])
+        self.assertEqual(
+            payload["targetCoverage"],
+            {
+                "status": "degraded",
+                "prometheusAvailable": True,
+                "total": 1,
+                "matched": 1,
+                "missing": 0,
+                "unknown": 0,
+                "healthy": 0,
+                "unhealthy": 1,
+            },
+        )
         self.assertIn("targetDiagnostics", recovery_snapshots[0])
         self.assertEqual(recovery_snapshots[0]["targetDiagnostics"]["category"], "connection_refused")
         self.assertEqual(
             recovery_snapshots[0]["dataQuality"]["details"]["targetDiagnostics"]["category"],
             "connection_refused",
+        )
+
+    def test_dashboard_target_coverage_keeps_collector_down_targets_unknown(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [{"id": "srv1", "name": "Server 1", "labels": {"job": "linux"}}],
+                "websites": [{"id": "site1", "name": "Site 1", "url": "https://example.invalid"}],
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(
+            payload["targetCoverage"],
+            {
+                "status": "collector_down",
+                "prometheusAvailable": False,
+                "total": 2,
+                "matched": 0,
+                "missing": 0,
+                "unknown": 2,
+                "healthy": 0,
+                "unhealthy": 0,
+            },
         )
 
     def test_platform_health_summary_reports_root_volume_warning(self) -> None:

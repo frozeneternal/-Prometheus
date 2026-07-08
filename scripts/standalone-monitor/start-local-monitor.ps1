@@ -176,7 +176,10 @@ Ensure-BlackboxConfig
 Start-ManagedProcess `
   -Name "windows_exporter" `
   -FilePath (Join-Path $Apps "windows_exporter\windows_exporter.exe") `
-  -ArgumentList @("--web.listen-address=127.0.0.1:9182") `
+  -ArgumentList @(
+    "--web.listen-address=127.0.0.1:9182",
+    "--collectors.disabled=cpu"
+  ) `
   -WorkingDirectory (Join-Path $Apps "windows_exporter") `
   -Port 9182
 

@@ -127,6 +127,55 @@ def _summary(items: list[dict]) -> dict:
     }
 
 
+def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
+    total = len(items)
+    if not prometheus_available:
+        return {
+            "status": "collector_down",
+            "prometheusAvailable": False,
+            "total": total,
+            "matched": 0,
+            "missing": 0,
+            "unknown": total,
+            "healthy": 0,
+            "unhealthy": 0,
+        }
+
+    matched = 0
+    missing = 0
+    healthy = 0
+    unhealthy = 0
+    for item in items:
+        diagnostics = item.get("targetDiagnostics") or {}
+        if not diagnostics.get("available"):
+            missing += 1
+            continue
+
+        matched += 1
+        if str(diagnostics.get("health") or "") == "up" and diagnostics.get("category") == "healthy":
+            healthy += 1
+        else:
+            unhealthy += 1
+
+    if total == 0:
+        status = "empty"
+    elif missing or unhealthy:
+        status = "degraded"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "prometheusAvailable": True,
+        "total": total,
+        "matched": matched,
+        "missing": missing,
+        "unknown": 0,
+        "healthy": healthy,
+        "unhealthy": unhealthy,
+    }
+
+
 def _grafana_links(config: dict) -> dict:
     monitoring = config.get("monitoring") or {}
     url = str(config.get("grafanaUrl") or monitoring.get("grafanaUrl") or DEFAULT_GRAFANA_URL).rstrip("/")
@@ -220,6 +269,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "configValidation": config_validation,
         "accountSecurity": account_security_summary(config),
         "platformHealth": platform_health,
+        "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),

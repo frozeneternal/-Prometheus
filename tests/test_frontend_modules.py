@@ -191,6 +191,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("quality-diagnostics", app_js)
         self.assertIn(".quality-diagnostics", styles_css)
 
+    def test_target_coverage_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("state.dashboard?.targetCoverage", app_js)
+        self.assertIn("Prometheus 覆盖", app_js)
+        self.assertIn("coverage.missing", app_js)
+        self.assertIn("coverage.unhealthy", app_js)
+        self.assertIn("coverage.unknown", app_js)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")

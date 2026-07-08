@@ -74,6 +74,11 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("ops-overview.dashboard.json", start_script)
         self.assertIn("local-prometheus", start_script)
 
+    def test_start_script_disables_unstable_windows_exporter_cpu_collector(self) -> None:
+        start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("--collectors.disabled=cpu", start_script)
+
     def test_standalone_stack_manages_blackbox_exporter(self) -> None:
         start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
         stop_script = (STANDALONE / "stop-local-monitor.ps1").read_text(encoding="utf-8")
