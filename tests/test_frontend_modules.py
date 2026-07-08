@@ -200,6 +200,17 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("coverage.unhealthy", app_js)
         self.assertIn("coverage.unknown", app_js)
 
+    def test_target_issue_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
+
+        self.assertIn("targetDiagnosticLabels", format_js)
+        self.assertIn("targetDiagnosticLabels", app_js)
+        self.assertIn("state.dashboard?.targetIssueSummary", app_js)
+        self.assertIn("Prometheus 异常原因", app_js)
+        self.assertIn("issueSummary.categories", app_js)
+        self.assertIn("category.count", app_js)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")

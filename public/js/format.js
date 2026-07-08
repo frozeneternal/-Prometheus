@@ -55,6 +55,18 @@ export const dataQualityLabels = {
   unknown: "未知",
 };
 
+export const targetDiagnosticLabels = {
+  healthy: "正常",
+  timeout: "采集超时",
+  connection_refused: "连接被拒绝",
+  network_unreachable: "网络不可达",
+  scrape_error: "采集错误",
+  target_down: "目标不可达",
+  no_target: "未匹配目标",
+  collector_down: "采集器不可用",
+  unknown: "未知",
+};
+
 export const resourceExpiryLabels = {
   expired: "已过期",
   critical: "即将到期",

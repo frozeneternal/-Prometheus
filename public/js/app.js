@@ -45,6 +45,7 @@ import {
   resourceExpiryLabels,
   serverTypeLabels,
   statusText,
+  targetDiagnosticLabels,
 } from "./format.js";
 import { canFetchSeries } from "./prometheus.js";
 import { state } from "./state.js";
@@ -182,6 +183,7 @@ function renderSystemNotice() {
   const messages = [];
   const prometheus = state.dashboard?.prometheus;
   const coverage = state.dashboard?.targetCoverage;
+  const issueSummary = state.dashboard?.targetIssueSummary;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -195,6 +197,14 @@ function renderSystemNotice() {
     } else {
       messages.push(`Prometheus 覆盖：已匹配 ${coverage.matched ?? 0}/${coverage.total ?? 0}，缺失 ${coverage.missing ?? 0}，异常 ${coverage.unhealthy ?? 0}。`);
     }
+  }
+
+  if (issueSummary?.total) {
+    const issueCategories = issueSummary.categories || [];
+    const categoryText = issueCategories
+      .map((category) => `${targetDiagnosticLabels[category.category] || category.category} ${category.count}`)
+      .join("，");
+    messages.push(`Prometheus 异常原因：${categoryText || `${issueSummary.total} 个目标异常`}。`);
   }
 
   if (!configSource.usingLocalConfig) {

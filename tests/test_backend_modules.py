@@ -1648,6 +1648,11 @@ class BackendModuleTests(unittest.TestCase):
                 "unhealthy": 1,
             },
         )
+        self.assertEqual(payload["targetIssueSummary"]["status"], "degraded")
+        self.assertEqual(payload["targetIssueSummary"]["total"], 1)
+        self.assertEqual(payload["targetIssueSummary"]["categories"][0]["category"], "connection_refused")
+        self.assertEqual(payload["targetIssueSummary"]["categories"][0]["count"], 1)
+        self.assertIn("exporter", payload["targetIssueSummary"]["categories"][0]["actionHint"])
         self.assertIn("targetDiagnostics", recovery_snapshots[0])
         self.assertEqual(recovery_snapshots[0]["targetDiagnostics"]["category"], "connection_refused")
         self.assertEqual(
@@ -1686,6 +1691,10 @@ class BackendModuleTests(unittest.TestCase):
                 "unhealthy": 0,
             },
         )
+        self.assertEqual(payload["targetIssueSummary"]["status"], "collector_down")
+        self.assertEqual(payload["targetIssueSummary"]["total"], 2)
+        self.assertEqual(payload["targetIssueSummary"]["categories"][0]["category"], "collector_down")
+        self.assertEqual(payload["targetIssueSummary"]["categories"][0]["count"], 2)
 
     def test_platform_health_summary_reports_root_volume_warning(self) -> None:
         from backend.platform_health import summarize_status_payload

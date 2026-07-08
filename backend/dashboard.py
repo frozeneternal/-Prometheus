@@ -176,6 +176,52 @@ def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
     }
 
 
+def _target_issue_summary(items: list[dict], prometheus_available: bool) -> dict:
+    if not prometheus_available:
+        total = len(items)
+        return {
+            "status": "collector_down",
+            "total": total,
+            "categories": [
+                {
+                    "category": "collector_down",
+                    "count": total,
+                    "message": "Prometheus is unavailable, so target health cannot be verified.",
+                    "actionHint": "Restore the Prometheus/local collector stack before judging target health.",
+                }
+            ]
+            if total
+            else [],
+        }
+
+    buckets: dict[str, dict] = {}
+    for item in items:
+        diagnostics = item.get("targetDiagnostics") or {}
+        category = str(diagnostics.get("category") or "unknown")
+        is_healthy = diagnostics.get("available") and category == "healthy" and diagnostics.get("health") == "up"
+        if is_healthy:
+            continue
+
+        bucket = buckets.setdefault(
+            category,
+            {
+                "category": category,
+                "count": 0,
+                "message": diagnostics.get("message") or "",
+                "actionHint": diagnostics.get("actionHint") or "",
+            },
+        )
+        bucket["count"] += 1
+
+    categories = sorted(buckets.values(), key=lambda item: (-item["count"], item["category"]))
+    total = sum(item["count"] for item in categories)
+    return {
+        "status": "healthy" if total == 0 else "degraded",
+        "total": total,
+        "categories": categories,
+    }
+
+
 def _grafana_links(config: dict) -> dict:
     monitoring = config.get("monitoring") or {}
     url = str(config.get("grafanaUrl") or monitoring.get("grafanaUrl") or DEFAULT_GRAFANA_URL).rstrip("/")
@@ -270,6 +316,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "accountSecurity": account_security_summary(config),
         "platformHealth": platform_health,
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
+        "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
         "emergencySummary": emergency_summary(runbook_items),
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),
