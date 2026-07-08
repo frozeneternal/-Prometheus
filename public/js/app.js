@@ -185,6 +185,7 @@ function renderSystemNotice() {
   const coverage = state.dashboard?.targetCoverage;
   const issueSummary = state.dashboard?.targetIssueSummary;
   const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
+  const platformHealth = state.dashboard?.platformHealth;
   const recoverySummary = state.dashboard?.recoverySummary;
   const incidentSummary = state.dashboard?.incidentSummary;
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
@@ -219,6 +220,13 @@ function renderSystemNotice() {
       ? `，使用上次成功结果${exporterDiagnostics.error ? `（${exporterDiagnostics.error}）` : ""}`
       : "";
     messages.push(`Exporter 诊断：需处理 ${diagnosticSummary.actionRequired ?? 0}，指标正常 ${diagnosticSummary.metricsOpen ?? 0}，SSH 隧道覆盖 ${diagnosticSummary.coveredByTunnel ?? 0}${staleText}。`);
+  }
+
+  if (platformHealth && platformHealth.status !== "ok") {
+    const platformIssues = platformHealth.issues || [];
+    const platformCriticalIssues = platformIssues.filter((issue) => ["critical", "error"].includes(issue.severity)).length;
+    const platformWarningIssues = platformIssues.filter((issue) => issue.severity === "warning").length;
+    messages.push(`平台健康：${platformHealth.status}，严重 ${platformCriticalIssues}，预警 ${platformWarningIssues}，总问题 ${platformIssues.length}。`);
   }
 
   if (recoverySummary) {
