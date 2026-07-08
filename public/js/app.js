@@ -184,6 +184,7 @@ function renderSystemNotice() {
   const prometheus = state.dashboard?.prometheus;
   const coverage = state.dashboard?.targetCoverage;
   const issueSummary = state.dashboard?.targetIssueSummary;
+  const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -205,6 +206,11 @@ function renderSystemNotice() {
       .map((category) => `${targetDiagnosticLabels[category.category] || category.category} ${category.count}`)
       .join("，");
     messages.push(`Prometheus 异常原因：${categoryText || `${issueSummary.total} 个目标异常`}。`);
+  }
+
+  if (exporterDiagnostics?.summary) {
+    const diagnosticSummary = exporterDiagnostics.summary;
+    messages.push(`Exporter 诊断：需处理 ${diagnosticSummary.actionRequired ?? 0}，指标正常 ${diagnosticSummary.metricsOpen ?? 0}，SSH 隧道覆盖 ${diagnosticSummary.coveredByTunnel ?? 0}。`);
   }
 
   if (!configSource.usingLocalConfig) {

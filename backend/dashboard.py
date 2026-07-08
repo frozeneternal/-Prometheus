@@ -6,6 +6,7 @@ from typing import Callable
 
 from backend.config import DEFAULT_CONFIG, config_source_info
 from backend.auth_security import account_security_summary
+from backend.exporter_diagnostics import empty_exporter_diagnostics
 from backend.expiry import resource_expiry_items, resource_expiry_summary
 from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
@@ -51,6 +52,10 @@ def _default_platform_health(config: dict) -> dict:
     return platform_health_summary(config)
 
 
+def _default_exporter_diagnostics(_config: dict) -> dict:
+    return empty_exporter_diagnostics()
+
+
 def _ignore_dashboard(_payload: dict) -> None:
     return None
 
@@ -69,6 +74,7 @@ class DashboardRuntime:
     config_source: Callable[[], dict] = config_source_info
     config_validation: Callable[[dict], dict] = config_validation_summary
     platform_health: Callable[[dict], dict] = _default_platform_health
+    exporter_diagnostics: Callable[[dict], dict] = _default_exporter_diagnostics
     active_targets: Callable[[dict], list[dict]] = prometheus_active_targets
     get_recovery_logs: Callable[[], list[dict]] = _empty_logs
     get_incident_logs: Callable[[], list[dict]] = _empty_logs
@@ -295,6 +301,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
     }
     config_validation = active_runtime.config_validation(config)
     platform_health = active_runtime.platform_health(config)
+    exporter_diagnostics = active_runtime.exporter_diagnostics(config)
     recovery_logs = active_runtime.get_recovery_logs()
     incident_logs = active_runtime.get_incident_logs()
     runbook_items = emergency_items(
@@ -315,6 +322,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "configValidation": config_validation,
         "accountSecurity": account_security_summary(config),
         "platformHealth": platform_health,
+        "exporterDiagnostics": exporter_diagnostics,
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
         "emergencySummary": emergency_summary(runbook_items),

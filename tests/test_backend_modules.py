@@ -1652,6 +1652,12 @@ class BackendModuleTests(unittest.TestCase):
                 }
             ],
             platform_health=lambda _config: {"status": "ok", "issues": []},
+            exporter_diagnostics=lambda _config: {
+                "status": "warning",
+                "summary": {"total": 3, "metricsOpen": 1, "coveredByTunnel": 1, "actionRequired": 1},
+                "categories": [{"diagnosis": "node_exporter_unreachable", "count": 1}],
+                "items": [{"Name": "Server 1", "Diagnosis": "node_exporter_unreachable"}],
+            },
             trigger_recovery=lambda _config, _target_type, _entity, snapshot: recovery_snapshots.append(snapshot)
             or {"enabled": True, "status": "idle"},
         )
@@ -1698,6 +1704,8 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["targetIssueSummary"]["categories"][0]["category"], "connection_refused")
         self.assertEqual(payload["targetIssueSummary"]["categories"][0]["count"], 1)
         self.assertIn("exporter", payload["targetIssueSummary"]["categories"][0]["actionHint"])
+        self.assertEqual(payload["exporterDiagnostics"]["summary"]["actionRequired"], 1)
+        self.assertEqual(payload["exporterDiagnostics"]["categories"][0]["diagnosis"], "node_exporter_unreachable")
         self.assertIn("targetDiagnostics", recovery_snapshots[0])
         self.assertEqual(recovery_snapshots[0]["targetDiagnostics"]["category"], "connection_refused")
         self.assertEqual(
@@ -1740,6 +1748,40 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["targetIssueSummary"]["total"], 2)
         self.assertEqual(payload["targetIssueSummary"]["categories"][0]["category"], "collector_down")
         self.assertEqual(payload["targetIssueSummary"]["categories"][0]["count"], 2)
+
+    def test_exporter_diagnostics_summary_counts_actionable_findings(self) -> None:
+        from backend.exporter_diagnostics import summarize_diagnostics
+
+        summary = summarize_diagnostics(
+            [
+                {"Name": "srv-ok", "Diagnosis": "metrics_open", "MetricsOpen": True},
+                {"Name": "srv-tunnel", "Diagnosis": "covered_by_ssh_tunnel", "TunnelOpen": True},
+                {
+                    "Name": "srv-linux",
+                    "OS": "linux",
+                    "MetricsPort": 9100,
+                    "Diagnosis": "node_exporter_unreachable",
+                    "SuggestedCommands": ["systemctl status node_exporter"],
+                },
+                {
+                    "Name": "srv-win",
+                    "OS": "windows",
+                    "MetricsPort": 9182,
+                    "Diagnosis": "windows_exporter_unreachable",
+                    "SuggestedCommands": ["Get-Service windows_exporter"],
+                },
+            ]
+        )
+
+        self.assertEqual(summary["status"], "warning")
+        self.assertEqual(summary["summary"]["total"], 4)
+        self.assertEqual(summary["summary"]["metricsOpen"], 1)
+        self.assertEqual(summary["summary"]["coveredByTunnel"], 1)
+        self.assertEqual(summary["summary"]["actionRequired"], 2)
+        categories = {item["diagnosis"]: item["count"] for item in summary["categories"]}
+        self.assertEqual(categories["node_exporter_unreachable"], 1)
+        self.assertEqual(categories["windows_exporter_unreachable"], 1)
+        self.assertEqual(len(summary["items"]), 2)
 
     def test_platform_health_summary_reports_root_volume_warning(self) -> None:
         from backend.platform_health import summarize_status_payload

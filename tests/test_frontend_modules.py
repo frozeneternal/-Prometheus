@@ -220,6 +220,14 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("issueSummary.categories", app_js)
         self.assertIn("category.count", app_js)
 
+    def test_exporter_diagnostics_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("state.dashboard?.exporterDiagnostics", app_js)
+        self.assertIn("Exporter 诊断", app_js)
+        self.assertIn("exporterDiagnostics.summary", app_js)
+        self.assertIn("actionRequired", app_js)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")

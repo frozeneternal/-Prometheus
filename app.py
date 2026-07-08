@@ -387,6 +387,7 @@ from backend.dashboard import (  # noqa: E402 - transitional re-export while app
     configure_dashboard_runtime,
     dashboard_payload,
 )
+from backend.exporter_diagnostics import exporter_diagnostics_summary  # noqa: E402
 from backend.expiry import (  # noqa: E402 - transitional re-export while app.py is split.
     classify_resource_expiry,
     parse_expiry_datetime,
@@ -729,6 +730,7 @@ configure_dashboard_runtime(
         trigger_cert_renewal=maybe_trigger_cert_renewal,
         config_source=lambda: config_source_info(),
         config_validation=lambda config: config_validation_summary(config),
+        exporter_diagnostics=lambda config: exporter_diagnostics_summary(config),
         get_recovery_logs=get_recent_recovery_logs,
         get_incident_logs=get_recent_incident_logs,
         set_runtime_dashboard=set_runtime_dashboard,
