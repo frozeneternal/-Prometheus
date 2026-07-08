@@ -223,7 +223,14 @@ function renderSystemNotice() {
   }
 
   if (incidentSummary) {
-    messages.push(`中断事件：中断中 ${incidentSummary.active ?? 0}，已恢复 ${incidentSummary.recovered ?? 0}。`);
+    const activeIncidentNames = (incidentSummary.items || [])
+      .slice(0, 3)
+      .map((item) => item.targetName || item.targetId)
+      .filter(Boolean)
+      .join("，");
+    const overflowText = (incidentSummary.active || 0) > 3 ? ` 等 ${incidentSummary.active} 个` : "";
+    const activeText = activeIncidentNames ? `（${activeIncidentNames}${overflowText}）` : "";
+    messages.push(`中断事件：中断中 ${incidentSummary.active ?? 0}${activeText}，已恢复 ${incidentSummary.recovered ?? 0}。`);
   }
 
   if (!configSource.usingLocalConfig) {

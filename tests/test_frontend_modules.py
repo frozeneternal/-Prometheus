@@ -253,6 +253,16 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("incidentSummary.active", app_js)
         self.assertIn("incidentSummary.recovered", app_js)
 
+    def test_incident_summary_notice_lists_active_target_names(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderSystemNotice()")
+        end = app_js.index("\nfunction renderMonitoringLinks()", start)
+        notice_block = app_js[start:end]
+
+        self.assertIn("incidentSummary.items", notice_block)
+        self.assertIn("targetName", notice_block)
+        self.assertIn("activeIncidentNames", notice_block)
+
     def test_emergency_runbook_panel_is_visible_on_dashboard(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
