@@ -206,6 +206,8 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn("targetDiagnosticLabels", format_js)
         self.assertIn("ssh_tunnel_down", format_js)
+        self.assertIn("node_exporter_timeout", format_js)
+        self.assertIn("windows_exporter_down", format_js)
         self.assertIn("targetDiagnosticLabels", app_js)
         self.assertIn("state.dashboard?.targetIssueSummary", app_js)
         self.assertIn("Prometheus 异常原因", app_js)

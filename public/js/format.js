@@ -58,7 +58,11 @@ export const dataQualityLabels = {
 export const targetDiagnosticLabels = {
   healthy: "正常",
   timeout: "采集超时",
+  node_exporter_timeout: "Node exporter 超时",
+  windows_exporter_timeout: "Windows exporter 超时",
   connection_refused: "连接被拒绝",
+  node_exporter_down: "Node exporter 未监听",
+  windows_exporter_down: "Windows exporter 未监听",
   ssh_tunnel_down: "SSH 隧道断开",
   network_unreachable: "网络不可达",
   scrape_error: "采集错误",

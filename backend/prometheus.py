@@ -177,16 +177,36 @@ def _is_ssh_tunnel_target(target_labels: dict) -> bool:
     return "ssh_tunnel" in job or instance.startswith("127.0.0.1:191")
 
 
+def _exporter_kind(target_labels: dict) -> str:
+    job = str(target_labels.get("job") or "").lower()
+    os_label = str(target_labels.get("os") or "").lower()
+    if "windows" in job or os_label == "windows":
+        return "windows_exporter"
+    if "linux_servers" in job or os_label == "linux":
+        return "node_exporter"
+    return ""
+
+
 def _target_category(health: str, last_error: str, target_labels: dict | None = None) -> tuple[str, str]:
     if health == "up":
         return "healthy", "Prometheus target is healthy."
 
     error = last_error.lower()
+    labels = target_labels or {}
+    exporter = _exporter_kind(labels)
     if "context deadline exceeded" in error or "timeout" in error or "timed out" in error:
+        if exporter == "node_exporter":
+            return "node_exporter_timeout", "Prometheus timed out while scraping node_exporter on the Linux target."
+        if exporter == "windows_exporter":
+            return "windows_exporter_timeout", "Prometheus timed out while scraping windows_exporter on the Windows target."
         return "timeout", "Prometheus scrape timed out before the exporter responded."
     if "connection refused" in error or "actively refused" in error:
-        if _is_ssh_tunnel_target(target_labels or {}):
+        if _is_ssh_tunnel_target(labels):
             return "ssh_tunnel_down", "Prometheus reached the local SSH tunnel port, but the SSH tunnel is not listening."
+        if exporter == "node_exporter":
+            return "node_exporter_down", "Prometheus reached the Linux target, but node_exporter refused the connection."
+        if exporter == "windows_exporter":
+            return "windows_exporter_down", "Prometheus reached the Windows target, but windows_exporter refused the connection."
         return "connection_refused", "Prometheus reached the host, but the exporter port refused the connection."
     if "no route to host" in error or "host unreachable" in error or "network is unreachable" in error:
         return "network_unreachable", "Prometheus cannot reach the target network path."
@@ -199,7 +219,11 @@ def _target_action_hint(category: str) -> str:
     hints = {
         "healthy": "No action needed.",
         "timeout": "Check whether the exporter process is overloaded or blocked by firewall rules, then verify the metrics endpoint from the Prometheus host.",
+        "node_exporter_timeout": "Check node_exporter load and firewall rules on port 9100, then verify /metrics from the Prometheus host.",
+        "windows_exporter_timeout": "Check windows_exporter load and Windows firewall rules on port 9182, then verify /metrics from the Prometheus host.",
         "connection_refused": "Start or repair the exporter service on the target, then confirm the exporter port is listening.",
+        "node_exporter_down": "Start or repair node_exporter on the Linux target, then confirm port 9100 is listening and allowed by firewall.",
+        "windows_exporter_down": "Start or repair windows_exporter on the Windows target, then confirm port 9182 is listening and allowed by firewall.",
         "ssh_tunnel_down": "Start or repair the local SSH tunnel for this target, then confirm the 127.0.0.1 tunnel port is listening.",
         "network_unreachable": "Check host power/network reachability and routing between Prometheus and the target.",
         "scrape_error": "Review the Prometheus lastError text, target exporter logs, and scrape endpoint configuration.",

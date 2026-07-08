@@ -1486,6 +1486,36 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("SSH tunnel", tunnel_diagnostics["message"])
         self.assertIn("SSH tunnel", tunnel_diagnostics["actionHint"])
 
+        node_timeout = target_diagnostics_for_labels(
+            [
+                {
+                    "labels": {"job": "linux_servers_direct", "instance": "10.0.0.7:9100"},
+                    "health": "down",
+                    "lastError": "Get http://10.0.0.7:9100/metrics: context deadline exceeded",
+                }
+            ],
+            {"job": "linux_servers_direct", "instance": "10.0.0.7:9100"},
+        )
+
+        self.assertEqual(node_timeout["category"], "node_exporter_timeout")
+        self.assertIn("node_exporter", node_timeout["message"])
+        self.assertIn("9100", node_timeout["actionHint"])
+
+        windows_refused = target_diagnostics_for_labels(
+            [
+                {
+                    "labels": {"job": "windows_servers", "instance": "10.0.0.8:9182", "os": "windows"},
+                    "health": "down",
+                    "lastError": "Get http://10.0.0.8:9182/metrics: connect: connection refused",
+                }
+            ],
+            {"job": "windows_servers", "instance": "10.0.0.8:9182"},
+        )
+
+        self.assertEqual(windows_refused["category"], "windows_exporter_down")
+        self.assertIn("windows_exporter", windows_refused["message"])
+        self.assertIn("9182", windows_refused["actionHint"])
+
     def test_health_module_classifies_thresholds_without_app_import(self) -> None:
         from backend import health
 
