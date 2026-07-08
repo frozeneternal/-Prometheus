@@ -1670,6 +1670,35 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["issues"][0]["id"], "root-volume-warning")
         self.assertIn("Full Repair Needed", summary["issues"][0]["message"])
 
+    def test_platform_health_summary_reports_prometheus_storage_quarantine(self) -> None:
+        from backend.platform_health import summarize_status_payload
+
+        summary = summarize_status_payload(
+            {
+                "localStack": [
+                    {"Name": "Prometheus", "Status": 200},
+                ],
+                "runtimeBinaryHealth": [
+                    {"Name": "Prometheus", "Status": "ok"},
+                ],
+                "appDirectoryHealth": [],
+                "rootVolumeHealth": {"Status": "ok"},
+                "prometheusStorageHealth": {
+                    "Status": "warning",
+                    "DataPath": "E:\\ops-monitor\\data\\prometheus",
+                    "QuarantineCount": 1,
+                    "LatestQuarantine": "prometheus-corrupt-20260707-212937",
+                    "LatestQuarantineTime": "2026-07-07T21:29:37",
+                },
+            }
+        )
+
+        self.assertEqual(summary["status"], "warning")
+        self.assertEqual(summary["summary"]["prometheusQuarantineCount"], 1)
+        self.assertEqual(summary["prometheusStorageHealth"]["LatestQuarantine"], "prometheus-corrupt-20260707-212937")
+        self.assertEqual(summary["issues"][0]["id"], "prometheus-storage-quarantine")
+        self.assertIn("prometheus-corrupt-20260707-212937", summary["issues"][0]["message"])
+
     def test_platform_health_summary_uses_short_cache_for_runner_errors(self) -> None:
         from backend import platform_health
 

@@ -152,17 +152,44 @@ def _root_volume_issue(root_volume: dict) -> list[dict]:
     ]
 
 
+def _prometheus_storage_issue(storage_health: dict) -> list[dict]:
+    if not storage_health:
+        return []
+
+    status = str(storage_health.get("Status") or "unknown").lower()
+    quarantine_count = int(storage_health.get("QuarantineCount") or 0)
+    if status == "ok" and quarantine_count < 1:
+        return []
+
+    severity = "critical" if status in {"critical", "error"} else "warning"
+    latest = str(storage_health.get("LatestQuarantine") or "").strip()
+    message = str(storage_health.get("Message") or "").strip()
+    if latest:
+        message = f"{message} Latest quarantine: {latest}".strip()
+    if not message:
+        message = "Prometheus storage requires attention."
+    return [
+        {
+            "id": "prometheus-storage-quarantine" if quarantine_count else "prometheus-storage-unhealthy",
+            "severity": severity,
+            "message": message,
+        }
+    ]
+
+
 def summarize_status_payload(status_payload: dict) -> dict:
     local_stack = list(status_payload.get("localStack") or [])
     binary_health = list(status_payload.get("runtimeBinaryHealth") or [])
     directory_health = list(status_payload.get("appDirectoryHealth") or [])
     root_volume = dict(status_payload.get("rootVolumeHealth") or {})
+    prometheus_storage = dict(status_payload.get("prometheusStorageHealth") or {})
 
     issues = [
         *_local_stack_issues(local_stack),
         *_binary_issues(binary_health),
         *_directory_issues(directory_health),
         *_root_volume_issue(root_volume),
+        *_prometheus_storage_issue(prometheus_storage),
     ]
     status = _worst_status([issue["severity"] for issue in issues]) if issues else "ok"
     junctions = [item for item in directory_health if item.get("LinkType")]
@@ -177,12 +204,14 @@ def summarize_status_payload(status_payload: dict) -> dict:
             "directoryTotal": len(directory_health),
             "directoryOk": sum(1 for item in directory_health if str(item.get("Status", "")).lower() == "ok"),
             "junctionCount": len(junctions),
+            "prometheusQuarantineCount": int(prometheus_storage.get("QuarantineCount") or 0),
         },
         "issues": issues,
         "localStack": local_stack,
         "runtimeBinaryHealth": binary_health,
         "appDirectoryHealth": directory_health,
         "rootVolumeHealth": root_volume,
+        "prometheusStorageHealth": prometheus_storage,
     }
 
 
@@ -197,6 +226,7 @@ def unavailable_platform_health(error: str) -> dict:
             "directoryTotal": 0,
             "directoryOk": 0,
             "junctionCount": 0,
+            "prometheusQuarantineCount": 0,
         },
         "issues": [
             {
@@ -209,6 +239,7 @@ def unavailable_platform_health(error: str) -> dict:
         "runtimeBinaryHealth": [],
         "appDirectoryHealth": [],
         "rootVolumeHealth": {},
+        "prometheusStorageHealth": {},
     }
 
 

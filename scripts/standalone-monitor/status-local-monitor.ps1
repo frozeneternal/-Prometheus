@@ -160,6 +160,50 @@ function Get-RootVolumeStatus {
   }
 }
 
+function Get-PrometheusStorageHealth {
+  $dataRoot = Join-Path $Root "data"
+  $dataPath = Join-Path $dataRoot "prometheus"
+  try {
+    $dataExists = Test-Path -LiteralPath $dataPath
+    $quarantines = @(
+      Get-ChildItem -LiteralPath $dataRoot -Directory -Filter "prometheus-corrupt-*" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending
+    )
+    $latest = if ($quarantines.Count -gt 0) { $quarantines[0] } else { $null }
+    $status = "ok"
+    $message = "Prometheus TSDB is active and no quarantined TSDB directories were found."
+    if (-not $dataExists) {
+      $status = "critical"
+      $message = "Prometheus TSDB directory is missing."
+    } elseif ($quarantines.Count -gt 0) {
+      $status = "warning"
+      $message = "Prometheus has quarantined TSDB directories. Review and clean them after confirming the service is stable."
+    }
+
+    [pscustomobject]@{
+      Status = $status
+      DataPath = $dataPath
+      DataExists = $dataExists
+      QuarantineCount = $quarantines.Count
+      LatestQuarantine = if ($latest) { $latest.Name } else { "" }
+      LatestQuarantinePath = if ($latest) { $latest.FullName } else { "" }
+      LatestQuarantineTime = if ($latest) { $latest.LastWriteTime.ToString("o") } else { "" }
+      Message = $message
+    }
+  } catch {
+    [pscustomobject]@{
+      Status = "error"
+      DataPath = $dataPath
+      DataExists = $false
+      QuarantineCount = 0
+      LatestQuarantine = ""
+      LatestQuarantinePath = ""
+      LatestQuarantineTime = ""
+      Message = $_.Exception.Message
+    }
+  }
+}
+
 function Test-PortFast($HostName, $Port, $TimeoutMs = 1000) {
   $client = [System.Net.Sockets.TcpClient]::new()
   try {
@@ -206,6 +250,7 @@ $appDirectoryHealth = @(
 )
 
 $rootVolumeHealth = Get-RootVolumeStatus
+$prometheusStorageHealth = Get-PrometheusStorageHealth
 
 $remote = @()
 if (-not $LocalOnly -and (Test-Path $TargetsFile)) {
@@ -247,6 +292,7 @@ if ($Json) {
     runtimeBinaryHealth = $binaryHealth
     appDirectoryHealth = $appDirectoryHealth
     rootVolumeHealth = $rootVolumeHealth
+    prometheusStorageHealth = $prometheusStorageHealth
     remoteTargets = @($remote)
     prometheusTargets = @($active)
     prometheusTargetsError = $prometheusTargetsError
@@ -268,6 +314,10 @@ $appDirectoryHealth | Format-Table -AutoSize
 Write-Host ""
 Write-Host "Root volume health"
 $rootVolumeHealth | Format-List
+
+Write-Host ""
+Write-Host "Prometheus storage health"
+$prometheusStorageHealth | Format-List
 
 if ($remote) {
   Write-Host ""
