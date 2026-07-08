@@ -1794,6 +1794,63 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["statuses"]["failed"], 1)
         self.assertEqual(summary["status"], "attention")
 
+    def test_dashboard_payload_summarizes_auto_backup_safety_state(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        def backup_state(_config: dict, server: dict, _snapshot: dict) -> dict:
+            states = {
+                "srv-idle": {"enabled": True, "status": "idle"},
+                "srv-waiting": {"enabled": True, "status": "waiting"},
+                "srv-blocked": {"enabled": True, "status": "blocked"},
+                "srv-failed": {"enabled": True, "status": "failed", "lastLogId": "backup-log-1"},
+            }
+            return states.get(server["id"], {"enabled": False, "status": "idle"})
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: {
+                "id": server["id"],
+                "name": server["name"],
+                "labels": server.get("labels", {}),
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            active_targets=lambda _config: [],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_backup=backup_state,
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [
+                    {"id": "srv-idle", "name": "Server Idle"},
+                    {"id": "srv-waiting", "name": "Server Waiting"},
+                    {"id": "srv-blocked", "name": "Server Blocked"},
+                    {"id": "srv-failed", "name": "Server Failed"},
+                    {"id": "srv-disabled", "name": "Server Disabled"},
+                ],
+                "websites": [],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["backupSummary"]
+        self.assertEqual(summary["status"], "attention")
+        self.assertEqual(summary["total"], 5)
+        self.assertEqual(summary["enabled"], 4)
+        self.assertEqual(summary["disabled"], 1)
+        self.assertEqual(summary["idle"], 2)
+        self.assertEqual(summary["waiting"], 1)
+        self.assertEqual(summary["blocked"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["statuses"]["failed"], 1)
+
     def test_dashboard_payload_summarizes_active_and_recovered_incidents(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 

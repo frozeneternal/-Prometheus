@@ -245,6 +245,18 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("recoverySummary.failed", app_js)
         self.assertIn("recoverySummary.activeIncidents", app_js)
 
+    def test_auto_backup_summary_is_visible_in_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function renderSystemNotice()")
+        end = app_js.index("\nfunction renderMonitoringLinks()", start)
+        notice_block = app_js[start:end]
+
+        self.assertIn("state.dashboard?.backupSummary", notice_block)
+        self.assertIn("backupSummary.enabled", notice_block)
+        self.assertIn("backupSummary.blocked", notice_block)
+        self.assertIn("backupSummary.waiting", notice_block)
+        self.assertIn("backupSummary.failed", notice_block)
+
     def test_incident_summary_is_visible_in_system_notice(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
 

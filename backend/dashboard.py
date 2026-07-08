@@ -269,6 +269,42 @@ def _recovery_summary(items: list[dict]) -> dict:
     }
 
 
+def _backup_summary(servers: list[dict]) -> dict:
+    statuses: dict[str, int] = {}
+    enabled = 0
+
+    for server in servers:
+        backup = server.get("autoBackup") or {}
+        status = str(backup.get("status") or "idle")
+        statuses[status] = statuses.get(status, 0) + 1
+        if backup.get("enabled"):
+            enabled += 1
+
+    total = len(servers)
+    blocked = statuses.get("blocked", 0)
+    failed = statuses.get("failed", 0)
+    waiting = statuses.get("waiting", 0)
+    if failed or blocked:
+        status = "attention"
+    elif waiting:
+        status = "waiting"
+    else:
+        status = "ok"
+
+    return {
+        "status": status,
+        "total": total,
+        "enabled": enabled,
+        "disabled": total - enabled,
+        "idle": statuses.get("idle", 0),
+        "waiting": waiting,
+        "blocked": blocked,
+        "triggered": statuses.get("triggered", 0),
+        "failed": failed,
+        "statuses": statuses,
+    }
+
+
 def _incident_summary(servers: list[dict], websites: list[dict], incident_logs: list[dict]) -> dict:
     active_items = []
     for target_type, items in (("server", servers), ("website", websites)):
@@ -465,6 +501,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
         "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
+        "backupSummary": _backup_summary(snapshots),
         "incidentSummary": _incident_summary(snapshots, website_snapshots, incident_logs),
         "certRenewalSummary": _cert_renewal_summary(website_snapshots),
         "emergencySummary": emergency_summary(runbook_items),

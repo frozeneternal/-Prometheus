@@ -188,6 +188,7 @@ function renderSystemNotice() {
   const platformHealth = state.dashboard?.platformHealth;
   const emergencySummary = state.dashboard?.emergencySummary;
   const recoverySummary = state.dashboard?.recoverySummary;
+  const backupSummary = state.dashboard?.backupSummary;
   const incidentSummary = state.dashboard?.incidentSummary;
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
   const resourceExpirySummary = state.dashboard?.resourceExpirySummary;
@@ -236,6 +237,10 @@ function renderSystemNotice() {
 
   if (recoverySummary) {
     messages.push(`自动恢复：已启用 ${recoverySummary.enabled ?? 0}/${recoverySummary.total ?? 0}，阻断 ${recoverySummary.blocked ?? 0}，等待 ${recoverySummary.waiting ?? 0}，失败 ${recoverySummary.failed ?? 0}，中断中 ${recoverySummary.activeIncidents ?? 0}。`);
+  }
+
+  if (backupSummary) {
+    messages.push(`自动备份：已启用 ${backupSummary.enabled ?? 0}/${backupSummary.total ?? 0}，阻断 ${backupSummary.blocked ?? 0}，等待 ${backupSummary.waiting ?? 0}，失败 ${backupSummary.failed ?? 0}。`);
   }
 
   if (incidentSummary) {
