@@ -219,6 +219,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
 
         self.assertIn("start-local-monitor.ps1", watchdog)
+        self.assertIn("recover-prometheus-tsdb.ps1", watchdog)
         self.assertIn("start-ssh-tunnels.ps1", watchdog)
         self.assertIn("127.0.0.1", watchdog)
         self.assertIn("watchdog-local-monitor.log", watchdog)
@@ -236,6 +237,22 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertNotIn("docker", watchdog.lower())
         self.assertNotIn(" || ", watchdog)
         self.assertNotIn("| ForEach-Object { Write-WatchdogLog $_ }", watchdog)
+
+    def test_watchdog_recovers_prometheus_tsdb_corruption_before_generic_restart(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("Test-PrometheusTsdbCorruption", watchdog)
+        self.assertIn("$RecoverPrometheus", watchdog)
+        self.assertIn("prometheus.err.log", watchdog)
+        self.assertIn("fatal error: fault", watchdog)
+        self.assertIn("checkCRC32", watchdog)
+        self.assertIn("Encountered WAL read error", watchdog)
+        self.assertIn("-StartAfterRecovery", watchdog)
+        self.assertLess(watchdog.index("recover-prometheus-tsdb"), watchdog.index("start-local-monitor"))
+        self.assertNotIn(
+            'Invoke-MonitorScript $RecoverPrometheus "recover-prometheus-tsdb" @("-StartAfterRecovery", "-Force")',
+            watchdog,
+        )
 
     def test_ssh_credentials_use_dpapi_export_file_not_plaintext(self) -> None:
         setter = (STANDALONE / "set-ssh-credential.ps1").read_text(encoding="utf-8")

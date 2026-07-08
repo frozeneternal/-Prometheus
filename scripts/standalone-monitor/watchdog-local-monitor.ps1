@@ -8,6 +8,7 @@ $ErrorActionPreference = "Continue"
 $Config = Join-Path $Root "config"
 $Logs = Join-Path $Root "logs"
 $WatchdogLog = Join-Path $Logs "watchdog-local-monitor.log"
+$RecoverPrometheus = Join-Path $Root "scripts\recover-prometheus-tsdb.ps1"
 $StartLocal = Join-Path $Root "scripts\start-local-monitor.ps1"
 $StartTunnels = Join-Path $Root "scripts\start-ssh-tunnels.ps1"
 $TunnelsConfig = Join-Path $Config "tunnels.local.json"
@@ -44,7 +45,51 @@ function Test-PortFast($HostName, $Port, $TimeoutMs = 1000) {
   }
 }
 
-function Invoke-MonitorScript($ScriptPath, $Name) {
+function Read-TextOrEmpty($Path) {
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return ""
+  }
+  $text = Get-Content -LiteralPath $Path -Tail 400 -Encoding UTF8 -ErrorAction SilentlyContinue
+  if ($null -eq $text) {
+    return ""
+  }
+  return ($text -join "`n")
+}
+
+function Test-PrometheusTsdbCorruption {
+  $text = Read-TextOrEmpty (Join-Path $Logs "prometheus.err.log")
+  $patterns = @(
+    "fatal error: fault",
+    "checkCRC32",
+    "Encountered WAL read error",
+    "corruption in segment",
+    "unexpected fault address"
+  )
+  foreach ($pattern in $patterns) {
+    if ($text.Contains($pattern)) {
+      return $true
+    }
+  }
+  return $false
+}
+
+function ConvertTo-MonitorScriptArguments([string[]]$Arguments) {
+  if (-not $Arguments) {
+    return ""
+  }
+  $quoted = @()
+  foreach ($argument in $Arguments) {
+    $value = [string]$argument
+    if ($value -match '^-?[A-Za-z0-9_.:-]+$') {
+      $quoted += " $value"
+    } else {
+      $quoted += " '$($value.Replace("'", "''"))'"
+    }
+  }
+  return ($quoted -join "")
+}
+
+function Invoke-MonitorScript($ScriptPath, $Name, [string[]]$ExtraArguments = @()) {
   if (-not (Test-Path $ScriptPath)) {
     Write-WatchdogLog "$Name script missing: $ScriptPath"
     return
@@ -61,10 +106,11 @@ function Invoke-MonitorScript($ScriptPath, $Name) {
     $safeScript = ([string]$ScriptPath).Replace("'", "''")
     $safeRoot = ([string]$Root).Replace("'", "''")
     $safeExitCodeFile = ([string]$ExitCodeFile).Replace("'", "''")
+    $argumentText = ConvertTo-MonitorScriptArguments $ExtraArguments
     $command = @"
 `$ExitCodeFile = '$safeExitCodeFile'
 try {
-  & '$safeScript' -Root '$safeRoot'
+  & '$safeScript' -Root '$safeRoot'$argumentText
   if (`$global:LASTEXITCODE -ne `$null) {
     `$exitCode = `$global:LASTEXITCODE
   } elseif (`$?) {
@@ -123,14 +169,21 @@ $localChecks = @(
 )
 
 $localFailed = @()
+$prometheusStatus = $null
 foreach ($check in $localChecks) {
   $status = Get-HttpStatus $check.Url
+  if ($check.Name -eq "prometheus") {
+    $prometheusStatus = $status
+  }
   if ($status -ne 200) {
     $localFailed += "$($check.Name)=$status"
   }
 }
 
-if ($localFailed.Count -gt 0) {
+if (($prometheusStatus -ne 200) -and (Test-PrometheusTsdbCorruption)) {
+  Write-WatchdogLog "prometheus unhealthy and TSDB corruption signature found; running recover-prometheus-tsdb.ps1"
+  Invoke-MonitorScript $RecoverPrometheus "recover-prometheus-tsdb" @("-StartAfterRecovery")
+} elseif ($localFailed.Count -gt 0) {
   Write-WatchdogLog "local stack unhealthy: $($localFailed -join ', '); running start-local-monitor.ps1"
   Invoke-MonitorScript $StartLocal "start-local-monitor"
 } else {
