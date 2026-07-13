@@ -142,6 +142,13 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("QuoteArg", launcher)
         self.assertNotIn("docker", launcher.lower())
 
+    def test_watchdog_recovery_wrappers_use_hidden_noninteractive_powershell(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('-FilePath "powershell.exe"', watchdog)
+        self.assertIn('"-NonInteractive"', watchdog)
+        self.assertIn('"-WindowStyle", "Hidden"', watchdog)
+
     def test_exporter_diagnostics_script_uses_utf8_bom_for_windows_powershell(self) -> None:
         data = (STANDALONE / "diagnose-exporters.ps1").read_bytes()
 

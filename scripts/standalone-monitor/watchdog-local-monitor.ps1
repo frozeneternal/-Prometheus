@@ -128,7 +128,7 @@ Set-Content -LiteralPath `$ExitCodeFile -Value `$exitCode -Encoding ASCII
 exit `$exitCode
 "@
 
-    $proc = Start-Process -FilePath "powershell" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $command) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", $command) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
     if (-not $proc.WaitForExit($timeoutMs)) {
       Write-WatchdogLog "$Name did not exit within $ScriptTimeoutSeconds seconds; terminating wrapper process: PID $($proc.Id)"
       $proc.Kill()
