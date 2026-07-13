@@ -26,6 +26,7 @@ from backend.auth import (
 from backend.auth_audit import auth_audit_event
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
+from backend.inventory import config_list_records
 
 
 DEFAULT_AUTH_AUDIT_LIMIT = 50
@@ -226,7 +227,8 @@ def logout_payload(
 
 
 def _find_raw_user(raw_config: dict, username: str) -> dict | None:
-    for user in raw_config.get("users", []) or []:
+    users, _invalid_entries = config_list_records(raw_config, "users")
+    for user in users:
         if str(user.get("username") or "") == username:
             return user
     return None

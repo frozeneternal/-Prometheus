@@ -145,7 +145,7 @@ def auth_policy_issues(config: dict) -> list[dict]:
 
 
 def account_configuration_issues(config: dict) -> list[dict]:
-    users = config.get("users", []) or []
+    users, _invalid_user_entries = config_list_records(config, "users")
     servers, _invalid_entries = config_list_records(config, "servers")
     has_actions = any((server.get("actions") or []) for server in servers)
     if has_actions and not users and not config.get("actionToken"):
@@ -836,6 +836,7 @@ def linked_target_exists(config: dict, linked_target: str) -> bool:
 def config_validation_summary(config: dict) -> dict:
     servers, invalid_server_entries = config_list_records(config, "servers")
     websites, invalid_website_entries = config_list_records(config, "websites")
+    _users, invalid_user_entries = config_list_records(config, "users")
     resources, invalid_resource_entries = resource_config_records(config)
     server_ids = {str(server.get("id") or "") for server in servers if server.get("id")}
     website_ids = {str(website.get("id") or "") for website in websites if website.get("id")}
@@ -881,6 +882,19 @@ def config_validation_summary(config: dict) -> dict:
                 "error",
                 f"{entry.get('path') or 'resources'} must be a JSON object resource entry.",
                 "resource",
+                target_id,
+            )
+        )
+    for entry in invalid_user_entries:
+        index = entry.get("index")
+        issue_id = "users-invalid" if index is None else f"user-entry-invalid:{index}"
+        target_id = "users" if index is None else str(index)
+        issues.append(
+            make_issue(
+                issue_id,
+                "error",
+                f"{entry.get('path') or 'users'} must be a JSON object user entry.",
+                "auth",
                 target_id,
             )
         )

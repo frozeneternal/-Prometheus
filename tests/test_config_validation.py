@@ -386,6 +386,46 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("user-role-invalid:bad-role", issue_ids)
         self.assertNotIn("user-password-hash-invalid:bad-role", issue_ids)
 
+    def test_config_validation_reports_malformed_user_entries(self) -> None:
+        config = {
+            "sessionSecret": "valid-test-session-key-0123456789abcdef",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": [
+                {
+                    "username": "admin",
+                    "role": "admin",
+                    "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+                },
+                "not-a-user-object",
+                None,
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("user-entry-invalid:1", issue_ids)
+        self.assertIn("user-entry-invalid:2", issue_ids)
+        self.assertNotIn("user-entry-invalid:0", issue_ids)
+
+    def test_config_validation_reports_non_list_user_inventory(self) -> None:
+        config = {
+            "sessionSecret": "valid-test-session-key-0123456789abcdef",
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "users": "not-a-user-list",
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("users-invalid", issue_ids)
+
     def test_config_validation_reports_normalized_duplicate_account_usernames(self) -> None:
         config = {
             "sessionSecret": "session-secret-with-enough-length",

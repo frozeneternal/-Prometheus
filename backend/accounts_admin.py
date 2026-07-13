@@ -10,6 +10,7 @@ from backend.auth import auth_policy, authorize_operation, hash_password, normal
 from backend.auth_audit import auth_audit_event
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
+from backend.inventory import config_list_records
 
 
 def _return_auth_audit_event(_config: dict, event: dict) -> dict:
@@ -43,7 +44,8 @@ def account_user_view(user: dict) -> dict:
 
 
 def account_user_views(config: dict) -> list[dict]:
-    return [account_user_view(user) for user in config.get("users", []) or [] if user.get("username")]
+    users, _invalid_entries = config_list_records(config, "users")
+    return [account_user_view(user) for user in users if user.get("username")]
 
 
 def _copy_config(config: dict) -> dict:
@@ -160,7 +162,8 @@ def upsert_account_user_payload(
         return 400, {"ok": False, "message": username_error}
 
     raw_config = _copy_config(active_runtime.load_config_raw())
-    users = list(raw_config.get("users", []) or [])
+    users, _invalid_entries = config_list_records(raw_config, "users")
+    users = list(users)
     index = _find_user_index(users, username)
     existing = users[index] if index is not None else {}
     password = str(body.get("password") or "")
@@ -249,7 +252,8 @@ def delete_account_user_payload(
         return 400, {"ok": False, "message": "缺少账号名。"}
 
     raw_config = _copy_config(active_runtime.load_config_raw())
-    users = list(raw_config.get("users", []) or [])
+    users, _invalid_entries = config_list_records(raw_config, "users")
+    users = list(users)
     index = _find_user_index(users, username)
     if index is None:
         return 404, {"ok": False, "message": "账号不存在。"}

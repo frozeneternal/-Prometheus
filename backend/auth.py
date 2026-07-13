@@ -7,6 +7,8 @@ import json
 import secrets
 import time
 
+from backend.inventory import config_list_records
+
 
 ROLE_RANK = {"viewer": 0, "operator": 1, "admin": 2}
 # Values are token expiration timestamps. Keys may be sid:<sid>, token:<sha256>, or legacy raw sid.
@@ -62,7 +64,8 @@ def public_user(user: dict) -> dict:
 
 def configured_users(config: dict) -> list[dict]:
     users = []
-    for user in config.get("users", []) or []:
+    records, _invalid_entries = config_list_records(config, "users")
+    for user in records:
         if user.get("enabled", True) is False:
             continue
         if not user.get("username") or not user.get("passwordHash"):

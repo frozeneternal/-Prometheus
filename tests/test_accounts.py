@@ -631,6 +631,88 @@ class AccountAuthTests(unittest.TestCase):
         self.assertFalse(security["sessionSecret"]["weak"])
         self.assertFalse(security["requiresBootstrapAdmin"])
 
+    def test_account_security_tolerates_malformed_user_entries(self) -> None:
+        config = {
+            "actionToken": "legacy-token",
+            "sessionSecret": "strong-session-secret-value-0123456789",
+            "users": [
+                "not-a-user-object",
+                None,
+                {
+                    "username": "admin",
+                    "displayName": "Admin",
+                    "role": "admin",
+                    "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+                },
+            ],
+            "servers": [],
+            "websites": [],
+            "resources": [],
+            "monitoring": {},
+        }
+
+        user = app.authenticate_user(config, "admin", "admin-pass")
+        dashboard = app.dashboard_payload(
+            config,
+            runtime=DashboardRuntime(
+                now=lambda: 1000.0,
+                ready_status=lambda _config, timeout=1.5: (False, "test"),
+                set_runtime_dashboard=lambda _payload: None,
+            ),
+        )
+
+        self.assertIsNotNone(user)
+        security = dashboard["accountSecurity"]
+        self.assertEqual(security["mode"], "users")
+        self.assertEqual(security["enabledUsers"], 1)
+        self.assertEqual(security["adminUsers"], 1)
+
+    def test_account_admin_payloads_tolerate_malformed_raw_user_entries(self) -> None:
+        admin_user = {
+            "username": "admin",
+            "displayName": "Admin",
+            "role": "admin",
+            "passwordHash": app.hash_password("admin-pass", salt="admin-salt", iterations=1000),
+        }
+        raw_config = {
+            "sessionSecret": "strong-session-secret-value-0123456789",
+            "authPolicy": {"passwordMinLength": 8},
+            "users": ["not-a-user-object", admin_user, None],
+        }
+        admin = app.authenticate_user(raw_config, "admin", "admin-pass")
+        token = app.create_session_token(raw_config, admin)
+        saved = {}
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: saved.get("config", raw_config),
+            save_config_raw=lambda config: saved.update(config=config),
+            append_auth_audit=lambda _config, event: event,
+        )
+
+        users_status, users_payload = app.account_users_payload(
+            raw_config,
+            {"sessionToken": token},
+            runtime=runtime,
+        )
+        upsert_status, upsert_payload = app.upsert_account_user_payload(
+            raw_config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operator",
+                "role": "operator",
+                "password": "operator-pass",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(users_status, 200)
+        self.assertEqual([user["username"] for user in users_payload["users"]], ["admin"])
+        self.assertEqual(upsert_status, 200)
+        self.assertEqual([user["username"] for user in upsert_payload["users"]], ["admin", "ops"])
+        self.assertEqual([user["username"] for user in saved["config"]["users"]], ["admin", "ops"])
+
     def test_dashboard_payload_marks_unconfigured_auth_as_error(self) -> None:
         config = {
             "actionToken": "",
