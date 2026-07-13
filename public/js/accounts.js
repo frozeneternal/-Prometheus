@@ -65,6 +65,16 @@ function canBootstrapFirstAdmin() {
   return auth.mode === "token" && state.config?.actionsRequireToken === true && users.length === 0;
 }
 
+function focusFirstAdminBootstrapForm() {
+  renderAccountManagement();
+  $("#accountLockoutPanel").classList.remove("hidden");
+  $("#accountManagementPanel").classList.remove("hidden");
+  $("#accountRole").value = "admin";
+  $("#accountRole").disabled = true;
+  $("#accountManagementPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("#accountUsername").focus();
+}
+
 function accountModeLabel(mode) {
   return {
     users: "账号登录模式",
@@ -97,6 +107,7 @@ export function renderAccountSecurity() {
     : "未配置会话密钥";
   const issues = security.issues || [];
   const recommendations = security.recommendations || [];
+  const bootstrapFirstAdmin = Boolean(security.requiresBootstrapAdmin) && canBootstrapFirstAdmin();
 
   panel.className = `account-security-panel ${escapeHtml(severity)}`;
   panel.innerHTML = `
@@ -116,7 +127,12 @@ export function renderAccountSecurity() {
       ${issues.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
       ${recommendations.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
     </div>` : ""}
+    ${bootstrapFirstAdmin ? `<div class="account-security-actions">
+      <button type="button" class="secondary compact" data-bootstrap-admin-action="focus">创建首个管理员</button>
+    </div>` : ""}
   `;
+  const bootstrapButton = panel.querySelector("[data-bootstrap-admin-action]");
+  if (bootstrapButton) bootstrapButton.addEventListener("click", focusFirstAdminBootstrapForm);
 }
 
 export async function loadAccountLockouts() {

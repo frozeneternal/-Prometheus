@@ -307,6 +307,12 @@ select {
   gap: 6px;
 }
 
+.account-security-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .action-safety-panel {
   display: grid;
   gap: 10px;
