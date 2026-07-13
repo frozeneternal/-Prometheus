@@ -281,6 +281,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("dataQualitySummary.untrusted", notice_block)
         self.assertIn("dataQualitySummary.partial", notice_block)
 
+    def test_action_safety_summary_is_visible_in_system_notice(self) -> None:
+        notice_block = notice_js()
+
+        self.assertIn("state.dashboard?.actionSafetySummary", notice_block)
+        self.assertIn("动作安全", notice_block)
+        self.assertIn("actionSafetySummary.allowAuto", notice_block)
+        self.assertIn("actionSafetySummary.highDanger", notice_block)
+        self.assertIn("actionSafetySummary.actionRequired", notice_block)
+
     def test_incident_summary_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()
 

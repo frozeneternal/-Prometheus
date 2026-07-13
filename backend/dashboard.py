@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from backend.action_safety import action_safety_summary
 from backend.config import DEFAULT_CONFIG, config_source_info
 from backend.auth_security import account_security_summary
 from backend.exporter_diagnostics import empty_exporter_diagnostics
@@ -520,6 +521,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "configSource": active_runtime.config_source(),
         "configValidation": config_validation,
         "accountSecurity": account_security_summary(config),
+        "actionSafetySummary": action_safety_summary(config),
         "platformHealth": platform_health,
         "exporterDiagnostics": exporter_diagnostics,
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),

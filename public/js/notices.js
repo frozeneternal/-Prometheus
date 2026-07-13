@@ -18,6 +18,7 @@ export function renderSystemNotice() {
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
   const resourceExpirySummary = state.dashboard?.resourceExpirySummary;
   const accountSecurity = state.dashboard?.accountSecurity;
+  const actionSafetySummary = state.dashboard?.actionSafetySummary;
   const configSource = state.dashboard?.configSource || {};
 
   if (prometheus && !prometheus.available) {
@@ -95,6 +96,10 @@ export function renderSystemNotice() {
     const accountIssueCount = (accountSecurity.issues || []).length;
     const accountSeverityText = accountSecurity.severity === "error" ? "严重" : "预警";
     messages.push(`账号安全：${accountSeverityText}，启用账号 ${accountSecurity.enabledUsers ?? 0}，管理员 ${accountSecurity.adminUsers ?? 0}，运维账号 ${accountSecurity.operatorUsers ?? 0}，问题 ${accountIssueCount}。`);
+  }
+
+  if (actionSafetySummary && actionSafetySummary.status !== "ok") {
+    messages.push(`动作安全：动作 ${actionSafetySummary.total ?? 0}，自动 ${actionSafetySummary.allowAuto ?? 0}，高危 ${actionSafetySummary.highDanger ?? 0}，需处理 ${actionSafetySummary.actionRequired ?? 0}。`);
   }
 
   if (!configSource.usingLocalConfig) {

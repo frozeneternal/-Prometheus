@@ -1920,6 +1920,48 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["levels"]["no_series"], 1)
         self.assertEqual(summary["levels"]["partial"], 1)
 
+    def test_dashboard_payload_summarizes_action_safety_risks(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [
+                    {
+                        "id": "ops",
+                        "name": "Ops Server",
+                        "actions": [
+                            {"id": "safe-auto", "command": ["backup"], "allowAuto": True, "timeoutSeconds": 60},
+                            {"id": "unsafe-auto", "command": ["restart"], "allowAuto": True},
+                            {"id": "dangerous", "command": ["rm", "-rf", "/tmp/demo"], "danger": "high"},
+                            {"id": "disabled", "command": ["noop"], "enabled": False},
+                            {"id": "broken", "command": []},
+                        ],
+                    }
+                ],
+                "websites": [],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["actionSafetySummary"]
+        self.assertEqual(summary["status"], "attention")
+        self.assertEqual(summary["total"], 5)
+        self.assertEqual(summary["enabled"], 4)
+        self.assertEqual(summary["disabled"], 1)
+        self.assertEqual(summary["allowAuto"], 2)
+        self.assertEqual(summary["highDanger"], 1)
+        self.assertEqual(summary["missingConfirm"], 1)
+        self.assertEqual(summary["autoMissingTimeout"], 1)
+        self.assertEqual(summary["invalidCommand"], 1)
+        self.assertEqual(summary["actionRequired"], 3)
+
     def test_dashboard_payload_summarizes_active_and_recovered_incidents(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 
@@ -3931,6 +3973,18 @@ class BackendModuleTests(unittest.TestCase):
         for function_name in forbidden_functions:
             with self.subTest(function_name=function_name):
                 self.assertNotIn(f"def {function_name}(", app_source)
+
+    def test_action_safety_summary_lives_in_backend_module(self) -> None:
+        from backend.action_safety import action_safety_summary
+
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        dashboard_source = (root / "backend" / "dashboard.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("def action_safety_summary(", app_source)
+        self.assertNotIn("def _action_safety_summary(", dashboard_source)
+        self.assertIn("from backend.action_safety import action_safety_summary", dashboard_source)
+        self.assertEqual(action_safety_summary.__module__, "backend.action_safety")
 
     def test_app_does_not_define_recovery_domain_functions_locally(self) -> None:
         root = Path(__file__).resolve().parents[1]
