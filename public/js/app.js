@@ -50,6 +50,7 @@ import {
 } from "./format.js";
 import { renderSystemNotice } from "./notices.js";
 import { canFetchSeries } from "./prometheus.js";
+import { resourceAckLabel } from "./resource-expiry.js";
 import { state } from "./state.js";
 function serverAddress(server) {
   const instance = server.labels?.instance || "";
@@ -906,7 +907,7 @@ function emergencyActionButton(item) {
       actions.push(`<a class="secondary recovery-trigger compact" href="${escapeHtml(resource.renewUrl)}" target="_blank" rel="noreferrer">续费入口</a>`);
     }
     if (canAcknowledgeResource(resource)) {
-      actions.push(`<button type="button" class="secondary recovery-trigger compact" data-emergency-resource-ack="true" data-resource-id="${escapeHtml(resource.id)}">确认 7 天</button>`);
+      actions.push(`<button type="button" class="secondary recovery-trigger compact" data-emergency-resource-ack="true" data-resource-id="${escapeHtml(resource.id)}">${escapeHtml(resourceAckLabel(state.config))}</button>`);
     }
     return actions.join("");
   }
@@ -1327,7 +1328,7 @@ function resourceExpiryCard(item) {
     ? `${item.handlingMessage}${missingHandlingFields ? ` (${missingHandlingFields})` : ""}`
     : "";
   const ackButton = canAcknowledge
-    ? `<button type="button" class="secondary recovery-trigger compact" data-resource-ack="true" data-resource-id="${escapeHtml(item.id)}">确认 7 天</button>`
+    ? `<button type="button" class="secondary recovery-trigger compact" data-resource-ack="true" data-resource-id="${escapeHtml(item.id)}">${escapeHtml(resourceAckLabel(state.config))}</button>`
     : "";
   const manageButtons = `
     <button type="button" class="secondary recovery-trigger compact" data-resource-edit="true" data-resource-id="${escapeHtml(item.id)}">编辑</button>

@@ -415,16 +415,27 @@ def _website_item(website: dict, recovery_log_lookup: dict[str, dict] | None = N
     )
 
 
-def _resource_item(resource: dict) -> dict | None:
+def _resource_ack_days(value: object) -> int:
+    if isinstance(value, bool):
+        return 7
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return 7
+    return max(1, min(7, days))
+
+
+def _resource_item(resource: dict, resource_ack_days: int = 7) -> dict | None:
     if not resource.get("actionRequired"):
         return None
     status = str(resource.get("status") or "unknown")
     severity = "critical" if status in {"expired", "critical"} else "warning"
     resource_id = str(resource.get("id") or "")
     name = str(resource.get("name") or resource_id or "资源")
+    ack_days = _resource_ack_days(resource_ack_days)
     next_steps = [
         "打开资源到期卡片中的续费入口或联系 owner/provider。",
-        "完成处理后用“确认 7 天”临时消警，或更新 expiresAt 为新的到期日期。",
+        f"完成处理后用“确认 {ack_days} 天”临时消警，或更新 expiresAt 为新的到期日期。",
         "如该资源关联网站或服务器，复查 linkedTarget 是否正确。",
     ]
     if resource.get("handlingReady") is False:
@@ -456,6 +467,7 @@ def emergency_items(
     websites: list[dict],
     resources: list[dict],
     recovery_logs: list[dict] | None = None,
+    resource_ack_days: int = 7,
 ) -> list[dict]:
     items = []
     recovery_log_lookup = _log_lookup(recovery_logs)
@@ -479,7 +491,7 @@ def emergency_items(
         if cert_item:
             items.append(cert_item)
     for resource in resources:
-        item = _resource_item(resource)
+        item = _resource_item(resource, resource_ack_days=resource_ack_days)
         if item:
             items.append(item)
     return sorted(

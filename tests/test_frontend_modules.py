@@ -583,6 +583,18 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("resource.renewUrl", runbook_block)
         self.assertIn('rel="noreferrer"', runbook_block)
 
+    def test_resource_acknowledgement_uses_configured_ack_days(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")
+        resource_expiry_js = (PUBLIC / "js" / "resource-expiry.js").read_text(encoding="utf-8")
+
+        self.assertIn("resourceAckLabel", app_js)
+        self.assertIn("resourceAcknowledgedUntil", actions_js)
+        self.assertIn("resourceAckDays", resource_expiry_js)
+        self.assertIn("resourceAckMaxDays", resource_expiry_js)
+        self.assertNotIn("确认 7 天", app_js)
+        self.assertNotIn("7 * 86400 * 1000", actions_js)
+
     def test_config_validation_panel_uses_backend_field_contract(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         render_config_validation = app_js[

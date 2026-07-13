@@ -9,6 +9,7 @@ import {
   updateCertRenewal,
 } from "./client.js";
 import { $ } from "./dom.js";
+import { resourceAcknowledgedUntil } from "./resource-expiry.js";
 import { state } from "./state.js";
 
 const runtime = {
@@ -133,7 +134,7 @@ export async function toggleCertRenewal(websiteId, enabled) {
 }
 
 export async function acknowledgeResourceExpiry(resourceId) {
-  const acknowledgedUntil = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+  const acknowledgedUntil = resourceAcknowledgedUntil(state.config);
   try {
     const payload = await acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, auth: authPayload() });
     state.dashboard = payload;

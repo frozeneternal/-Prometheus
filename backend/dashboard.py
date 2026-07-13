@@ -8,7 +8,7 @@ from typing import Callable
 
 from backend.account_runtime_security import account_runtime_security_summary
 from backend.action_safety import action_safety_summary
-from backend.config import DEFAULT_CONFIG, config_source_info
+from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
 from backend.auth_security import account_security_summary
 from backend.exporter_diagnostics import empty_exporter_diagnostics
 from backend.expiry import resource_expiry_items, resource_expiry_summary
@@ -672,6 +672,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         websites=website_snapshots,
         resources=expiry_items,
         recovery_logs=recovery_logs,
+        resource_ack_days=monitoring_options(config)["resourceAckMaxDays"],
     )
 
     payload = {

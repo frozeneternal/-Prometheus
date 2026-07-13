@@ -1760,6 +1760,31 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("provider", steps)
         self.assertIn("资产台账", steps)
 
+    def test_emergency_module_resource_ack_step_respects_configured_ack_days_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[],
+            resources=[
+                {
+                    "id": "license-main",
+                    "name": "Main License",
+                    "status": "warning",
+                    "message": "Main License will expire soon.",
+                    "actionRequired": True,
+                    "handlingReady": True,
+                }
+            ],
+            resource_ack_days=3,
+        )
+
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("确认 3 天", steps)
+        self.assertNotIn("确认 7 天", steps)
+
     def test_emergency_module_surfaces_failed_auto_backup_without_app_import(self) -> None:
         from backend.emergency import emergency_items
 
