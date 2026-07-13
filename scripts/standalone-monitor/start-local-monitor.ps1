@@ -167,11 +167,24 @@ modules:
 "@ | Set-Content -LiteralPath $blackboxConfig -Encoding UTF8
 }
 
+function Ensure-PrometheusAlertRules {
+  $rules = Join-Path $Config "ops-alerts.yml"
+  if (Test-Path $rules) {
+    return
+  }
+
+  $template = Join-Path $ScriptRoot "ops-alerts.example.yml"
+  if (Test-Path $template) {
+    Copy-Item -LiteralPath $template -Destination $rules -Force
+  }
+}
+
 Ensure-SecretFile (Join-Path $Config "grafana-admin-password.txt") 18
 Ensure-SecretFile (Join-Path $Config "grafana-secret-key.txt") 32
 Ensure-GrafanaDefaultLanguage
 Ensure-GrafanaProvisioning
 Ensure-BlackboxConfig
+Ensure-PrometheusAlertRules
 
 Start-ManagedProcess `
   -Name "windows_exporter" `

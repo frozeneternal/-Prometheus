@@ -1,0 +1,52 @@
+groups:
+  - name: ops-platform.rules
+    rules:
+      - alert: OpsDashboardSnapshotStale
+        expr: ops_platform_dashboard_snapshot_available == 0 or ops_platform_dashboard_snapshot_fresh == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: ops-platform
+        annotations:
+          summary: Ops dashboard data is stale
+          description: The ops platform dashboard snapshot is missing or older than the configured freshness threshold.
+
+      - alert: OpsTargetCoverageMissing
+        expr: ops_platform_target_coverage_missing_total > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: prometheus
+        annotations:
+          summary: Configured targets are missing Prometheus coverage
+          description: One or more configured servers or websites do not match an active Prometheus target.
+
+      - alert: OpsUnmanagedPrometheusTargets
+        expr: ops_platform_target_coverage_unmanaged_total > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: prometheus
+        annotations:
+          summary: Prometheus is scraping unmanaged targets
+          description: Prometheus has active scrape targets that are not mapped to the platform inventory.
+
+      - alert: OpsTargetScrapeIssues
+        expr: ops_platform_target_coverage_unhealthy_total > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: prometheus
+        annotations:
+          summary: Prometheus target scrape issues detected
+          description: One or more matched Prometheus targets are unhealthy or returning scrape errors.
+
+      - alert: OpsResourceExpiryActionRequired
+        expr: ops_platform_resource_expiry_action_required_total > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: resources
+        annotations:
+          summary: Resource expiry action required
+          description: One or more domains, certificates, accounts, licenses, or other resources require renewal or verification.

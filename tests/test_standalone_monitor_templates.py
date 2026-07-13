@@ -142,6 +142,38 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertTrue(targets["websites"])
         self.assertIn("url", targets["websites"][0])
 
+    def test_prometheus_alert_rules_cover_platform_monitoring_risks(self) -> None:
+        standalone_prometheus = (STANDALONE / "prometheus.example.yml").read_text(encoding="utf-8")
+        standalone_alerts_path = STANDALONE / "ops-alerts.example.yml"
+        docker_prometheus = (ROOT / "prometheus" / "prometheus.yml").read_text(encoding="utf-8")
+        docker_alerts_path = ROOT / "prometheus" / "alerts.yml"
+        start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertTrue(standalone_alerts_path.exists())
+        self.assertTrue(docker_alerts_path.exists())
+        standalone_alerts = standalone_alerts_path.read_text(encoding="utf-8")
+        docker_alerts = docker_alerts_path.read_text(encoding="utf-8")
+
+        self.assertIn("rule_files:", standalone_prometheus)
+        self.assertIn("ops-alerts.yml", standalone_prometheus)
+        self.assertIn("rule_files:", docker_prometheus)
+        self.assertIn("alerts.yml", docker_prometheus)
+        self.assertIn("Ensure-PrometheusAlertRules", start_script)
+        self.assertIn("ops-alerts.example.yml", start_script)
+        self.assertIn("ops-alerts.yml", start_script)
+
+        for alerts in (standalone_alerts, docker_alerts):
+            self.assertIn("OpsDashboardSnapshotStale", alerts)
+            self.assertIn("OpsTargetCoverageMissing", alerts)
+            self.assertIn("OpsUnmanagedPrometheusTargets", alerts)
+            self.assertIn("OpsTargetScrapeIssues", alerts)
+            self.assertIn("OpsResourceExpiryActionRequired", alerts)
+            self.assertIn("ops_platform_dashboard_snapshot_fresh == 0", alerts)
+            self.assertIn("ops_platform_target_coverage_missing_total > 0", alerts)
+            self.assertIn("ops_platform_target_coverage_unmanaged_total > 0", alerts)
+            self.assertIn("ops_platform_target_coverage_unhealthy_total > 0", alerts)
+            self.assertIn("ops_platform_resource_expiry_action_required_total > 0", alerts)
+
     def test_ops_overview_dashboard_covers_core_resource_views(self) -> None:
         dashboard = json.loads((STANDALONE / "ops-overview.dashboard.json").read_text(encoding="utf-8"))
         panel_titles = {panel["title"] for panel in dashboard["panels"]}
