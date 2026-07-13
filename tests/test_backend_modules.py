@@ -2536,7 +2536,10 @@ class BackendModuleTests(unittest.TestCase):
                     "Name": "srv-win",
                     "OS": "windows",
                     "MetricsPort": 9182,
-                    "Diagnosis": "windows_exporter_unreachable",
+                    "Diagnosis": "windows_exporter_port_closed",
+                    "PingReachable": True,
+                    "WinRmPortOpen": False,
+                    "RdpPortOpen": True,
                     "SuggestedCommands": ["Get-Service windows_exporter"],
                 },
             ]
@@ -2549,8 +2552,12 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["actionRequired"], 2)
         categories = {item["diagnosis"]: item["count"] for item in summary["categories"]}
         self.assertEqual(categories["node_exporter_unreachable"], 1)
-        self.assertEqual(categories["windows_exporter_unreachable"], 1)
+        self.assertEqual(categories["windows_exporter_port_closed"], 1)
         self.assertEqual(len(summary["items"]), 2)
+        windows_item = next(item for item in summary["items"] if item["name"] == "srv-win")
+        self.assertTrue(windows_item["pingReachable"])
+        self.assertFalse(windows_item["winRmPortOpen"])
+        self.assertTrue(windows_item["rdpPortOpen"])
 
     def test_exporter_diagnostics_runner_forces_powershell_utf8_stdout(self) -> None:
         from backend import exporter_diagnostics

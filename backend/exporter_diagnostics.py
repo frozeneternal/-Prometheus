@@ -133,7 +133,13 @@ def summarize_diagnostics(records: list[dict]) -> dict:
                     "os": record.get("OS") or "",
                     "diagnosis": diagnosis,
                     "metricsPort": record.get("MetricsPort"),
+                    "pingReachable": bool(record.get("PingReachable")),
                     "managementPortOpen": bool(record.get("ManagementPortOpen")),
+                    "sshPortOpen": bool(record.get("SshPortOpen")),
+                    "winRmPortOpen": bool(record.get("WinRmPortOpen")),
+                    "rdpPortOpen": bool(record.get("RdpPortOpen")),
+                    "metricsOpen": bool(record.get("MetricsOpen")),
+                    "tunnelOpen": bool(record.get("TunnelOpen")),
                     "suggestedCommands": list(record.get("SuggestedCommands") or []),
                 }
             )

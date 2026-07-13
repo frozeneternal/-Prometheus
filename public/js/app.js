@@ -455,9 +455,13 @@ function exporterDiagnosticCard(item, index) {
   const commandText = commands.join("\n");
   const meta = [
     item.os ? `系统 ${item.os}` : "",
+    item.pingReachable === true ? "Ping 可达" : "",
+    item.pingReachable === false ? "Ping 不通" : "",
     item.metricsPort ? `指标端口 ${item.metricsPort}` : "",
     item.managementPortOpen === true ? "管理端口可达" : "",
     item.managementPortOpen === false ? "管理端口不可达" : "",
+    item.winRmPortOpen === true ? "WinRM 可达" : "",
+    item.rdpPortOpen === true ? "RDP 可达" : "",
   ].filter(Boolean).join(" / ");
   return `
     <article class="exporter-diagnostics-item ${escapeHtml(item.diagnosis || "unknown")}">

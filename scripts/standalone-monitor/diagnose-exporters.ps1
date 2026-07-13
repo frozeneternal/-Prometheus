@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Root = "E:\ops-monitor",
   [string]$Name = "",
   [string]$IP = "",
@@ -30,7 +30,12 @@ function Test-PortFast($HostName, $Port, $TimeoutMs = 1500) {
   }
 }
 
-function Get-SuggestedCommands($OS, $MetricsPort, $TunnelLocalPort) {
+function Test-PingFast($HostName, $TimeoutMs = 1000) {
+  $ping = & ping.exe -n 1 -w $TimeoutMs $HostName 2>$null
+  return $LASTEXITCODE -eq 0
+}
+
+function Get-SuggestedCommands($OS, $IP, $MetricsPort, $TunnelLocalPort, $PingReachable, $SshOpen, $WinRmOpen, $RdpOpen) {
   if ($TunnelLocalPort) {
     return @(
       "Get-NetTCPConnection -LocalPort $TunnelLocalPort",
@@ -38,7 +43,22 @@ function Get-SuggestedCommands($OS, $MetricsPort, $TunnelLocalPort) {
     )
   }
 
+  if (-not $PingReachable -and -not $SshOpen -and -not $WinRmOpen -and -not $RdpOpen) {
+    return @(
+      "ping $IP",
+      "Test-NetConnection $IP -Port $MetricsPort",
+      "确认虚拟机或物理机已开机并接入网络"
+    )
+  }
+
   if ($OS -eq "windows") {
+    if ($RdpOpen -and -not $WinRmOpen) {
+      return @(
+        "通过 RDP 登录该 Windows 主机后执行：Get-Service windows_exporter",
+        "通过 RDP 登录该 Windows 主机后执行：Get-NetTCPConnection -LocalPort $MetricsPort",
+        "通过 RDP 登录该 Windows 主机后执行：Invoke-WebRequest -UseBasicParsing http://127.0.0.1:$MetricsPort/metrics"
+      )
+    }
     return @(
       "Get-Service windows_exporter",
       "Get-NetTCPConnection -LocalPort $MetricsPort",
@@ -53,7 +73,7 @@ function Get-SuggestedCommands($OS, $MetricsPort, $TunnelLocalPort) {
   )
 }
 
-function Get-Diagnosis($OS, $SshOpen, $MetricsOpen, $TunnelOpen) {
+function Get-Diagnosis($OS, $PingReachable, $SshOpen, $MetricsOpen, $TunnelOpen, $WinRmOpen, $RdpOpen) {
   if ($MetricsOpen) {
     return "metrics_open"
   }
@@ -61,12 +81,18 @@ function Get-Diagnosis($OS, $SshOpen, $MetricsOpen, $TunnelOpen) {
     return "covered_by_ssh_tunnel"
   }
   if ($OS -eq "windows") {
-    return "windows_exporter_unreachable"
+    if ($PingReachable -or $WinRmOpen -or $RdpOpen) {
+      return "windows_exporter_port_closed"
+    }
+    return "windows_host_unreachable"
   }
   if ($SshOpen) {
+    return "node_exporter_port_closed"
+  }
+  if ($PingReachable) {
     return "node_exporter_unreachable"
   }
-  return "host_or_management_port_unreachable"
+  return "host_unreachable"
 }
 
 $inventory = Get-Content -Raw -Encoding UTF8 -LiteralPath $TargetsFile | ConvertFrom-Json
@@ -86,7 +112,11 @@ if ($IP) {
 $results = foreach ($server in $servers) {
   $os = [string]$server.os
   $metricsPort = if ($os -eq "windows") { 9182 } else { 9100 }
-  $managementOpen = Test-PortFast $server.ip 22
+  $pingReachable = Test-PingFast $server.ip
+  $sshOpen = Test-PortFast $server.ip 22
+  $winRmOpen = if ($os -eq "windows") { Test-PortFast $server.ip 5985 } else { $false }
+  $rdpOpen = if ($os -eq "windows") { Test-PortFast $server.ip 3389 } else { $false }
+  $managementOpen = if ($os -eq "windows") { $sshOpen -or $winRmOpen -or $rdpOpen } else { $sshOpen }
   $metricsOpen = Test-PortFast $server.ip $metricsPort
   $tunnel = @(
     $tunnels | Where-Object {
@@ -102,14 +132,18 @@ $results = foreach ($server in $servers) {
     IP = [string]$server.ip
     OS = $os
     Role = [string]$server.role
+    PingReachable = $pingReachable
     ManagementPortOpen = $managementOpen
+    SshPortOpen = $sshOpen
+    WinRmPortOpen = $winRmOpen
+    RdpPortOpen = $rdpOpen
     MetricsPort = $metricsPort
     MetricsOpen = $metricsOpen
     TunnelName = if ($tunnelItem) { [string]$tunnelItem.name } else { "" }
     TunnelLocalPort = $tunnelLocalPort
     TunnelOpen = $tunnelOpen
-    Diagnosis = Get-Diagnosis $os $managementOpen $metricsOpen $tunnelOpen
-    SuggestedCommands = @(Get-SuggestedCommands $os $metricsPort $tunnelLocalPort)
+    Diagnosis = Get-Diagnosis $os $pingReachable $sshOpen $metricsOpen $tunnelOpen $winRmOpen $rdpOpen
+    SuggestedCommands = @(Get-SuggestedCommands $os $server.ip $metricsPort $tunnelLocalPort $pingReachable $sshOpen $winRmOpen $rdpOpen)
   }
 }
 
@@ -123,7 +157,7 @@ if (-not $results -or @($results).Count -eq 0) {
   exit 0
 }
 
-@($results) | Select-Object Name,IP,OS,MetricsPort,ManagementPortOpen,MetricsOpen,TunnelLocalPort,TunnelOpen,Diagnosis | Format-Table -AutoSize
+@($results) | Select-Object Name,IP,OS,PingReachable,MetricsPort,ManagementPortOpen,MetricsOpen,TunnelLocalPort,TunnelOpen,Diagnosis | Format-Table -AutoSize
 Write-Host ""
 foreach ($item in @($results)) {
   if ($item.MetricsOpen -or $item.Diagnosis -eq "covered_by_ssh_tunnel") {

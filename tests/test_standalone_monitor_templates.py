@@ -132,16 +132,31 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("QuoteArg", launcher)
         self.assertNotIn("docker", launcher.lower())
 
+    def test_exporter_diagnostics_script_uses_utf8_bom_for_windows_powershell(self) -> None:
+        data = (STANDALONE / "diagnose-exporters.ps1").read_bytes()
+
+        self.assertTrue(
+            data.startswith(b"\xef\xbb\xbf"),
+            "Windows PowerShell 5.1 requires a UTF-8 BOM to read Chinese literals correctly.",
+        )
+
     def test_exporter_diagnostics_script_is_read_only(self) -> None:
-        script = (STANDALONE / "diagnose-exporters.ps1").read_text(encoding="utf-8")
+        script = (STANDALONE / "diagnose-exporters.ps1").read_text(encoding="utf-8-sig")
 
         self.assertIn("targets.local.json", script)
         self.assertIn("tunnels.local.json", script)
         self.assertIn("Test-PortFast", script)
+        self.assertIn("Test-PingFast", script)
+        self.assertIn("WinRmPortOpen", script)
+        self.assertIn("RdpPortOpen", script)
         self.assertIn("SuggestedCommands", script)
         self.assertIn("covered_by_ssh_tunnel", script)
+        self.assertIn("host_unreachable", script)
+        self.assertIn("windows_exporter_port_closed", script)
         self.assertIn("systemctl status node_exporter", script)
         self.assertIn("Get-Service windows_exporter", script)
+        self.assertIn("通过 RDP 登录该 Windows 主机", script)
+        self.assertIn("确认虚拟机或物理机已开机并接入网络", script)
         self.assertNotIn("systemctl restart", script)
         self.assertNotIn("Restart-Service", script)
         self.assertNotIn("Invoke-Command", script)
@@ -418,7 +433,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
 
     def test_powershell_param_block_comes_before_statements(self) -> None:
         for path in STANDALONE.glob("*.ps1"):
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8-sig")
             lines = [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
             if any(line.startswith("param(") for line in lines):
                 with self.subTest(path=path.relative_to(ROOT)):
