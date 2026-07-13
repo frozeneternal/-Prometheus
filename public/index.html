@@ -60,6 +60,16 @@
           </div>
           <div id="exporterDiagnosticsList" class="exporter-diagnostics-list"></div>
         </section>
+        <section id="targetIssuesPanel" class="target-issues-panel hidden" aria-live="polite">
+          <div class="target-issues-head">
+            <div>
+              <strong>Prometheus Target 异常</strong>
+              <p id="targetIssuesSummary" class="muted"></p>
+            </div>
+            <span id="targetIssuesBadge" class="target-issues-badge">0</span>
+          </div>
+          <div id="targetIssuesList" class="target-issues-list"></div>
+        </section>
         <section id="prometheusAlertsPanel" class="prometheus-alerts-panel hidden" aria-live="polite">
           <div class="prometheus-alerts-head">
             <div>

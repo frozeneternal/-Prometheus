@@ -472,6 +472,72 @@ select {
   white-space: pre-wrap;
 }
 
+.target-issues-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #f3b0b0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--bad-bg);
+  box-shadow: var(--shadow);
+}
+
+.target-issues-head,
+.target-issue-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.target-issues-badge,
+.target-issue-item-head span {
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fde2df;
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.target-issues-list {
+  display: grid;
+  gap: 8px;
+}
+
+.target-issue-item {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(176, 42, 42, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.target-issue-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.target-issue-error {
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  color: var(--bad);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.target-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .account-lockout-head,
 .account-lockout-item {
   display: flex;

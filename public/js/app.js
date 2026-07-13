@@ -191,6 +191,8 @@ function renderError(error) {
   $("#actionSafetyList").innerHTML = "";
   $("#exporterDiagnosticsPanel").classList.add("hidden");
   $("#exporterDiagnosticsList").innerHTML = "";
+  $("#targetIssuesPanel").classList.add("hidden");
+  $("#targetIssuesList").innerHTML = "";
   $("#prometheusAlertsPanel").classList.add("hidden");
   $("#prometheusAlertsList").innerHTML = "";
   $("#prometheusRulesPanel").classList.add("hidden");
@@ -237,6 +239,7 @@ function render() {
   renderAuthControls();
   renderActionSafety();
   renderExporterDiagnostics();
+  renderTargetIssues();
   renderPrometheusAlerts();
   renderPrometheusRules();
   renderUnmanagedTargets();
@@ -479,6 +482,89 @@ async function copyExporterCommands(index, button) {
   const item = (state.dashboard?.exporterDiagnostics?.items || [])[index];
   const text = (item?.suggestedCommands || []).join("\n");
   if (!text) return;
+
+  const originalText = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "已复制";
+  } catch (_error) {
+    button.textContent = "复制失败，请手动复制";
+  } finally {
+    window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 2000);
+  }
+}
+
+function targetIssueItems() {
+  const servers = (state.dashboard?.servers || []).map((item) => ({ ...item, targetKind: "server" }));
+  const websites = (state.dashboard?.websites || []).map((item) => ({ ...item, targetKind: "website" }));
+  return servers.concat(websites).filter((item) => {
+    const diagnostics = item.targetDiagnostics || {};
+    if (!diagnostics.available) return true;
+    return diagnostics.category !== "healthy" || diagnostics.health !== "up";
+  });
+}
+
+function renderTargetIssues() {
+  const panel = $("#targetIssuesPanel");
+  const items = targetIssueItems();
+  if (!items.length) {
+    panel.classList.add("hidden");
+    $("#targetIssuesList").innerHTML = "";
+    return;
+  }
+
+  const issueSummary = state.dashboard?.targetIssueSummary || {};
+  panel.className = "target-issues-panel attention";
+  $("#targetIssuesBadge").textContent = String(items.length);
+  $("#targetIssuesSummary").textContent = `发现 ${items.length} 个异常 target，分类 ${issueSummary.categories?.length || 0} 类；自动恢复会优先参考这些诊断避免误操作。`;
+  $("#targetIssuesList").innerHTML = items.map(targetIssueCard).join("");
+  $("#targetIssuesList").querySelectorAll("[data-copy-target-issue]").forEach((button) => {
+    button.addEventListener("click", () => copyTargetIssue(Number(button.dataset.copyTargetIssue), button));
+  });
+}
+
+function targetIssueCard(item, index) {
+  const diagnostics = item.targetDiagnostics || {};
+  const category = diagnostics.category || "unknown";
+  const lastError = diagnostics.lastError || "";
+  const message = diagnostics.message || "Prometheus target 异常。";
+  const actionHint = diagnostics.actionHint || "检查 Prometheus target、exporter 和网络连通性。";
+  const meta = [
+    item.targetKind,
+    diagnostics.job ? `job ${diagnostics.job}` : "",
+    diagnostics.instance ? `instance ${diagnostics.instance}` : "",
+    diagnostics.health ? `health ${diagnostics.health}` : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <article class="target-issue-item ${escapeHtml(category)}">
+      <div class="target-issue-item-head">
+        <strong>${escapeHtml(item.name || item.id || "未命名目标")}</strong>
+        <span>${escapeHtml(category)}</span>
+      </div>
+      ${meta ? `<p class="muted">${escapeHtml(meta)}</p>` : ""}
+      <p>${escapeHtml(message)}</p>
+      ${lastError ? `<p class="target-issue-error">${escapeHtml(lastError)}</p>` : ""}
+      <p class="alert-action">${escapeHtml(actionHint)}</p>
+      <div class="target-issue-actions">
+        <button type="button" class="secondary recovery-trigger compact" data-copy-target-issue="${escapeHtml(String(index))}">复制诊断</button>
+      </div>
+    </article>
+  `;
+}
+
+async function copyTargetIssue(index, button) {
+  const item = targetIssueItems()[index];
+  if (!item) return;
+  const diagnostics = item.targetDiagnostics || {};
+  const text = [
+    `target: ${item.name || item.id || ""}`,
+    `category: ${diagnostics.category || "unknown"}`,
+    `message: ${diagnostics.message || ""}`,
+    diagnostics.lastError ? `lastError: ${diagnostics.lastError}` : "",
+    `actionHint: ${diagnostics.actionHint || ""}`,
+  ].filter(Boolean).join("\n");
 
   const originalText = button.textContent;
   try {

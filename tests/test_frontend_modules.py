@@ -299,6 +299,21 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("issueSummary.categories", app_js)
         self.assertIn("category.count", app_js)
 
+    def test_target_issue_details_are_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="targetIssuesPanel"', index_html)
+        self.assertIn('id="targetIssuesList"', index_html)
+        self.assertIn("function renderTargetIssues()", app_js)
+        self.assertIn("targetIssueItems()", app_js)
+        self.assertIn("targetDiagnostics", app_js)
+        self.assertIn("data-copy-target-issue", app_js)
+        self.assertIn("copyTargetIssue", app_js)
+        self.assertIn("renderTargetIssues();", app_js)
+        self.assertIn(".target-issues-panel", styles_css)
+
     def test_dashboard_snapshot_freshness_is_visible_in_system_notice(self) -> None:
         notice_block = notice_js()
 
