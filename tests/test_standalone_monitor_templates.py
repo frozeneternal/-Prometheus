@@ -21,6 +21,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "set-ssh-credential.ps1",
             STANDALONE / "clear-ssh-credential.ps1",
             STANDALONE / "diagnose-exporters.ps1",
+            STANDALONE / "ensure-linux-node-exporter.ps1",
+            STANDALONE / "ensure_linux_node_exporter.py",
             STANDALONE / "start-ssh-tunnels.ps1",
             STANDALONE / "stop-ssh-tunnels.ps1",
             STANDALONE / "watchdog-local-monitor.ps1",
@@ -118,6 +120,41 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertNotIn("Invoke-Command", script)
         self.assertNotIn(" ssh ", script.lower())
         self.assertNotIn("docker", script.lower())
+
+    def test_linux_exporter_ensure_scripts_are_safe_by_default(self) -> None:
+        wrapper = (STANDALONE / "ensure-linux-node-exporter.ps1").read_text(encoding="utf-8")
+        worker = (STANDALONE / "ensure_linux_node_exporter.py").read_text(encoding="utf-8")
+
+        self.assertIn("[switch]$Apply", wrapper)
+        self.assertIn("[switch]$Json", wrapper)
+        self.assertIn("[int]$VerifyTimeoutSeconds", wrapper)
+        self.assertIn("targets.local.json", wrapper)
+        self.assertIn("tunnels.local.json", wrapper)
+        self.assertIn("ssh-credential.local.xml", wrapper)
+        self.assertIn("Import-Clixml", wrapper)
+        self.assertIn("GetNetworkCredential().Password", wrapper)
+        self.assertIn("OPS_SSH_USER", wrapper)
+        self.assertIn("OPS_SSH_PASSWORD", wrapper)
+        self.assertIn("ensure_linux_node_exporter.py", wrapper)
+        self.assertIn("if ($Apply)", wrapper)
+        self.assertIn('"--apply"', wrapper)
+        self.assertIn('"--verify-timeout"', wrapper)
+        self.assertNotIn("-AsPlainText", wrapper)
+
+        self.assertIn("paramiko", worker)
+        self.assertIn("plan_only", worker)
+        self.assertIn("127.0.0.1:9100", worker)
+        self.assertIn("0.0.0.0:9100", worker)
+        self.assertIn("node_exporter", worker)
+        self.assertIn("systemctl --user", worker)
+        self.assertIn("wait_for_metrics", worker)
+        self.assertIn("time.monotonic", worker)
+        self.assertIn("nohup", worker)
+        self.assertIn("crontab", worker)
+        self.assertIn("loginctl show-user", worker)
+        self.assertNotIn("systemctl restart", worker)
+        self.assertNotIn("docker", worker.lower())
+        self.assertNotIn("rm -rf", worker.lower())
 
     def test_standalone_stack_manages_blackbox_exporter(self) -> None:
         start_script = (STANDALONE / "start-local-monitor.ps1").read_text(encoding="utf-8")
