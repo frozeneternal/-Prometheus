@@ -449,6 +449,8 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("state.dashboard?.websites", app_js)
         self.assertIn("certRenewal.expiresInDays", app_js)
         self.assertIn("data-cert-risk-manual-renewal", app_js)
+        self.assertIn("data-cert-risk-renewal-disable", app_js)
+        self.assertIn("toggleCertRenewal(button.dataset.websiteId, false)", app_js)
         self.assertIn("renderCertRenewalRisks();", app_js)
         self.assertIn(".cert-renewal-risk-panel", styles_css)
 

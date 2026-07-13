@@ -948,6 +948,9 @@ function renderCertRenewalRisks() {
   $("#certRenewalRiskList").querySelectorAll("[data-cert-risk-manual-renewal]").forEach((button) => {
     button.addEventListener("click", () => openManualCertRenewalDialog(button.dataset.websiteId));
   });
+  $("#certRenewalRiskList").querySelectorAll("[data-cert-risk-renewal-disable]").forEach((button) => {
+    button.addEventListener("click", () => toggleCertRenewal(button.dataset.websiteId, false));
+  });
 }
 
 function certRenewalRiskCard(website) {
@@ -961,6 +964,9 @@ function certRenewalRiskCard(website) {
   const manualButton = manualCertRenewal.available
     ? `<button type="button" class="secondary recovery-trigger compact" data-cert-risk-manual-renewal="true" data-website-id="${escapeHtml(website.id)}">${escapeHtml(manualCertRenewal.label || "手动续期")}</button>`
     : "";
+  const disableButton = certRenewal.enabled
+    ? `<button type="button" class="secondary recovery-trigger compact high" data-cert-risk-renewal-disable="true" data-website-id="${escapeHtml(website.id)}">暂停自动续期</button>`
+    : "";
   return `
     <article class="cert-renewal-risk-item ${escapeHtml(status)}">
       <div class="cert-renewal-risk-item-head">
@@ -970,7 +976,7 @@ function certRenewalRiskCard(website) {
       <p class="muted">${escapeHtml([website.url, expiresText, `提前 ${certRenewal.renewBeforeDays ?? 14} 天续期`].filter(Boolean).join(" / "))}</p>
       <p>${escapeHtml(reason)}</p>
       ${certRenewal.message ? `<p class="alert-action">${escapeHtml(certRenewal.message)}</p>` : ""}
-      ${manualButton ? `<div class="cert-renewal-risk-actions">${manualButton}</div>` : ""}
+      ${(manualButton || disableButton) ? `<div class="cert-renewal-risk-actions">${manualButton}${disableButton}</div>` : ""}
     </article>
   `;
 }
