@@ -157,12 +157,14 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("QuoteArg", launcher)
         self.assertNotIn("docker", launcher.lower())
 
-    def test_watchdog_recovery_wrappers_use_hidden_noninteractive_powershell(self) -> None:
+    def test_watchdog_recovery_wrappers_use_no_window_process_start(self) -> None:
         watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
 
-        self.assertIn('-FilePath "powershell.exe"', watchdog)
-        self.assertIn('"-NonInteractive"', watchdog)
-        self.assertIn('"-WindowStyle", "Hidden"', watchdog)
+        self.assertIn("System.Diagnostics.ProcessStartInfo", watchdog)
+        self.assertIn("$psi.CreateNoWindow = $true", watchdog)
+        self.assertIn("$psi.UseShellExecute = $false", watchdog)
+        self.assertIn("-NonInteractive", watchdog)
+        self.assertIn("[System.Diagnostics.ProcessWindowStyle]::Hidden", watchdog)
 
     def test_exporter_diagnostics_script_uses_utf8_bom_for_windows_powershell(self) -> None:
         data = (STANDALONE / "diagnose-exporters.ps1").read_bytes()
@@ -480,15 +482,16 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("127.0.0.1", watchdog)
         self.assertIn("watchdog-local-monitor.log", watchdog)
         self.assertIn("Invoke-MonitorScript", watchdog)
-        self.assertIn("Start-Process", watchdog)
+        self.assertIn("Start-HiddenPowerShellProcess", watchdog)
         self.assertIn("WaitForExit", watchdog)
         self.assertIn("RedirectStandardOutput", watchdog)
         self.assertIn("RedirectStandardError", watchdog)
         self.assertIn("ExitCodeFile", watchdog)
         self.assertIn("Set-Content -LiteralPath", watchdog)
         self.assertIn(".exitcode", watchdog)
-        self.assertNotIn("System.Diagnostics.ProcessStartInfo", watchdog)
-        self.assertNotIn("StandardOutput.ReadToEnd", watchdog)
+        self.assertIn("CreateNoWindow", watchdog)
+        self.assertIn("StandardOutput.ReadToEndAsync()", watchdog)
+        self.assertIn("StandardError.ReadToEndAsync()", watchdog)
         self.assertNotIn("Stop-Process", watchdog)
         self.assertNotIn("docker", watchdog.lower())
         self.assertNotIn(" || ", watchdog)

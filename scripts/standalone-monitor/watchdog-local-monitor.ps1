@@ -91,6 +91,35 @@ function ConvertTo-MonitorScriptArguments([string[]]$Arguments) {
   return ($quoted -join "")
 }
 
+function Start-HiddenPowerShellProcess($EncodedCommand, $WorkingDirectory) {
+  $psi = [System.Diagnostics.ProcessStartInfo]::new()
+  $psi.FileName = "powershell.exe"
+  $psi.Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
+  $psi.WorkingDirectory = $WorkingDirectory
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+
+  $proc = [System.Diagnostics.Process]::new()
+  $proc.StartInfo = $psi
+  [void]$proc.Start()
+  return @{
+    Process = $proc
+    StdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    StderrTask = $proc.StandardError.ReadToEndAsync()
+  }
+}
+
+function Save-ProcessOutput($Path, $OutputTask) {
+  $text = ""
+  if ($OutputTask) {
+    $text = [string]$OutputTask.Result
+  }
+  Set-Content -LiteralPath $Path -Value $text -NoNewline -Encoding UTF8
+}
+
 function Invoke-MonitorScript($ScriptPath, $Name, [string[]]$ExtraArguments = @()) {
   if (-not (Test-Path $ScriptPath)) {
     Write-WatchdogLog "$Name script missing: $ScriptPath"
@@ -128,11 +157,20 @@ Set-Content -LiteralPath `$ExitCodeFile -Value `$exitCode -Encoding ASCII
 exit `$exitCode
 "@
 
-    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", $command) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
+    $started = Start-HiddenPowerShellProcess -EncodedCommand $encodedCommand -WorkingDirectory $Root
+    $proc = $started.Process
+    $timedOut = $false
     if (-not $proc.WaitForExit($timeoutMs)) {
+      $timedOut = $true
       Write-WatchdogLog "$Name did not exit within $ScriptTimeoutSeconds seconds; terminating wrapper process: PID $($proc.Id)"
       $proc.Kill()
       $proc.WaitForExit()
+    }
+
+    Save-ProcessOutput $stdout $started.StdoutTask
+    Save-ProcessOutput $stderr $started.StderrTask
+    if ($timedOut) {
       return
     }
 
