@@ -297,6 +297,58 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(saved_configs, [])
         self.assertIsNotNone(authenticate_user(raw_config, username, "old-pass-1"))
 
+    def test_auth_api_module_blocks_password_change_when_usernames_are_duplicated_without_app_import(self) -> None:
+        from backend.auth import authenticate_user, create_session_token, hash_password
+        from backend.auth_api import AuthApiRuntime, change_password_payload
+
+        username = "module-ops"
+        raw_config = {
+            "sessionSecret": "session-secret",
+            "authPolicy": {"passwordMinLength": 10},
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Ops",
+                    "role": "operator",
+                    "passwordHash": hash_password("old-pass-1", salt="module-change-salt", iterations=1000),
+                },
+                {
+                    "username": " MODULE-OPS ",
+                    "displayName": "Duplicate Module Ops",
+                    "role": "operator",
+                    "passwordHash": hash_password("old-pass-2", salt="module-duplicate-salt", iterations=1000),
+                },
+            ],
+        }
+        config = json.loads(json.dumps(raw_config))
+        user = authenticate_user(config, username, "old-pass-1")
+        token = create_session_token(config, user, now=1000)
+        saved_configs: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda next_config: saved_configs.append(next_config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = change_password_payload(
+            config,
+            {
+                "sessionToken": token,
+                "currentPassword": "old-pass-1",
+                "newPassword": "new-pass-2",
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 409)
+        self.assertFalse(payload["ok"])
+        self.assertIn("username 重复", payload["message"])
+        self.assertIn(username, payload["message"])
+        self.assertEqual(saved_configs, [])
+        self.assertEqual(audit_events, [])
+
     def test_auth_api_module_pages_audit_logs_without_app_import(self) -> None:
         from backend.auth_api import AuthApiRuntime, auth_audit_payload
 

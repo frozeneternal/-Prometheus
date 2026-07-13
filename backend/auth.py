@@ -125,6 +125,20 @@ def login_attempt_key(username: str) -> str:
     return str(username or "").strip().lower()
 
 
+def duplicate_username_keys(users: list[dict]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for user in users:
+        key = login_attempt_key(str(user.get("username") or ""))
+        if not key:
+            continue
+        if key in seen:
+            duplicates.add(key)
+        else:
+            seen.add(key)
+    return sorted(duplicates)
+
+
 def clean_login_attempt_state(state: dict, now: float, failure_window_seconds: int) -> dict:
     failures = []
     for value in state.get("failures", []) or []:

@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from backend.auth import ROLE_RANK, auth_policy, authorize_operation, hash_password, normalize_role
+from backend.auth import ROLE_RANK, auth_policy, authorize_operation, duplicate_username_keys, hash_password, normalize_role
 from backend.auth_audit import auth_audit_event
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
@@ -72,22 +72,8 @@ def _find_user_index(users: list[dict], username: str) -> int | None:
     return None
 
 
-def _duplicate_username_keys(users: list[dict]) -> list[str]:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for user in users:
-        key = _user_key(user.get("username"))
-        if not key:
-            continue
-        if key in seen:
-            duplicates.add(key)
-        else:
-            seen.add(key)
-    return sorted(duplicates)
-
-
 def _duplicate_username_response(users: list[dict]) -> tuple[int, dict] | None:
-    duplicates = _duplicate_username_keys(users)
+    duplicates = duplicate_username_keys(users)
     if not duplicates:
         return None
     names = "、".join(duplicates)

@@ -11,6 +11,7 @@ from backend.auth import (
     authorize_operation,
     clear_login_attempt,
     create_session_token,
+    duplicate_username_keys,
     login_attempt_snapshot,
     login_lockout_until,
     public_user,
@@ -234,6 +235,17 @@ def _find_raw_user(raw_config: dict, username: str) -> dict | None:
     return None
 
 
+def _duplicate_username_response(users: list[dict]) -> tuple[int, dict] | None:
+    duplicates = duplicate_username_keys(users)
+    if not duplicates:
+        return None
+    names = "、".join(duplicates)
+    return 409, {
+        "ok": False,
+        "message": f"账号配置存在 username 重复：{names}。请先手动修复重复账号后再修改密码。",
+    }
+
+
 def change_password_payload(
     config: dict,
     body: dict,
@@ -261,6 +273,10 @@ def change_password_payload(
 
     username = str(actor.get("username") or "")
     raw_config = active_runtime.load_config_raw()
+    users, _invalid_entries = config_list_records(raw_config, "users")
+    duplicate_response = _duplicate_username_response(users)
+    if duplicate_response:
+        return duplicate_response
     raw_user = _find_raw_user(raw_config, username)
     if raw_user is None or raw_user.get("enabled", True) is False:
         return 401, {"ok": False, "message": "登录已失效。"}
