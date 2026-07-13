@@ -100,6 +100,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("Start-ScheduledTask", installer)
         self.assertIn('-Execute "wscript.exe"', installer)
         self.assertIn("//B", installer)
+        self.assertIn('"-WindowStyle"', installer)
+        self.assertIn('"Hidden"', installer)
         self.assertNotIn('-Execute "powershell.exe"', installer)
         self.assertIn("$settings.Hidden = $true", installer)
         self.assertNotIn("docker", installer.lower())
@@ -112,6 +114,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn('-Execute "wscript.exe"', installer)
         self.assertIn("//B", installer)
         self.assertIn("start-all.cmd", installer)
+        self.assertIn('"-WindowStyle"', installer)
+        self.assertIn('"Hidden"', installer)
         self.assertNotIn('-Execute "powershell.exe"', installer)
         self.assertIn("$Settings.Hidden = $true", installer)
 
@@ -119,9 +123,15 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         script = (ROOT / "scripts" / "start-all.cmd").read_text(encoding="utf-8")
 
         self.assertIn('start "" /b cmd /c', script)
+        self.assertIn("-WindowStyle Hidden", script)
         self.assertIn("server.out.log", script)
         self.assertIn("server.err.log", script)
         self.assertNotIn('start "Local Monitor Console"', script)
+
+    def test_start_prometheus_waits_for_docker_without_visible_powershell(self) -> None:
+        script = (ROOT / "scripts" / "start-prometheus.cmd").read_text(encoding="utf-8")
+
+        self.assertIn("-WindowStyle Hidden", script)
 
     def test_hidden_launcher_uses_wscript_shell_run_without_window(self) -> None:
         launcher = (STANDALONE / "run-hidden.vbs").read_text(encoding="utf-8")

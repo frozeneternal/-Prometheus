@@ -25,6 +25,8 @@ $startupArguments = ConvertTo-HiddenLauncherArguments @(
   $HiddenLauncher,
   "powershell.exe",
   "-NoProfile",
+  "-WindowStyle",
+  "Hidden",
   "-ExecutionPolicy",
   "Bypass",
   "-Command",
