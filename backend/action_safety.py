@@ -23,6 +23,64 @@ def _missing_high_danger_confirm(action: dict) -> bool:
     return str(action.get("danger") or "").lower() == "high" and not str(action.get("confirm") or "")
 
 
+def _action_entries(config: dict) -> list[dict]:
+    entries: list[dict] = []
+    for server in config.get("servers", []) or []:
+        if not isinstance(server, dict):
+            continue
+        for action in server.get("actions", []) or []:
+            if isinstance(action, dict):
+                entries.append({"server": server, "action": action})
+    return entries
+
+
+def _action_issues(action: dict) -> list[str]:
+    issues = []
+    if _missing_high_danger_confirm(action):
+        issues.append("missing_confirm")
+    if _timeout_missing_for_auto(action):
+        issues.append("auto_missing_timeout")
+    if _command_invalid(action):
+        issues.append("invalid_command")
+    return issues
+
+
+def _action_watch_reasons(action: dict) -> list[str]:
+    reasons = []
+    if action.get("allowAuto"):
+        reasons.append("allow_auto")
+    if str(action.get("danger") or "").lower() == "high":
+        reasons.append("high_danger")
+    return reasons
+
+
+def _action_safety_items(config: dict) -> list[dict]:
+    items = []
+    for entry in _action_entries(config):
+        server = entry["server"]
+        action = entry["action"]
+        enabled = action.get("enabled", True) is not False
+        issues = _action_issues(action)
+        watch_reasons = _action_watch_reasons(action) if enabled else []
+        if not issues and not watch_reasons:
+            continue
+        items.append(
+            {
+                "serverId": str(server.get("id") or ""),
+                "serverName": str(server.get("name") or server.get("id") or ""),
+                "actionId": str(action.get("id") or ""),
+                "actionName": str(action.get("name") or action.get("id") or ""),
+                "enabled": enabled,
+                "allowAuto": bool(action.get("allowAuto")),
+                "danger": str(action.get("danger") or "normal"),
+                "timeoutSeconds": action.get("timeoutSeconds") if "timeoutSeconds" in action else None,
+                "issues": issues,
+                "watchReasons": watch_reasons,
+            }
+        )
+    return sorted(items, key=lambda item: (not item["issues"], item["serverName"], item["actionId"]))
+
+
 def action_safety_summary(config: dict) -> dict:
     actions = _actions(config)
     enabled = sum(1 for action in actions if action.get("enabled", True) is not False)
@@ -51,4 +109,5 @@ def action_safety_summary(config: dict) -> dict:
         "autoMissingTimeout": auto_missing_timeout,
         "invalidCommand": invalid_command,
         "actionRequired": action_required,
+        "items": _action_safety_items(config),
     }

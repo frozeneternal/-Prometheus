@@ -360,6 +360,20 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("actionSafetySummary.highDanger", notice_block)
         self.assertIn("actionSafetySummary.actionRequired", notice_block)
 
+    def test_action_safety_details_are_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="actionSafetyPanel"', index_html)
+        self.assertIn('id="actionSafetyList"', index_html)
+        self.assertIn("function renderActionSafety()", app_js)
+        self.assertIn("state.dashboard?.actionSafetySummary", app_js)
+        self.assertIn("actionSafetySummary.items", app_js)
+        self.assertIn("auto_missing_timeout", app_js)
+        self.assertIn("renderActionSafety();", app_js)
+        self.assertIn(".action-safety-panel", styles_css)
+
     def test_incident_summary_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()
 

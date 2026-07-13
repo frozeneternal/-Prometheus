@@ -187,6 +187,8 @@ function renderError(error) {
   $("#platformHealthPanel").classList.add("hidden");
   $("#accountSecurityPanel").innerHTML = "";
   $("#accountSecurityPanel").classList.add("hidden");
+  $("#actionSafetyPanel").classList.add("hidden");
+  $("#actionSafetyList").innerHTML = "";
   $("#prometheusAlertsPanel").classList.add("hidden");
   $("#prometheusAlertsList").innerHTML = "";
   $("#prometheusRulesPanel").classList.add("hidden");
@@ -231,6 +233,7 @@ function render() {
   renderConfigValidation();
   renderPlatformHealth();
   renderAuthControls();
+  renderActionSafety();
   renderPrometheusAlerts();
   renderPrometheusRules();
   renderUnmanagedTargets();
@@ -351,6 +354,62 @@ function renderPlatformHealth() {
         </div>
       `).join("")}
     </div>` : ""}
+  `;
+}
+
+const actionSafetyIssueLabels = {
+  missing_confirm: "高危动作缺少确认文本",
+  auto_missing_timeout: "自动动作缺少超时时间",
+  invalid_command: "命令配置无效",
+};
+
+const actionSafetyWatchLabels = {
+  allow_auto: "允许自动执行",
+  high_danger: "高危动作",
+};
+
+function renderActionSafety() {
+  const panel = $("#actionSafetyPanel");
+  const actionSafetySummary = state.dashboard?.actionSafetySummary;
+  if (!actionSafetySummary || actionSafetySummary.status === "ok") {
+    panel.classList.add("hidden");
+    $("#actionSafetyList").innerHTML = "";
+    return;
+  }
+
+  const items = actionSafetySummary.items || [];
+  const level = actionSafetySummary.actionRequired ? "attention" : "watch";
+  panel.className = `action-safety-panel ${level}`;
+  $("#actionSafetyBadge").className = `action-safety-badge ${level}`;
+  $("#actionSafetyBadge").textContent = String(actionSafetySummary.actionRequired || items.length || 0);
+  $("#actionSafetySummary").textContent = `动作 ${actionSafetySummary.total ?? 0} 个，自动 ${actionSafetySummary.allowAuto ?? 0} 个，高危 ${actionSafetySummary.highDanger ?? 0} 个，需处理 ${actionSafetySummary.actionRequired ?? 0} 项。`;
+  $("#actionSafetyList").innerHTML = items.length
+    ? items.map(actionSafetyCard).join("")
+    : `<article class="action-safety-item watch"><p>存在自动或高危动作，请定期复核动作权限、超时和确认文本。</p></article>`;
+}
+
+function actionSafetyCard(item) {
+  const issues = item.issues || [];
+  const watchReasons = item.watchReasons || [];
+  const labels = issues
+    .map((issue) => actionSafetyIssueLabels[issue] || issue)
+    .concat(watchReasons.map((reason) => actionSafetyWatchLabels[reason] || reason));
+  const level = issues.length ? "attention" : "watch";
+  const meta = [
+    item.serverName || item.serverId,
+    item.allowAuto ? "自动执行" : "仅手动",
+    item.danger ? `风险 ${item.danger}` : "",
+    item.timeoutSeconds ? `超时 ${item.timeoutSeconds}s` : "未配置超时",
+  ].filter(Boolean).join(" / ");
+  return `
+    <article class="action-safety-item ${escapeHtml(level)}">
+      <div class="action-safety-item-head">
+        <strong>${escapeHtml(item.actionName || item.actionId || "未命名动作")}</strong>
+        <span>${escapeHtml(level === "attention" ? "需处理" : "关注")}</span>
+      </div>
+      <p class="muted">${escapeHtml(meta)}</p>
+      <p>${escapeHtml(labels.join("；") || "建议复核动作配置。")}</p>
+    </article>
   `;
 }
 

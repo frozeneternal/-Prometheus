@@ -2155,6 +2155,16 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["autoMissingTimeout"], 1)
         self.assertEqual(summary["invalidCommand"], 1)
         self.assertEqual(summary["actionRequired"], 3)
+        self.assertEqual(len(summary["items"]), 4)
+        unsafe_auto = next(item for item in summary["items"] if item["actionId"] == "unsafe-auto")
+        dangerous = next(item for item in summary["items"] if item["actionId"] == "dangerous")
+        broken = next(item for item in summary["items"] if item["actionId"] == "broken")
+        self.assertEqual(unsafe_auto["serverId"], "ops")
+        self.assertIn("auto_missing_timeout", unsafe_auto["issues"])
+        self.assertIn("high_danger", dangerous["watchReasons"])
+        self.assertIn("missing_confirm", dangerous["issues"])
+        self.assertIn("invalid_command", broken["issues"])
+        self.assertNotIn("command", unsafe_auto)
 
     def test_account_runtime_security_summary_counts_lockouts_and_failures(self) -> None:
         from backend.account_runtime_security import account_runtime_security_summary

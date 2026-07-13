@@ -307,6 +307,72 @@ select {
   gap: 6px;
 }
 
+.action-safety-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #edd48d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--warn-bg);
+  box-shadow: var(--shadow);
+}
+
+.action-safety-panel.attention {
+  border-color: #f3b0b0;
+  background: var(--bad-bg);
+}
+
+.action-safety-head,
+.action-safety-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.action-safety-badge,
+.action-safety-item-head span {
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff3cf;
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.action-safety-badge.attention,
+.action-safety-item.attention .action-safety-item-head span {
+  background: #fde2df;
+  color: var(--bad);
+}
+
+.action-safety-list {
+  display: grid;
+  gap: 8px;
+}
+
+.action-safety-item {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(174, 124, 17, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.action-safety-item.attention {
+  border-color: rgba(176, 42, 42, 0.24);
+}
+
+.action-safety-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .account-lockout-head,
 .account-lockout-item {
   display: flex;
