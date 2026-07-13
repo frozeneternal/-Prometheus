@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from .auth import ROLE_RANK, login_attempt_key
-from .expiry import parse_expiry_datetime, safe_resource_renew_url
+from .expiry import parse_expiry_datetime, resource_handling_state, safe_resource_renew_url
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -1021,11 +1021,7 @@ def config_validation_summary(config: dict) -> dict:
             )
         raw_renew_url = str(resource.get("renewUrl") or "").strip()
         safe_renew_url = safe_resource_renew_url(raw_renew_url)
-        handling_paths = (
-            safe_renew_url,
-            str(resource.get("owner") or "").strip(),
-            str(resource.get("provider") or "").strip(),
-        )
+        handling_ready, missing_handling_fields, handling_message = resource_handling_state(resource)
         if raw_renew_url and not safe_renew_url:
             issues.append(
                 make_issue(
@@ -1036,12 +1032,13 @@ def config_validation_summary(config: dict) -> dict:
                     resource_id,
                 )
             )
-        if not any(handling_paths):
+        if not handling_ready:
+            missing_text = "、".join(missing_handling_fields) or "owner、renewUrl 或 provider"
             issues.append(
                 make_issue(
                     f"resource-handling-missing:{resource_id}",
                     "warning",
-                    "资源缺少 renewUrl、owner 或 provider；到期告警触发后没有明确续费入口或联系人。",
+                    f"{handling_message or '资源缺少明确处置路径。'} 缺少字段：{missing_text}。",
                     "resource",
                     resource_id,
                 )

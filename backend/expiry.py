@@ -122,12 +122,12 @@ def resource_handling_state(resource: dict) -> tuple[bool, list[str], str]:
         missing.append("owner")
     if not provider:
         missing.append("provider")
-    ready = bool(renew_url or owner or provider)
+    ready = bool(owner and (renew_url or provider))
     message = ""
     if raw_renew_url and not renew_url:
         message = "renewUrl 必须使用 http 或 https 绝对地址，当前链接已被隐藏。"
     if not ready:
-        message = message or "未配置 renewUrl、owner 或 provider，资源到期后没有明确续费入口或联系人。"
+        message = message or "资源缺少必要处置闭环：owner 必填，且 renewUrl 或 provider 至少填写一个。"
     return ready, missing, message
 
 

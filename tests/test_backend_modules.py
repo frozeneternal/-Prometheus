@@ -782,6 +782,7 @@ class BackendModuleTests(unittest.TestCase):
                     "name": "Backup License",
                     "expiresAt": "2026-07-20",
                     "renewUrl": "https://billing.example.com/license",
+                    "owner": "ops@example.com",
                 },
             ],
         }

@@ -247,6 +247,12 @@ class ConfigValidationTests(unittest.TestCase):
                 {"id": "unhandled-domain", "expiresAt": "2026-08-01"},
                 {"id": "handled-domain", "expiresAt": "2026-08-01", "renewUrl": "https://example.com/billing"},
                 {"id": "owned-license", "expiresAt": "2026-08-01", "owner": "ops@example.com"},
+                {
+                    "id": "owned-provider",
+                    "expiresAt": "2026-08-01",
+                    "owner": "ops@example.com",
+                    "provider": "Cloud Vendor",
+                },
                 {"id": "unsafe-renewal", "expiresAt": "2026-08-01", "renewUrl": "javascript:alert(1)"},
             ],
         }
@@ -257,10 +263,11 @@ class ConfigValidationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "warning")
         self.assertIn("resource-handling-missing:unhandled-domain", issue_ids)
+        self.assertIn("resource-handling-missing:handled-domain", issue_ids)
+        self.assertIn("resource-handling-missing:owned-license", issue_ids)
         self.assertIn("resource-handling-missing:unsafe-renewal", issue_ids)
         self.assertIn("resource-renew-url-invalid:unsafe-renewal", issue_ids)
-        self.assertNotIn("resource-handling-missing:handled-domain", issue_ids)
-        self.assertNotIn("resource-handling-missing:owned-license", issue_ids)
+        self.assertNotIn("resource-handling-missing:owned-provider", issue_ids)
         self.assertIn("renewUrl", messages["resource-handling-missing:unhandled-domain"])
         self.assertIn("owner", messages["resource-handling-missing:unhandled-domain"])
         self.assertIn("provider", messages["resource-handling-missing:unhandled-domain"])

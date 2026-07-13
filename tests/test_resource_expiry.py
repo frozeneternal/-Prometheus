@@ -117,6 +117,42 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertIn("renewUrl", item["missingHandlingFields"])
         self.assertIn("http", item["handlingMessage"].lower())
 
+    def test_resource_expiry_requires_owner_and_response_path_for_handling_ready(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {
+                    "id": "owner-only",
+                    "name": "Owner Only",
+                    "expiresAt": "2026-07-05",
+                    "owner": "ops@example.com",
+                },
+                {
+                    "id": "provider-only",
+                    "name": "Provider Only",
+                    "expiresAt": "2026-07-05",
+                    "provider": "Cloud Vendor",
+                },
+                {
+                    "id": "owner-provider",
+                    "name": "Owner Provider",
+                    "expiresAt": "2026-07-05",
+                    "owner": "ops@example.com",
+                    "provider": "Cloud Vendor",
+                },
+            ],
+        }
+
+        by_id = {item["id"]: item for item in app.resource_expiry_items(config, now=now)}
+
+        self.assertIs(by_id["owner-only"]["handlingReady"], False)
+        self.assertIn("renewUrl", by_id["owner-only"]["missingHandlingFields"])
+        self.assertIn("provider", by_id["owner-only"]["missingHandlingFields"])
+        self.assertIs(by_id["provider-only"]["handlingReady"], False)
+        self.assertIn("owner", by_id["provider-only"]["missingHandlingFields"])
+        self.assertIs(by_id["owner-provider"]["handlingReady"], True)
+        self.assertEqual(by_id["owner-provider"]["missingHandlingFields"], ["renewUrl"])
+
     def test_resource_expiry_summary_counts_actionable_items(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {
@@ -172,8 +208,8 @@ class ResourceExpiryTests(unittest.TestCase):
 
         summary = app.resource_expiry_summary(app.resource_expiry_items(config, now=now))
 
-        self.assertEqual(summary["handlingMissing"], 2)
-        self.assertEqual(summary["actionRequiredWithoutHandling"], 1)
+        self.assertEqual(summary["handlingMissing"], 3)
+        self.assertEqual(summary["actionRequiredWithoutHandling"], 2)
 
     def test_acknowledged_resource_expiry_is_not_action_required_until_ack_expires(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
@@ -295,6 +331,7 @@ class ResourceExpiryTests(unittest.TestCase):
                     "name": "Backup License",
                     "expiresAt": "2026-07-20",
                     "renewUrl": "https://billing.example.com/license",
+                    "owner": "ops@example.com",
                 },
             ]
         }
@@ -631,7 +668,12 @@ class ResourceExpiryTests(unittest.TestCase):
         raw_config = {
             "monitoring": {"resourceExpiryWarningDays": 30, "resourceExpiryCriticalDays": 7},
             "resources": [
-                {"id": "unhandled", "name": "Unhandled", "expiresAt": "2026-07-20"},
+                {
+                    "id": "unhandled",
+                    "name": "Unhandled",
+                    "expiresAt": "2026-07-20",
+                    "owner": "ops@example.com",
+                },
             ],
         }
 
@@ -651,7 +693,6 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(payload["ok"])
         self.assertIn("renewUrl", payload["message"])
-        self.assertIn("owner", payload["message"])
         self.assertIn("provider", payload["message"])
         save_config_raw.assert_not_called()
         append_recovery_log.assert_not_called()
