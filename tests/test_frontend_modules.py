@@ -246,6 +246,20 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("coverage.unmanaged", app_js)
         self.assertIn("coverage.unknown", app_js)
 
+    def test_unmanaged_prometheus_targets_are_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="unmanagedTargetsPanel"', index_html)
+        self.assertIn('id="unmanagedTargetsList"', index_html)
+        self.assertIn("function renderUnmanagedTargets()", app_js)
+        self.assertIn("state.dashboard?.unmanagedTargets", app_js)
+        self.assertIn("renderUnmanagedTargets();", app_js)
+        self.assertIn("未纳管目标清单", app_js)
+        self.assertIn("suggestedLabels", app_js)
+        self.assertIn(".unmanaged-targets-panel", styles_css)
+
     def test_target_issue_summary_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()
         format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")

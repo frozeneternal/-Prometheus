@@ -644,6 +644,63 @@ select {
   font-weight: 750;
 }
 
+.unmanaged-targets-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #edd48d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--warn-bg);
+  box-shadow: var(--shadow);
+}
+
+.unmanaged-targets-head,
+.unmanaged-target-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.unmanaged-target-badge,
+.unmanaged-target-item-head span {
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff3cf;
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.unmanaged-targets-list {
+  display: grid;
+  gap: 8px;
+}
+
+.unmanaged-target-item {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(174, 124, 17, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.unmanaged-target-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.target-labels {
+  color: var(--text);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
 .emergency-runbook-panel {
   display: grid;
   gap: 10px;

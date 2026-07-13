@@ -1850,6 +1850,13 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["targetIssueSummary"]["categories"][0]["category"], "unmanaged_target")
         self.assertEqual(payload["targetIssueSummary"]["categories"][0]["count"], 1)
         self.assertIn("servers.local.json", payload["targetIssueSummary"]["categories"][0]["actionHint"])
+        self.assertEqual(len(payload["unmanagedTargets"]), 1)
+        self.assertEqual(payload["unmanagedTargets"][0]["instance"], "10.0.0.6:9100")
+        self.assertEqual(payload["unmanagedTargets"][0]["job"], "linux_servers_direct")
+        self.assertEqual(payload["unmanagedTargets"][0]["name"], "not-in-config")
+        self.assertEqual(payload["unmanagedTargets"][0]["suggestedType"], "server")
+        self.assertEqual(payload["unmanagedTargets"][0]["suggestedLabels"]["name"], "not-in-config")
+        self.assertIn("servers.local.json", payload["unmanagedTargets"][0]["actionHint"])
 
     def test_dashboard_payload_summarizes_auto_recovery_safety_state(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload

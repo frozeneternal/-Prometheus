@@ -159,6 +159,8 @@ function renderError(error) {
   $("#accountSecurityPanel").classList.add("hidden");
   $("#prometheusAlertsPanel").classList.add("hidden");
   $("#prometheusAlertsList").innerHTML = "";
+  $("#unmanagedTargetsPanel").classList.add("hidden");
+  $("#unmanagedTargetsList").innerHTML = "";
   $("#emergencyRunbookPanel").classList.add("hidden");
   $("#emergencyRunbookList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
@@ -196,6 +198,7 @@ function render() {
   renderPlatformHealth();
   renderAuthControls();
   renderPrometheusAlerts();
+  renderUnmanagedTargets();
   renderEmergencyRunbook();
   renderGroups();
   renderServers();
@@ -385,6 +388,46 @@ function prometheusAlertCard(alert) {
       <p class="muted">${escapeHtml(meta)}</p>
       ${alert.description ? `<p>${escapeHtml(alert.description)}</p>` : ""}
       <p class="alert-action">应急建议：${escapeHtml(alert.actionHint || "查看 Prometheus 告警详情并按应急处置执行。")}</p>
+    </article>
+  `;
+}
+
+function renderUnmanagedTargets() {
+  const panel = $("#unmanagedTargetsPanel");
+  const targets = state.dashboard?.unmanagedTargets || [];
+  if (!targets.length) {
+    panel.classList.add("hidden");
+    $("#unmanagedTargetsList").innerHTML = "";
+    return;
+  }
+
+  panel.className = "unmanaged-targets-panel warning";
+  $("#unmanagedTargetsBadge").textContent = String(targets.length);
+  $("#unmanagedTargetsSummary").textContent = `未纳管目标清单：Prometheus 正在采集 ${targets.length} 个未纳管目标，需要补录到配置或清理过期 scrape。`;
+  $("#unmanagedTargetsList").innerHTML = targets.map(unmanagedTargetCard).join("");
+}
+
+function unmanagedTargetCard(target) {
+  const suggestedLabels = target.suggestedLabels || {};
+  const labelsText = Object.entries(suggestedLabels)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+  const meta = [
+    target.job ? `job ${target.job}` : "",
+    target.instance ? `instance ${target.instance}` : "",
+    target.health ? `状态 ${target.health}` : "",
+    target.suggestedType ? `建议 ${target.suggestedType}` : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <article class="unmanaged-target-item">
+      <div class="unmanaged-target-item-head">
+        <strong>${escapeHtml(target.name || target.instance || "未纳管目标")}</strong>
+        <span>${escapeHtml(target.suggestedType || "target")}</span>
+      </div>
+      <p class="muted">${escapeHtml(meta)}</p>
+      ${target.lastError ? `<p>${escapeHtml(target.lastError)}</p>` : ""}
+      <p class="target-labels">建议标签：${escapeHtml(labelsText || "缺少可用标签")}</p>
+      <p class="alert-action">处理建议：${escapeHtml(target.actionHint || "补录到 config/servers.local.json，或从 Prometheus scrape 配置移除。")}</p>
     </article>
   `;
 }

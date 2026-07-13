@@ -209,6 +209,41 @@ def _unmanaged_active_targets(active_targets: list[dict] | None, items: list[dic
     return unmanaged
 
 
+def _suggested_unmanaged_target_type(labels: dict) -> str:
+    job = str(labels.get("job") or "").lower()
+    instance = str(labels.get("instance") or "").lower()
+    if job == "blackbox" or instance.startswith(("http://", "https://")):
+        return "website"
+    return "server"
+
+
+def _unmanaged_target_item(target: dict) -> dict:
+    labels = {str(key): str(value) for key, value in dict(target.get("labels") or {}).items()}
+    instance = labels.get("instance", "")
+    job = labels.get("job", "")
+    suggested_labels = {
+        key: labels[key]
+        for key in ("job", "instance", "name", "os", "role")
+        if labels.get(key)
+    }
+    return {
+        "job": job,
+        "instance": instance,
+        "name": labels.get("name") or instance,
+        "health": str(target.get("health") or "unknown"),
+        "lastError": str(target.get("lastError") or ""),
+        "scrapeUrl": str(target.get("scrapeUrl") or ""),
+        "suggestedType": _suggested_unmanaged_target_type(labels),
+        "suggestedLabels": suggested_labels,
+        "actionHint": "Add this target to config/servers.local.json or remove it from Prometheus scrape configuration if it is stale.",
+    }
+
+
+def _unmanaged_target_items(active_targets: list[dict] | None, items: list[dict]) -> list[dict]:
+    targets = [_unmanaged_target_item(target) for target in _unmanaged_active_targets(active_targets, items)]
+    return sorted(targets, key=lambda item: (item["job"], item["instance"], item["name"]))
+
+
 def _target_coverage(
     items: list[dict],
     prometheus_available: bool,
@@ -598,6 +633,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "exporterDiagnostics": exporter_diagnostics,
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available, active_targets),
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available, active_targets),
+        "unmanagedTargets": _unmanaged_target_items(active_targets, [*snapshots, *website_snapshots]),
         "dataQualitySummary": _data_quality_overview([*snapshots, *website_snapshots]),
         "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
         "backupSummary": _backup_summary(snapshots),
