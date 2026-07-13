@@ -190,7 +190,7 @@ def persist_auto_recovery_enabled(
     if entity is None:
         return 404, {"ok": False, "message": "目标不存在。"}
 
-    recovery = entity.setdefault("autoRecovery", {})
+    recovery = entity.get("autoRecovery") or {}
     default_action_server_id = entity.get("id") or entity.get("serverId") or ""
     if enabled:
         inferred = public_manual_recovery(entity, default_action_server_id)
@@ -199,18 +199,28 @@ def persist_auto_recovery_enabled(
         if not action_server_id or not action_id:
             return 400, {"ok": False, "message": "未找到可用的自动恢复动作。先配置手动恢复动作或重启动作。"}
 
+        action_server = find_raw_entity(raw_config, "server", action_server_id)
+        if action_server is None:
+            return 400, {"ok": False, "message": f"自动恢复动作服务器不存在：{action_server_id}。"}
+        action = find_raw_action(action_server, action_id)
+        if action is None:
+            return 400, {"ok": False, "message": f"自动恢复动作不存在：{action_server_id}/{action_id}。"}
+        if action.get("enabled", True) is False:
+            return 400, {"ok": False, "message": f"自动恢复动作已禁用：{action_server_id}/{action_id}。"}
+        if not action.get("allowAuto", False):
+            return 400, {
+                "ok": False,
+                "message": f"自动恢复动作未允许后台自动执行 allowAuto：{action_server_id}/{action_id}。",
+            }
+
+        recovery = entity.setdefault("autoRecovery", {})
         recovery["actionServerId"] = action_server_id
         recovery["actionId"] = action_id
         recovery.setdefault("minimumConsecutiveFailures", 2)
         recovery.setdefault("cooldownSeconds", 300)
         recovery.setdefault("triggerHealth", ["down"])
-
-        action_server = find_raw_entity(raw_config, "server", action_server_id)
-        if action_server is not None:
-            action = find_raw_action(action_server, action_id)
-            if action is not None:
-                action["enabled"] = True
-                action["allowAuto"] = True
+    else:
+        recovery = entity.setdefault("autoRecovery", {})
 
     recovery["enabled"] = bool(enabled)
     active_runtime.save_config_raw(raw_config)
