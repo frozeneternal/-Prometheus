@@ -316,6 +316,21 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("exporterDiagnostics.summary", app_js)
         self.assertIn("actionRequired", app_js)
 
+    def test_exporter_diagnostics_details_are_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="exporterDiagnosticsPanel"', index_html)
+        self.assertIn('id="exporterDiagnosticsList"', index_html)
+        self.assertIn("function renderExporterDiagnostics()", app_js)
+        self.assertIn("state.dashboard?.exporterDiagnostics", app_js)
+        self.assertIn("suggestedCommands", app_js)
+        self.assertIn("data-copy-exporter-commands", app_js)
+        self.assertIn("copyExporterCommands", app_js)
+        self.assertIn("renderExporterDiagnostics();", app_js)
+        self.assertIn(".exporter-diagnostics-panel", styles_css)
+
     def test_exporter_diagnostics_stale_state_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()
 

@@ -189,6 +189,8 @@ function renderError(error) {
   $("#accountSecurityPanel").classList.add("hidden");
   $("#actionSafetyPanel").classList.add("hidden");
   $("#actionSafetyList").innerHTML = "";
+  $("#exporterDiagnosticsPanel").classList.add("hidden");
+  $("#exporterDiagnosticsList").innerHTML = "";
   $("#prometheusAlertsPanel").classList.add("hidden");
   $("#prometheusAlertsList").innerHTML = "";
   $("#prometheusRulesPanel").classList.add("hidden");
@@ -234,6 +236,7 @@ function render() {
   renderPlatformHealth();
   renderAuthControls();
   renderActionSafety();
+  renderExporterDiagnostics();
   renderPrometheusAlerts();
   renderPrometheusRules();
   renderUnmanagedTargets();
@@ -411,6 +414,83 @@ function actionSafetyCard(item) {
       <p>${escapeHtml(labels.join("；") || "建议复核动作配置。")}</p>
     </article>
   `;
+}
+
+function renderExporterDiagnostics() {
+  const panel = $("#exporterDiagnosticsPanel");
+  const diagnostics = state.dashboard?.exporterDiagnostics;
+  const items = diagnostics?.items || [];
+  if (!diagnostics || (!items.length && diagnostics.status === "ok")) {
+    panel.classList.add("hidden");
+    $("#exporterDiagnosticsList").innerHTML = "";
+    return;
+  }
+
+  const summary = diagnostics.summary || {};
+  const level = summary.actionRequired ? "attention" : (diagnostics.stale ? "warning" : "watch");
+  panel.className = `exporter-diagnostics-panel ${level}`;
+  $("#exporterDiagnosticsBadge").className = `exporter-diagnostics-badge ${level}`;
+  $("#exporterDiagnosticsBadge").textContent = String(summary.actionRequired || items.length || 0);
+  $("#exporterDiagnosticsSummary").textContent = [
+    `目标 ${summary.total ?? items.length}`,
+    `需处理 ${summary.actionRequired ?? 0}`,
+    `直连可用 ${summary.metricsOpen ?? 0}`,
+    `隧道覆盖 ${summary.coveredByTunnel ?? 0}`,
+    diagnostics.stale ? "使用上次成功诊断结果" : "",
+  ].filter(Boolean).join(" / ");
+  $("#exporterDiagnosticsList").innerHTML = items.length
+    ? items.map(exporterDiagnosticCard).join("")
+    : `<article class="exporter-diagnostics-item warning"><p>${escapeHtml(diagnostics.message || diagnostics.error || "Exporter 诊断暂不可用。")}</p></article>`;
+  $("#exporterDiagnosticsList").querySelectorAll("[data-copy-exporter-commands]").forEach((button) => {
+    button.addEventListener("click", () => copyExporterCommands(Number(button.dataset.copyExporterCommands), button));
+  });
+}
+
+function exporterDiagnosticCard(item, index) {
+  const commands = item.suggestedCommands || [];
+  const commandText = commands.join("\n");
+  const meta = [
+    item.os ? `系统 ${item.os}` : "",
+    item.metricsPort ? `指标端口 ${item.metricsPort}` : "",
+    item.managementPortOpen === true ? "管理端口可达" : "",
+    item.managementPortOpen === false ? "管理端口不可达" : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <article class="exporter-diagnostics-item ${escapeHtml(item.diagnosis || "unknown")}">
+      <div class="exporter-diagnostics-item-head">
+        <strong>${escapeHtml(item.name || "未命名目标")}</strong>
+        <span>${escapeHtml(item.diagnosis || "unknown")}</span>
+      </div>
+      ${meta ? `<p class="muted">${escapeHtml(meta)}</p>` : ""}
+      ${commands.length ? `
+        <div class="exporter-command-block">
+          <div class="exporter-command-head">
+            <span>只读排查命令</span>
+            <button type="button" class="secondary recovery-trigger compact" data-copy-exporter-commands="${escapeHtml(String(index))}">复制命令</button>
+          </div>
+          <pre>${escapeHtml(commandText)}</pre>
+        </div>
+      ` : `<p class="alert-action">缺少建议命令，请先核对诊断脚本输出。</p>`}
+    </article>
+  `;
+}
+
+async function copyExporterCommands(index, button) {
+  const item = (state.dashboard?.exporterDiagnostics?.items || [])[index];
+  const text = (item?.suggestedCommands || []).join("\n");
+  if (!text) return;
+
+  const originalText = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "已复制";
+  } catch (_error) {
+    button.textContent = "复制失败，请手动复制";
+  } finally {
+    window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 2000);
+  }
 }
 
 function renderPrometheusAlerts() {
