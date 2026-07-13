@@ -258,7 +258,11 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("renderUnmanagedTargets();", app_js)
         self.assertIn("未纳管目标清单", app_js)
         self.assertIn("suggestedLabels", app_js)
+        self.assertIn("suggestedConfig", app_js)
+        self.assertIn("copySuggestedConfig", app_js)
+        self.assertIn("data-copy-unmanaged-config", app_js)
         self.assertIn(".unmanaged-targets-panel", styles_css)
+        self.assertIn(".config-snippet", styles_css)
 
     def test_target_issue_summary_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()

@@ -1856,6 +1856,11 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["unmanagedTargets"][0]["name"], "not-in-config")
         self.assertEqual(payload["unmanagedTargets"][0]["suggestedType"], "server")
         self.assertEqual(payload["unmanagedTargets"][0]["suggestedLabels"]["name"], "not-in-config")
+        self.assertEqual(payload["unmanagedTargets"][0]["suggestedConfig"]["section"], "servers")
+        self.assertEqual(payload["unmanagedTargets"][0]["suggestedConfig"]["entry"]["id"], "not-in-config")
+        self.assertEqual(payload["unmanagedTargets"][0]["suggestedConfig"]["entry"]["labels"]["instance"], "10.0.0.6:9100")
+        self.assertFalse(payload["unmanagedTargets"][0]["suggestedConfig"]["entry"]["autoRecovery"]["enabled"])
+        self.assertTrue(payload["unmanagedTargets"][0]["suggestedConfig"]["json"].startswith('{\n  "id": "not-in-config"'))
         self.assertIn("servers.local.json", payload["unmanagedTargets"][0]["actionHint"])
 
     def test_dashboard_payload_summarizes_auto_recovery_safety_state(self) -> None:

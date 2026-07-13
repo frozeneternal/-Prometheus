@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -217,6 +219,55 @@ def _suggested_unmanaged_target_type(labels: dict) -> str:
     return "server"
 
 
+def _slugify_config_id(*values: object) -> str:
+    for value in values:
+        slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+        if slug:
+            return slug[:80]
+    return "unmanaged-target"
+
+
+def _suggested_unmanaged_config(labels: dict, suggested_type: str) -> dict:
+    instance = labels.get("instance", "")
+    name = labels.get("name") or instance or "Unmanaged target"
+    entry_id = _slugify_config_id(labels.get("name"), instance)
+    suggested_labels = {
+        key: labels[key]
+        for key in ("job", "instance", "name", "os", "role")
+        if labels.get(key)
+    }
+
+    if suggested_type == "website":
+        entry = {
+            "id": entry_id,
+            "name": name,
+            "group": "Unmanaged",
+            "url": instance,
+            "labels": suggested_labels,
+            "autoRecovery": {"enabled": False},
+        }
+        section = "websites"
+    else:
+        disk_mountpoint = "C:" if str(labels.get("os") or "").lower() == "windows" else "/"
+        entry = {
+            "id": entry_id,
+            "name": name,
+            "type": "physical",
+            "group": "Unmanaged",
+            "labels": suggested_labels,
+            "diskMountpoint": disk_mountpoint,
+            "autoRecovery": {"enabled": False},
+            "actions": [],
+        }
+        section = "servers"
+
+    return {
+        "section": section,
+        "entry": entry,
+        "json": json.dumps(entry, ensure_ascii=False, indent=2),
+    }
+
+
 def _unmanaged_target_item(target: dict) -> dict:
     labels = {str(key): str(value) for key, value in dict(target.get("labels") or {}).items()}
     instance = labels.get("instance", "")
@@ -226,6 +277,7 @@ def _unmanaged_target_item(target: dict) -> dict:
         for key in ("job", "instance", "name", "os", "role")
         if labels.get(key)
     }
+    suggested_type = _suggested_unmanaged_target_type(labels)
     return {
         "job": job,
         "instance": instance,
@@ -233,8 +285,9 @@ def _unmanaged_target_item(target: dict) -> dict:
         "health": str(target.get("health") or "unknown"),
         "lastError": str(target.get("lastError") or ""),
         "scrapeUrl": str(target.get("scrapeUrl") or ""),
-        "suggestedType": _suggested_unmanaged_target_type(labels),
+        "suggestedType": suggested_type,
         "suggestedLabels": suggested_labels,
+        "suggestedConfig": _suggested_unmanaged_config(labels, suggested_type),
         "actionHint": "Add this target to config/servers.local.json or remove it from Prometheus scrape configuration if it is stale.",
     }
 

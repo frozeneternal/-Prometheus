@@ -405,10 +405,18 @@ function renderUnmanagedTargets() {
   $("#unmanagedTargetsBadge").textContent = String(targets.length);
   $("#unmanagedTargetsSummary").textContent = `未纳管目标清单：Prometheus 正在采集 ${targets.length} 个未纳管目标，需要补录到配置或清理过期 scrape。`;
   $("#unmanagedTargetsList").innerHTML = targets.map(unmanagedTargetCard).join("");
+  $("#unmanagedTargetsList").querySelectorAll("[data-copy-unmanaged-config]").forEach((button) => {
+    button.addEventListener("click", () => copySuggestedConfig(Number(button.dataset.copyUnmanagedConfig), button));
+  });
 }
 
-function unmanagedTargetCard(target) {
+function unmanagedTargetCard(target, index) {
   const suggestedLabels = target.suggestedLabels || {};
+  const suggestedConfig = target.suggestedConfig || {};
+  const configText = suggestedConfig.json || "";
+  const sectionText = suggestedConfig.section
+    ? `config/servers.local.json -> ${suggestedConfig.section}[]`
+    : "config/servers.local.json";
   const labelsText = Object.entries(suggestedLabels)
     .map(([key, value]) => `${key}=${value}`)
     .join(", ");
@@ -427,9 +435,36 @@ function unmanagedTargetCard(target) {
       <p class="muted">${escapeHtml(meta)}</p>
       ${target.lastError ? `<p>${escapeHtml(target.lastError)}</p>` : ""}
       <p class="target-labels">建议标签：${escapeHtml(labelsText || "缺少可用标签")}</p>
+      ${configText ? `
+        <div class="config-snippet">
+          <div class="config-snippet-head">
+            <span>${escapeHtml(sectionText)}</span>
+            <button type="button" class="secondary recovery-trigger compact" data-copy-unmanaged-config="${escapeHtml(String(index))}">复制配置片段</button>
+          </div>
+          <pre>${escapeHtml(configText)}</pre>
+        </div>
+      ` : ""}
       <p class="alert-action">处理建议：${escapeHtml(target.actionHint || "补录到 config/servers.local.json，或从 Prometheus scrape 配置移除。")}</p>
     </article>
   `;
+}
+
+async function copySuggestedConfig(index, button) {
+  const target = (state.dashboard?.unmanagedTargets || [])[index];
+  const text = target?.suggestedConfig?.json || "";
+  if (!text) return;
+
+  const originalText = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "已复制";
+  } catch (_error) {
+    button.textContent = "复制失败，请手动复制";
+  } finally {
+    window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 2000);
+  }
 }
 
 function renderEmergencyRunbook() {
