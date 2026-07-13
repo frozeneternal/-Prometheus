@@ -62,11 +62,54 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertIn('ops_platform_resource_expiry_status_total{status="unknown"} 1', text)
         self.assertIn("ops_platform_resource_expiry_action_required_total 3", text)
         self.assertIn("ops_platform_resource_expiry_acknowledged_total 1", text)
+        self.assertIn("ops_platform_resource_expiry_handling_missing_total 3", text)
+        self.assertIn("ops_platform_resource_expiry_action_required_without_handling_total 2", text)
         self.assertIn("ops_platform_resource_expiry_nearest_days -2", text)
 
         self.assertNotIn("secret-domain", text)
         self.assertNotIn("10.0.0.10", text)
         self.assertNotIn("Critical License", text)
+
+    def test_platform_metrics_exports_action_and_account_runtime_risks(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        config = {
+            "servers": [
+                {
+                    "id": "ops",
+                    "name": "Ops",
+                    "actions": [
+                        {"id": "safe-auto", "command": ["backup"], "allowAuto": True, "timeoutSeconds": 60},
+                        {"id": "unsafe-auto", "command": ["restart"], "allowAuto": True},
+                        {"id": "dangerous", "command": ["rm"], "danger": "high"},
+                    ],
+                }
+            ],
+            "resources": [],
+        }
+
+        text = platform_metrics_text(
+            config,
+            now=self.now,
+            account_runtime_summary={
+                "lockedUsers": 1,
+                "failedUsers": 2,
+                "recentFailures": 3,
+                "revokedSessions": 4,
+            },
+        )
+
+        self.assertIn("ops_platform_action_safety_total 3", text)
+        self.assertIn("ops_platform_action_safety_allow_auto_total 2", text)
+        self.assertIn("ops_platform_action_safety_high_danger_total 1", text)
+        self.assertIn("ops_platform_action_safety_action_required_total 2", text)
+        self.assertIn("ops_platform_account_runtime_locked_users_total 1", text)
+        self.assertIn("ops_platform_account_runtime_failed_users_total 2", text)
+        self.assertIn("ops_platform_account_runtime_recent_failures_total 3", text)
+        self.assertIn("ops_platform_account_runtime_revoked_sessions_total 4", text)
+        self.assertNotIn("Ops", text)
+        self.assertNotIn("safe-auto", text)
+        self.assertNotIn("dangerous", text)
 
     def test_metrics_response_uses_prometheus_text_content_type(self) -> None:
         status, content_type, body = app.metrics_response(self.config, now=self.now)
