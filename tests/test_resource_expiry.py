@@ -527,6 +527,32 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(saved["resources"][0]["id"], "domain-main")
 
+    def test_persist_resource_record_ignores_malformed_entries_when_updating(self) -> None:
+        raw_config = {
+            "resources": [
+                "not-a-resource-object",
+                {"id": "domain-main", "name": "Old Domain", "expiresAt": "2026-08-01"},
+                None,
+            ]
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log"),
+        ):
+            status, payload = app.persist_resource_record(
+                {"id": "domain-main", "name": "Main Domain", "expiresAt": "2026-09-01"},
+                actor={"username": "ops"},
+            )
+            saved = save_config_raw.call_args.args[0]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved["resources"][1]["id"], "domain-main")
+        self.assertEqual(saved["resources"][1]["name"], "Main Domain")
+        self.assertEqual(saved["resources"][0], "not-a-resource-object")
+
     def test_persist_resource_deletion_removes_resource_and_logs_actor(self) -> None:
         raw_config = {
             "resources": [
@@ -556,6 +582,34 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(log_event["invocation"], "resource-delete")
         self.assertEqual(log_event["targetId"], "domain-main")
         self.assertEqual(log_event["actor"]["username"], "ops")
+
+    def test_persist_resource_deletion_ignores_malformed_resource_entries(self) -> None:
+        raw_config = {
+            "resources": [
+                "not-a-resource-object",
+                {"id": "domain-main", "name": "Main Domain", "expiresAt": "2026-08-01"},
+                None,
+            ]
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log") as append_recovery_log,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_deletion(
+                "domain-main",
+                actor={"username": "ops"},
+            )
+            saved = save_config_raw.call_args.args[0]
+            log_event = append_recovery_log.call_args.args[1]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved["resources"], ["not-a-resource-object", None])
+        self.assertEqual(log_event["targetId"], "domain-main")
 
     def test_resource_upsert_route_returns_dashboard_and_log_id(self) -> None:
         responses: list[tuple[int, dict]] = []
@@ -612,6 +666,42 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(status, 404)
         self.assertFalse(payload["ok"])
         save_config_raw.assert_not_called()
+
+    def test_persist_resource_acknowledgement_ignores_malformed_resource_entries(self) -> None:
+        raw_config = {
+            "resources": [
+                "not-a-resource-object",
+                {
+                    "id": "license-warning",
+                    "name": "Backup License",
+                    "expiresAt": "2026-07-20",
+                    "owner": "ops@example.com",
+                    "provider": "Vendor",
+                },
+                None,
+            ]
+        }
+
+        with (
+            patch.object(app, "load_config_raw", return_value=raw_config),
+            patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "append_recovery_log") as append_recovery_log,
+            patch.object(app, "time") as time_module,
+        ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+            status, payload = app.persist_resource_acknowledgement(
+                "license-warning",
+                acknowledged_until="2026-07-10T00:00:00Z",
+                actor={"username": "ops"},
+            )
+            saved = save_config_raw.call_args.args[0]
+            log_event = append_recovery_log.call_args.args[1]
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(saved["resources"][1]["acknowledgedBy"], "ops")
+        self.assertEqual(saved["resources"][0], "not-a-resource-object")
+        self.assertEqual(log_event["targetId"], "license-warning")
 
     def test_persist_resource_acknowledgement_rejects_past_ack_deadline(self) -> None:
         raw_config = {

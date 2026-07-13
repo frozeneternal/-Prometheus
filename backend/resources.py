@@ -38,8 +38,19 @@ def configure_resource_runtime(runtime: ResourceRuntime) -> None:
 
 def find_raw_resource(config: dict, resource_id: str) -> dict | None:
     for resource in config.get("resources", []):
+        if not isinstance(resource, dict):
+            continue
         if str(resource.get("id") or "") == resource_id:
             return resource
+    return None
+
+
+def find_raw_resource_index(resources: list, resource_id: str) -> int | None:
+    for index, item in enumerate(resources):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "") == resource_id:
+            return index
     return None
 
 
@@ -180,10 +191,7 @@ def persist_resource_record(
     if not isinstance(resources, list):
         resources = []
         raw_config["resources"] = resources
-    existing_index = next(
-        (index for index, item in enumerate(resources) if str(item.get("id") or "") == cleaned["id"]),
-        None,
-    )
+    existing_index = find_raw_resource_index(resources, cleaned["id"])
     if existing_index is None:
         resources.append(cleaned)
         changed_resource = cleaned
@@ -225,7 +233,7 @@ def persist_resource_deletion(
     if not isinstance(resources, list):
         resources = []
         raw_config["resources"] = resources
-    index = next((i for i, item in enumerate(resources) if str(item.get("id") or "") == resource_id), None)
+    index = find_raw_resource_index(resources, resource_id)
     if index is None:
         return 404, {"ok": False, "message": "资源不存在。"}
 
