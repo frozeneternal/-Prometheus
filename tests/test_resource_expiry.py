@@ -500,7 +500,9 @@ class ResourceExpiryTests(unittest.TestCase):
         with (
             patch.object(app, "load_config_raw", return_value={"resources": []}),
             patch.object(app, "save_config_raw") as save_config_raw,
+            patch.object(app, "time") as time_module,
         ):
+            time_module.time.return_value = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
             status, payload = app.persist_resource_acknowledgement(
                 "missing",
                 acknowledged_until="2026-07-10T00:00:00Z",

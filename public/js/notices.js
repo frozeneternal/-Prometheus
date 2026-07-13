@@ -8,6 +8,7 @@ export function renderSystemNotice() {
   const prometheus = state.dashboard?.prometheus;
   const coverage = state.dashboard?.targetCoverage;
   const issueSummary = state.dashboard?.targetIssueSummary;
+  const dataQualitySummary = state.dashboard?.dataQualitySummary;
   const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
   const platformHealth = state.dashboard?.platformHealth;
   const emergencySummary = state.dashboard?.emergencySummary;
@@ -38,6 +39,10 @@ export function renderSystemNotice() {
       .map((category) => `${targetDiagnosticLabels[category.category] || category.category} ${category.count}`)
       .join("，");
     messages.push(`Prometheus 异常原因：${categoryText || `${issueSummary.total} 个目标异常`}。`);
+  }
+
+  if (dataQualitySummary && dataQualitySummary.status !== "ok") {
+    messages.push(`数据可信度：可信 ${dataQualitySummary.trusted ?? 0}/${dataQualitySummary.total ?? 0}，不可信 ${dataQualitySummary.untrusted ?? 0}，部分可信 ${dataQualitySummary.partial ?? 0}。自动恢复只会使用可信监控数据。`);
   }
 
   if (exporterDiagnostics?.summary) {

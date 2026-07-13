@@ -1851,6 +1851,75 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["failed"], 1)
         self.assertEqual(summary["statuses"]["failed"], 1)
 
+    def test_dashboard_payload_summarizes_data_quality_across_targets(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        server_snapshots = {
+            "srv-ok": {
+                "id": "srv-ok",
+                "name": "Server OK",
+                "labels": {"job": "linux", "instance": "srv-ok:9100"},
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            "srv-untrusted": {
+                "id": "srv-untrusted",
+                "name": "Server Untrusted",
+                "labels": {"job": "linux", "instance": "srv-untrusted:9100"},
+                "status": "unknown",
+                "health": "unknown",
+                "issues": [],
+                "dataQuality": {"level": "no_series", "trusted": False, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+        }
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: server_snapshots[server["id"]],
+            website_snapshot=lambda _config, website: {
+                "id": website["id"],
+                "name": website["name"],
+                "url": website["url"],
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "partial", "trusted": True, "details": {"missingMetrics": ["duration"]}},
+                "metrics": {},
+                "errors": {},
+            },
+            active_targets=lambda _config: [],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [
+                    {"id": "srv-ok", "name": "Server OK"},
+                    {"id": "srv-untrusted", "name": "Server Untrusted"},
+                ],
+                "websites": [{"id": "site-partial", "name": "Site Partial", "url": "https://example.test"}],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["dataQualitySummary"]
+        self.assertEqual(summary["status"], "untrusted")
+        self.assertEqual(summary["total"], 3)
+        self.assertEqual(summary["trusted"], 2)
+        self.assertEqual(summary["untrusted"], 1)
+        self.assertEqual(summary["partial"], 1)
+        self.assertEqual(summary["levels"]["ok"], 1)
+        self.assertEqual(summary["levels"]["no_series"], 1)
+        self.assertEqual(summary["levels"]["partial"], 1)
+
     def test_dashboard_payload_summarizes_active_and_recovered_incidents(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 

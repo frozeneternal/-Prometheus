@@ -272,6 +272,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("backupSummary.waiting", notice_block)
         self.assertIn("backupSummary.failed", notice_block)
 
+    def test_data_quality_summary_is_visible_in_system_notice(self) -> None:
+        notice_block = notice_js()
+
+        self.assertIn("state.dashboard?.dataQualitySummary", notice_block)
+        self.assertIn("数据可信度", notice_block)
+        self.assertIn("dataQualitySummary.trusted", notice_block)
+        self.assertIn("dataQualitySummary.untrusted", notice_block)
+        self.assertIn("dataQualitySummary.partial", notice_block)
+
     def test_incident_summary_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()
 

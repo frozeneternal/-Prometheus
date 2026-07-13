@@ -133,6 +133,30 @@ def _summary(items: list[dict]) -> dict:
     }
 
 
+def _data_quality_overview(items: list[dict]) -> dict:
+    summary = data_quality_summary(items)
+    levels = dict(summary.get("levels") or {})
+    total = len(items)
+    trusted = int(summary.get("trusted") or 0)
+    untrusted = int(summary.get("untrusted") or 0)
+    partial = int(levels.get("partial") or 0)
+    if untrusted:
+        status = "untrusted"
+    elif partial:
+        status = "partial"
+    else:
+        status = "ok"
+
+    return {
+        "status": status,
+        "total": total,
+        "trusted": trusted,
+        "untrusted": untrusted,
+        "partial": partial,
+        "levels": levels,
+    }
+
+
 def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
     total = len(items)
     if not prometheus_available:
@@ -500,6 +524,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "exporterDiagnostics": exporter_diagnostics,
         "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
         "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
+        "dataQualitySummary": _data_quality_overview([*snapshots, *website_snapshots]),
         "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
         "backupSummary": _backup_summary(snapshots),
         "incidentSummary": _incident_summary(snapshots, website_snapshots, incident_logs),
