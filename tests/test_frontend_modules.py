@@ -454,6 +454,8 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("resourceExpirySummary.warning", notice_block)
         self.assertIn("resourceExpirySummary.unknown", notice_block)
         self.assertIn("resourceExpirySummary.actionRequiredWithoutHandling", notice_block)
+        self.assertIn('resourceExpirySummary?.status === "unconfigured"', notice_block)
+        self.assertIn("未配置任何资源到期记录", notice_block)
 
     def test_account_security_summary_is_visible_in_system_notice(self) -> None:
         notice_block = notice_js()

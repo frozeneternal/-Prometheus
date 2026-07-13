@@ -139,6 +139,22 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(summary["unknown"], 1)
         self.assertEqual(summary["actionRequired"], 4)
 
+    def test_resource_expiry_summary_marks_empty_inventory_unconfigured(self) -> None:
+        summary = app.resource_expiry_summary([])
+
+        self.assertEqual(summary["status"], "unconfigured")
+        self.assertFalse(summary["trackingConfigured"])
+        self.assertEqual(summary["total"], 0)
+        self.assertEqual(summary["actionRequired"], 0)
+        self.assertIn("未配置任何资源到期记录", summary["message"])
+
+    def test_resource_expiry_summary_treats_unknown_status_values_as_unknown(self) -> None:
+        summary = app.resource_expiry_summary([{"status": "status", "actionRequired": True}])
+
+        self.assertEqual(summary["status"], "action_required")
+        self.assertEqual(summary["unknown"], 1)
+        self.assertEqual(summary["actionRequired"], 1)
+
     def test_resource_expiry_summary_counts_actionable_items_without_handling_path(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {

@@ -99,7 +99,9 @@ export function renderSystemNotice() {
     messages.push(`证书续期：已启用 ${certRenewalSummary.enabled ?? 0}/${certRenewalSummary.total ?? 0}，失败 ${certRenewalSummary.failed ?? 0}，阻断 ${certRenewalSummary.blocked ?? 0}，即将到期 ${certRenewalSummary.expiring ?? 0}，证书天数未知 ${certRenewalSummary.unknownExpiry ?? 0}。`);
   }
 
-  if ((resourceExpirySummary?.actionRequired ?? 0) > 0) {
+  if (resourceExpirySummary?.status === "unconfigured") {
+    messages.push(`资源到期：${resourceExpirySummary.message || "未配置任何资源到期记录，资源到期告警尚未覆盖真实资产。"}。`);
+  } else if ((resourceExpirySummary?.actionRequired ?? 0) > 0) {
     messages.push(`资源到期：需处理 ${resourceExpirySummary.actionRequired ?? 0}/${resourceExpirySummary.total ?? 0}，已过期 ${resourceExpirySummary.expired ?? 0}，严重 ${resourceExpirySummary.critical ?? 0}，预警 ${resourceExpirySummary.warning ?? 0}，未知 ${resourceExpirySummary.unknown ?? 0}，缺处置入口 ${resourceExpirySummary.actionRequiredWithoutHandling ?? 0}。`);
   }
 

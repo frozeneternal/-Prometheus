@@ -188,7 +188,11 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
 
 
 def resource_expiry_summary(items: list[dict]) -> dict:
+    countable_statuses = {"expired", "critical", "warning", "ok", "unknown"}
     summary = {
+        "status": "unconfigured" if not items else "ok",
+        "trackingConfigured": bool(items),
+        "message": "",
         "total": len(items),
         "expired": 0,
         "critical": 0,
@@ -201,7 +205,7 @@ def resource_expiry_summary(items: list[dict]) -> dict:
     }
     for item in items:
         status = item.get("status", "unknown")
-        if status not in summary:
+        if status not in countable_statuses:
             status = "unknown"
         summary[status] += 1
         if item.get("acknowledged"):
@@ -213,4 +217,14 @@ def resource_expiry_summary(items: list[dict]) -> dict:
         if item.get("handlingReady") is False:
             summary["handlingMissing"] += 1
     summary.setdefault("acknowledged", 0)
+    if not items:
+        summary["message"] = "未配置任何资源到期记录，资源到期告警尚未覆盖真实资产。"
+    elif summary["actionRequired"]:
+        summary["status"] = "action_required"
+        summary["message"] = "存在需要处理的资源到期风险。"
+    elif summary["handlingMissing"]:
+        summary["status"] = "incomplete"
+        summary["message"] = "部分资源缺少续费入口、负责人或供应商信息。"
+    else:
+        summary["message"] = "资源到期记录已配置，当前没有需要处理的到期风险。"
     return summary
