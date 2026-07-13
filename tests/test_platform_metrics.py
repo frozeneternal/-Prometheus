@@ -111,6 +111,52 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertNotIn("safe-auto", text)
         self.assertNotIn("dangerous", text)
 
+    def test_platform_metrics_exports_target_coverage_without_target_details(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        text = platform_metrics_text(
+            {"servers": [], "resources": []},
+            now=self.now,
+            target_coverage={
+                "prometheusAvailable": True,
+                "total": 4,
+                "matched": 3,
+                "missing": 1,
+                "unknown": 0,
+                "healthy": 2,
+                "unhealthy": 1,
+                "unmanaged": 2,
+            },
+            target_issue_summary={
+                "total": 3,
+                "categories": [
+                    {
+                        "category": "unmanaged_target",
+                        "count": 2,
+                        "message": "Prometheus is scraping 10.0.0.6:9100",
+                    },
+                    {
+                        "category": "node_exporter_down",
+                        "count": 1,
+                        "message": "Server 1 exporter down",
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("ops_platform_target_coverage_available 1", text)
+        self.assertIn("ops_platform_target_coverage_prometheus_available 1", text)
+        self.assertIn("ops_platform_target_coverage_total 4", text)
+        self.assertIn("ops_platform_target_coverage_matched_total 3", text)
+        self.assertIn("ops_platform_target_coverage_missing_total 1", text)
+        self.assertIn("ops_platform_target_coverage_unhealthy_total 1", text)
+        self.assertIn("ops_platform_target_coverage_unmanaged_total 2", text)
+        self.assertIn("ops_platform_target_issue_total 3", text)
+        self.assertIn('ops_platform_target_issue_category_total{category="unmanaged_target"} 2', text)
+        self.assertIn('ops_platform_target_issue_category_total{category="node_exporter_down"} 1', text)
+        self.assertNotIn("10.0.0.6", text)
+        self.assertNotIn("Server 1", text)
+
     def test_metrics_response_uses_prometheus_text_content_type(self) -> None:
         status, content_type, body = app.metrics_response(self.config, now=self.now)
 
@@ -118,6 +164,36 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertEqual(content_type, "text/plain; version=0.0.4; charset=utf-8")
         self.assertIn("ops_platform_scrape_timestamp_seconds", body)
         self.assertIn("ops_platform_resource_expiry_total 5", body)
+
+    def test_metrics_response_reuses_runtime_target_coverage(self) -> None:
+        previous_dashboard = app.get_runtime_dashboard()
+        try:
+            app.set_runtime_dashboard(
+                {
+                    "targetCoverage": {
+                        "prometheusAvailable": True,
+                        "total": 2,
+                        "matched": 1,
+                        "missing": 0,
+                        "unknown": 0,
+                        "unhealthy": 1,
+                        "unmanaged": 1,
+                    },
+                    "targetIssueSummary": {
+                        "total": 1,
+                        "categories": [{"category": "unmanaged_target", "count": 1}],
+                    },
+                }
+            )
+
+            status, _content_type, body = app.metrics_response({"resources": []}, now=self.now)
+        finally:
+            app.set_runtime_dashboard(previous_dashboard)
+
+        self.assertEqual(status, 200)
+        self.assertIn("ops_platform_target_coverage_total 2", body)
+        self.assertIn("ops_platform_target_coverage_unmanaged_total 1", body)
+        self.assertIn('ops_platform_target_issue_category_total{category="unmanaged_target"} 1', body)
 
 
 if __name__ == "__main__":

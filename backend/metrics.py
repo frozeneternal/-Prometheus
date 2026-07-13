@@ -30,17 +30,30 @@ def _metric_line(name: str, value: int | float, labels: dict[str, str] | None = 
     return f"{name} {_format_value(value)}"
 
 
+def _count_value(source: dict | None, key: str) -> int:
+    if not isinstance(source, dict):
+        return 0
+    try:
+        return int(source.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def platform_metrics_text(
     config: dict,
     now: float | None = None,
     *,
     account_runtime_summary: dict | None = None,
+    target_coverage: dict | None = None,
+    target_issue_summary: dict | None = None,
 ) -> str:
     current = time.time() if now is None else float(now)
     items = resource_expiry_items(config, now=current)
     summary = resource_expiry_summary(items)
     action_summary = action_safety_summary(config)
     account_runtime = account_runtime_security_summary() if account_runtime_summary is None else account_runtime_summary
+    coverage_available = 1 if isinstance(target_coverage, dict) and bool(target_coverage) else 0
+    prometheus_available = 1 if coverage_available and target_coverage.get("prometheusAvailable") is not False else 0
     known_days = [
         item["daysRemaining"]
         for item in items
@@ -120,7 +133,48 @@ def platform_metrics_text(
                 "ops_platform_account_runtime_revoked_sessions_total",
                 account_runtime.get("revokedSessions", 0),
             ),
-            "",
+            "# HELP ops_platform_target_coverage_available Whether target coverage data is available from the runtime dashboard.",
+            "# TYPE ops_platform_target_coverage_available gauge",
+            _metric_line("ops_platform_target_coverage_available", coverage_available),
+            "# HELP ops_platform_target_coverage_prometheus_available Whether Prometheus target coverage could be evaluated.",
+            "# TYPE ops_platform_target_coverage_prometheus_available gauge",
+            _metric_line("ops_platform_target_coverage_prometheus_available", prometheus_available),
+            "# HELP ops_platform_target_coverage_total Configured server and website targets included in coverage checks.",
+            "# TYPE ops_platform_target_coverage_total gauge",
+            _metric_line("ops_platform_target_coverage_total", _count_value(target_coverage, "total")),
+            "# HELP ops_platform_target_coverage_matched_total Configured targets matched to an active Prometheus target.",
+            "# TYPE ops_platform_target_coverage_matched_total gauge",
+            _metric_line("ops_platform_target_coverage_matched_total", _count_value(target_coverage, "matched")),
+            "# HELP ops_platform_target_coverage_missing_total Configured targets missing an active Prometheus target.",
+            "# TYPE ops_platform_target_coverage_missing_total gauge",
+            _metric_line("ops_platform_target_coverage_missing_total", _count_value(target_coverage, "missing")),
+            "# HELP ops_platform_target_coverage_unknown_total Configured targets with unknown coverage state.",
+            "# TYPE ops_platform_target_coverage_unknown_total gauge",
+            _metric_line("ops_platform_target_coverage_unknown_total", _count_value(target_coverage, "unknown")),
+            "# HELP ops_platform_target_coverage_unhealthy_total Matched Prometheus targets that are not healthy.",
+            "# TYPE ops_platform_target_coverage_unhealthy_total gauge",
+            _metric_line("ops_platform_target_coverage_unhealthy_total", _count_value(target_coverage, "unhealthy")),
+            "# HELP ops_platform_target_coverage_unmanaged_total Active Prometheus targets not mapped to platform inventory.",
+            "# TYPE ops_platform_target_coverage_unmanaged_total gauge",
+            _metric_line("ops_platform_target_coverage_unmanaged_total", _count_value(target_coverage, "unmanaged")),
+            "# HELP ops_platform_target_issue_total Target coverage or scrape issues grouped by the platform dashboard.",
+            "# TYPE ops_platform_target_issue_total gauge",
+            _metric_line("ops_platform_target_issue_total", _count_value(target_issue_summary, "total")),
+            "# HELP ops_platform_target_issue_category_total Target coverage or scrape issues by category.",
+            "# TYPE ops_platform_target_issue_category_total gauge",
         ]
     )
+    if isinstance(target_issue_summary, dict):
+        for category in target_issue_summary.get("categories") or []:
+            if not isinstance(category, dict):
+                continue
+            lines.append(
+                _metric_line(
+                    "ops_platform_target_issue_category_total",
+                    _count_value(category, "count"),
+                    {"category": str(category.get("category") or "unknown")},
+                )
+            )
+
+    lines.append("")
     return "\n".join(lines)

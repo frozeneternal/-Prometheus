@@ -584,7 +584,17 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, conte
 
 
 def metrics_response(config: dict, now: float | None = None) -> tuple[int, str, str]:
-    return 200, "text/plain; version=0.0.4; charset=utf-8", platform_metrics_text(config, now=now)
+    dashboard = get_runtime_dashboard() or {}
+    return (
+        200,
+        "text/plain; version=0.0.4; charset=utf-8",
+        platform_metrics_text(
+            config,
+            now=now,
+            target_coverage=dashboard.get("targetCoverage"),
+            target_issue_summary=dashboard.get("targetIssueSummary"),
+        ),
+    )
 
 
 def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
