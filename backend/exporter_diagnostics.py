@@ -87,6 +87,9 @@ def run_diagnostics_script(root: Path, timeout: float) -> list[dict]:
         [
             "powershell",
             "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
             "-ExecutionPolicy",
             "Bypass",
             "-Command",

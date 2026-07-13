@@ -2803,6 +2803,9 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("UTF8Encoding", command_text)
         self.assertIn("diagnose-exporters.ps1", command_text)
         self.assertNotIn("$args", command_text)
+        self.assertIn("-NonInteractive", captured["command"])
+        self.assertIn("-WindowStyle", captured["command"])
+        self.assertIn("Hidden", captured["command"])
         self.assertEqual(captured["encoding"], "utf-8")
         if os.name == "nt":
             self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
