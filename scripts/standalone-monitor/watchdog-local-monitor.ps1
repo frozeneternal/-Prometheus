@@ -45,6 +45,16 @@ function Test-PortFast($HostName, $Port, $TimeoutMs = 1000) {
   }
 }
 
+function Test-TunnelMetrics($HostName, $Port) {
+  $url = "http://$HostName`:$Port/metrics"
+  $status = Get-HttpStatus $url
+  return @{
+    Ok = ($status -eq 200)
+    Status = $status
+    Url = $url
+  }
+}
+
 function Test-PrometheusTsdbCorruption {
   $path = Join-Path $Logs "prometheus.err.log"
   if (-not (Test-Path -LiteralPath $path)) {
@@ -186,6 +196,7 @@ if (Test-Path $TunnelsConfig) {
   try {
     $inventory = Get-Content -Raw -Encoding UTF8 -LiteralPath $TunnelsConfig | ConvertFrom-Json
     $closed = @()
+    $badMetrics = @()
     foreach ($tunnel in $inventory.tunnels) {
       if ($tunnel.enabled -eq $false) {
         continue
@@ -197,13 +208,21 @@ if (Test-Path $TunnelsConfig) {
       $localPort = [int]$tunnel.localPort
       if (-not (Test-PortFast $localHost $localPort)) {
         $closed += "$($tunnel.name)=$localHost`:$localPort"
+        continue
+      }
+      $metrics = Test-TunnelMetrics $localHost $localPort
+      if (-not $metrics.Ok) {
+        $badMetrics += "$($tunnel.name)=$($metrics.Url) status=$($metrics.Status)"
       }
     }
     if ($closed.Count -gt 0) {
       Write-WatchdogLog "ssh tunnel listeners unhealthy: $($closed -join ', '); running start-ssh-tunnels.ps1"
-      Invoke-MonitorScript $StartTunnels "start-ssh-tunnels"
+      Invoke-MonitorScript $StartTunnels "start-ssh-tunnels" @("-Restart")
+    } elseif ($badMetrics.Count -gt 0) {
+      Write-WatchdogLog "ssh tunnel metrics unhealthy: $($badMetrics -join ', '); running start-ssh-tunnels.ps1"
+      Invoke-MonitorScript $StartTunnels "start-ssh-tunnels" @("-Restart")
     } else {
-      Write-WatchdogLog "ssh tunnel listeners healthy"
+      Write-WatchdogLog "ssh tunnel listeners healthy; metrics healthy"
     }
   } catch {
     Write-WatchdogLog "failed to inspect ssh tunnel config: $($_.Exception.Message)"

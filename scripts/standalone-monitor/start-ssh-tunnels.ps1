@@ -1,5 +1,6 @@
 param(
-  [string]$Root = "E:\ops-monitor"
+  [string]$Root = "E:\ops-monitor",
+  [switch]$Restart
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,8 +41,18 @@ if (Test-Path $PidFile) {
   $oldPid = [int](Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue)
   $oldCommandLine = Get-ProcessCommandLine $oldPid
   if ($oldCommandLine -and $oldCommandLine.Contains($ScriptPath)) {
-    Write-Host "ssh_metrics_tunnel already running: PID $oldPid"
-    exit 0
+    if ($Restart) {
+      Stop-Process -Id $oldPid -Force
+      Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+      Write-Host "ssh_metrics_tunnel restarted old PID $oldPid"
+    } else {
+      Write-Host "ssh_metrics_tunnel already running: PID $oldPid"
+      exit 0
+    }
+  } elseif ($oldCommandLine) {
+    throw "PID $oldPid is not owned by $ScriptPath"
+  } else {
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
   }
 }
 

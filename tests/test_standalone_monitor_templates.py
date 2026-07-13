@@ -351,6 +351,23 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertNotIn("-Tail 400", corruption_block)
         self.assertNotIn("Read-TextOrEmpty", corruption_block)
 
+    def test_watchdog_checks_ssh_tunnel_metrics_http_status(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("Test-TunnelMetrics", watchdog)
+        self.assertIn("/metrics", watchdog)
+        self.assertIn("ssh tunnel metrics unhealthy", watchdog)
+        self.assertIn("ssh tunnel listeners healthy; metrics healthy", watchdog)
+        self.assertIn('Invoke-MonitorScript $StartTunnels "start-ssh-tunnels" @("-Restart")', watchdog)
+
+    def test_start_ssh_tunnels_supports_owned_restart_for_watchdog(self) -> None:
+        starter = (STANDALONE / "start-ssh-tunnels.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("[switch]$Restart", starter)
+        self.assertIn("Stop-Process -Id $oldPid -Force", starter)
+        self.assertIn("ssh_metrics_tunnel restarted old PID", starter)
+        self.assertIn("ssh_metrics_tunnel already running", starter)
+
     def test_ssh_credentials_use_dpapi_export_file_not_plaintext(self) -> None:
         setter = (STANDALONE / "set-ssh-credential.ps1").read_text(encoding="utf-8")
         clearer = (STANDALONE / "clear-ssh-credential.ps1").read_text(encoding="utf-8")
