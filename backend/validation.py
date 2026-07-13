@@ -4,6 +4,7 @@ import re
 
 from .auth import ROLE_RANK, login_attempt_key
 from .expiry import parse_expiry_datetime, resource_config_records, resource_handling_state, safe_resource_renew_url
+from .inventory import config_list_records
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -34,7 +35,8 @@ def make_issue(
 
 def action_lookup(config: dict) -> dict[tuple[str, str], dict]:
     lookup = {}
-    for server in config.get("servers", []) or []:
+    servers, _invalid_entries = config_list_records(config, "servers")
+    for server in servers:
         server_id = str(server.get("id") or "")
         for action in server.get("actions", []) or []:
             action_id = str(action.get("id") or "")
@@ -144,7 +146,8 @@ def auth_policy_issues(config: dict) -> list[dict]:
 
 def account_configuration_issues(config: dict) -> list[dict]:
     users = config.get("users", []) or []
-    has_actions = any((server.get("actions") or []) for server in config.get("servers", []) or [])
+    servers, _invalid_entries = config_list_records(config, "servers")
+    has_actions = any((server.get("actions") or []) for server in servers)
     if has_actions and not users and not config.get("actionToken"):
         return [
             make_issue(
@@ -754,7 +757,8 @@ def validate_action_reference(
 ) -> list[dict]:
     owner_id = str(owner.get("id") or "")
     issues = []
-    server_ids = {str(server.get("id") or "") for server in config.get("servers", []) or []}
+    servers, _invalid_entries = config_list_records(config, "servers")
+    server_ids = {str(server.get("id") or "") for server in servers}
     if not action_server_id or not action_id:
         issues.append(
             make_issue(
@@ -818,8 +822,10 @@ def validate_action_reference(
 def linked_target_exists(config: dict, linked_target: str) -> bool:
     if not linked_target:
         return True
-    server_ids = {str(server.get("id") or "") for server in config.get("servers", []) or []}
-    website_ids = {str(website.get("id") or "") for website in config.get("websites", []) or []}
+    servers, _invalid_servers = config_list_records(config, "servers")
+    websites, _invalid_websites = config_list_records(config, "websites")
+    server_ids = {str(server.get("id") or "") for server in servers}
+    website_ids = {str(website.get("id") or "") for website in websites}
     if linked_target.startswith("server:"):
         return linked_target.split(":", 1)[1] in server_ids
     if linked_target.startswith("site:") or linked_target.startswith("website:"):
@@ -828,8 +834,8 @@ def linked_target_exists(config: dict, linked_target: str) -> bool:
 
 
 def config_validation_summary(config: dict) -> dict:
-    servers = config.get("servers", []) or []
-    websites = config.get("websites", []) or []
+    servers, invalid_server_entries = config_list_records(config, "servers")
+    websites, invalid_website_entries = config_list_records(config, "websites")
     resources, invalid_resource_entries = resource_config_records(config)
     server_ids = {str(server.get("id") or "") for server in servers if server.get("id")}
     website_ids = {str(website.get("id") or "") for website in websites if website.get("id")}
@@ -839,6 +845,32 @@ def config_validation_summary(config: dict) -> dict:
     issues.extend(duplicate_id_issues(servers, "server", "服务器"))
     issues.extend(duplicate_id_issues(websites, "website", "网站"))
     issues.extend(duplicate_id_issues(resources, "resource", "资源"))
+    for entry in invalid_server_entries:
+        index = entry.get("index")
+        issue_id = "servers-invalid" if index is None else f"server-entry-invalid:{index}"
+        target_id = "servers" if index is None else str(index)
+        issues.append(
+            make_issue(
+                issue_id,
+                "error",
+                f"{entry.get('path') or 'servers'} must be a JSON object server entry.",
+                "server",
+                target_id,
+            )
+        )
+    for entry in invalid_website_entries:
+        index = entry.get("index")
+        issue_id = "websites-invalid" if index is None else f"website-entry-invalid:{index}"
+        target_id = "websites" if index is None else str(index)
+        issues.append(
+            make_issue(
+                issue_id,
+                "error",
+                f"{entry.get('path') or 'websites'} must be a JSON object website entry.",
+                "website",
+                target_id,
+            )
+        )
     for entry in invalid_resource_entries:
         index = entry.get("index")
         issue_id = "resources-invalid" if index is None else f"resource-entry-invalid:{index}"

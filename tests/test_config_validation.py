@@ -258,6 +258,46 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("resource-entry-invalid:2", issue_ids)
         self.assertNotIn("resource-entry-invalid:0", issue_ids)
 
+    def test_config_validation_reports_malformed_server_and_website_entries(self) -> None:
+        config = {
+            "servers": [
+                {"id": "valid-server"},
+                "not-a-server-object",
+                None,
+            ],
+            "websites": [
+                {"id": "valid-site", "url": "https://example.test/"},
+                "not-a-website-object",
+                None,
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("server-entry-invalid:1", issue_ids)
+        self.assertIn("server-entry-invalid:2", issue_ids)
+        self.assertIn("website-entry-invalid:1", issue_ids)
+        self.assertIn("website-entry-invalid:2", issue_ids)
+        self.assertNotIn("server-entry-invalid:0", issue_ids)
+        self.assertNotIn("website-entry-invalid:0", issue_ids)
+
+    def test_config_validation_reports_non_list_server_and_website_inventory(self) -> None:
+        config = {
+            "servers": "not-a-server-list",
+            "websites": "not-a-website-list",
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("servers-invalid", issue_ids)
+        self.assertIn("websites-invalid", issue_ids)
+
     def test_config_validation_reports_non_list_resource_inventory(self) -> None:
         config = {
             "servers": [],

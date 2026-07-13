@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from backend.auth import auth_policy, configured_users, public_user, users_enabled
 from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
-from backend.expiry import safe_resource_renew_url
+from backend.expiry import resource_config_records, safe_resource_renew_url
+from backend.inventory import config_list_records
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -216,9 +217,12 @@ def server_type(server: dict) -> str:
 
 def public_config(config: dict) -> dict:
     servers = []
+    server_records, _invalid_servers = config_list_records(config, "servers")
+    website_records, _invalid_websites = config_list_records(config, "websites")
+    resource_records, _invalid_resources = resource_config_records(config)
     auth_mode = "users" if users_enabled(config) else ("token" if config.get("actionToken") else "unconfigured")
     manual_actions_enabled = auth_mode in {"users", "token"}
-    for server in config.get("servers", []):
+    for server in server_records:
         servers.append(
             {
                 "id": server.get("id"),
@@ -273,7 +277,7 @@ def public_config(config: dict) -> dict:
                 "renewUrl": safe_resource_renew_url(resource.get("renewUrl", "")),
                 "notes": resource.get("notes", ""),
             }
-            for resource in config.get("resources", [])
+            for resource in resource_records
         ],
         "websites": [
             {
@@ -289,6 +293,6 @@ def public_config(config: dict) -> dict:
                 "certRenewal": public_cert_renewal(website, website.get("serverId", "")),
                 "manualCertRenewal": public_manual_cert_renewal(website, website.get("serverId", "")),
             }
-            for website in config.get("websites", [])
+            for website in website_records
         ],
     }

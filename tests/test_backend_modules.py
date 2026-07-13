@@ -2133,6 +2133,34 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
         self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
 
+    def test_dashboard_payload_tolerates_malformed_server_and_website_entries(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            config_source=lambda: {"configFile": "servers.local.json", "usingLocalConfig": True},
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": ["not-a-server-object", {"id": "srv1", "name": "Server 1"}],
+                "websites": [None, {"id": "site1", "name": "Site 1", "url": "https://example.test/"}],
+                "resources": [],
+            },
+            runtime=runtime,
+        )
+        issue_ids = {issue["id"] for issue in payload["configValidation"]["issues"]}
+
+        self.assertEqual([server["id"] for server in payload["servers"]], ["srv1"])
+        self.assertEqual([website["id"] for website in payload["websites"]], ["site1"])
+        self.assertEqual(payload["summary"]["total"], 1)
+        self.assertEqual(payload["websiteSummary"]["total"], 1)
+        self.assertIn("server-entry-invalid:0", issue_ids)
+        self.assertIn("website-entry-invalid:0", issue_ids)
+
     def test_dashboard_payload_attaches_target_diagnostics(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 
@@ -4584,6 +4612,21 @@ class BackendModuleTests(unittest.TestCase):
         self.assertNotIn("systemctl", serialized)
         self.assertNotIn("backup-secret", serialized)
         self.assertNotIn("private", serialized)
+
+    def test_public_view_tolerates_malformed_server_and_website_entries(self) -> None:
+        from backend import public_view
+
+        view = public_view.public_config(
+            {
+                "monitoring": {},
+                "servers": ["not-a-server-object", {"id": "srv1", "name": "Server 1"}],
+                "websites": [None, {"id": "site1", "name": "Site 1", "url": "https://example.test/"}],
+                "resources": [],
+            }
+        )
+
+        self.assertEqual([server["id"] for server in view["servers"]], ["srv1"])
+        self.assertEqual([website["id"] for website in view["websites"]], ["site1"])
 
     def test_public_view_tolerates_invalid_auto_recovery_policy_values(self) -> None:
         from backend import public_view

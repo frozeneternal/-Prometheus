@@ -14,6 +14,7 @@ from backend.exporter_diagnostics import empty_exporter_diagnostics
 from backend.expiry import resource_expiry_items, resource_expiry_summary
 from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
+from backend.inventory import config_list_records
 from backend.platform_health import platform_health_summary
 from backend.prometheus import prometheus_ready_status
 from backend.prometheus import prometheus_active_targets, target_diagnostics_for_labels
@@ -599,8 +600,8 @@ def _grafana_links(config: dict) -> dict:
 
 def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> dict:
     active_runtime = runtime or _runtime
-    servers = config.get("servers", [])
-    websites = config.get("websites", [])
+    servers, _invalid_servers = config_list_records(config, "servers")
+    websites, _invalid_websites = config_list_records(config, "websites")
     expiry_items = resource_expiry_items(config)
     expiry_summary = resource_expiry_summary(expiry_items)
 

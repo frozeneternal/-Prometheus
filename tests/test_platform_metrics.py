@@ -80,6 +80,14 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertIn("ops_platform_resource_expiry_action_required_total 1", text)
         self.assertNotIn("not-a-resource-object", text)
 
+    def test_platform_metrics_tolerates_malformed_server_entries(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        text = platform_metrics_text({"servers": ["not-a-server-object"], "resources": []}, now=self.now)
+
+        self.assertIn("ops_platform_action_safety_total 0", text)
+        self.assertNotIn("not-a-server-object", text)
+
     def test_platform_metrics_exports_action_and_account_runtime_risks(self) -> None:
         from backend.metrics import platform_metrics_text
 

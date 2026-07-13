@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from backend.inventory import config_list_records
+
 
 def _actions(config: dict) -> list[dict]:
     items: list[dict] = []
-    for server in config.get("servers", []) or []:
+    servers, _invalid_entries = config_list_records(config, "servers")
+    for server in servers:
         for action in server.get("actions", []) or []:
             if isinstance(action, dict):
                 items.append(action)
@@ -25,9 +28,8 @@ def _missing_high_danger_confirm(action: dict) -> bool:
 
 def _action_entries(config: dict) -> list[dict]:
     entries: list[dict] = []
-    for server in config.get("servers", []) or []:
-        if not isinstance(server, dict):
-            continue
+    servers, _invalid_entries = config_list_records(config, "servers")
+    for server in servers:
         for action in server.get("actions", []) or []:
             if isinstance(action, dict):
                 entries.append({"server": server, "action": action})
