@@ -165,6 +165,15 @@ def prometheus_active_targets(config: dict) -> list[dict]:
     return list(payload.get("data", {}).get("activeTargets", []) or [])
 
 
+EXPECTED_OPS_ALERT_RULES = (
+    "OpsDashboardSnapshotStale",
+    "OpsTargetCoverageMissing",
+    "OpsUnmanagedPrometheusTargets",
+    "OpsTargetScrapeIssues",
+    "OpsResourceExpiryActionRequired",
+)
+
+
 def _alert_action_hint(alert_name: str) -> str:
     hints = {
         "OpsDashboardSnapshotStale": "检查本平台后台轮询线程、/api/dashboard 和 Prometheus /-/ready，确认数据是否仍在刷新。",
@@ -252,6 +261,86 @@ def alerts_payload(config: dict) -> tuple[int, dict]:
             "message": "",
             "summary": _alerts_summary(alerts),
             "alerts": alerts,
+        },
+    )
+
+
+def _normalize_rule(rule: dict, group: dict) -> dict:
+    return {
+        "name": str(rule.get("name") or ""),
+        "type": str(rule.get("type") or ""),
+        "health": str(rule.get("health") or "unknown"),
+        "state": str(rule.get("state") or ""),
+        "query": str(rule.get("query") or ""),
+        "lastError": str(rule.get("lastError") or ""),
+        "group": str(group.get("name") or ""),
+        "file": str(group.get("file") or ""),
+    }
+
+
+def _rules_summary(rules: list[dict]) -> dict:
+    expected = list(EXPECTED_OPS_ALERT_RULES)
+    expected_names = set(expected)
+    loaded_names = {rule["name"] for rule in rules}
+    missing_rules = [name for name in expected if name not in loaded_names]
+    unhealthy_rules = [
+        rule["name"]
+        for rule in rules
+        if rule["name"] in expected_names and rule.get("health") != "ok"
+    ]
+    return {
+        "expected": len(expected),
+        "loaded": len(loaded_names & expected_names),
+        "missing": len(missing_rules),
+        "unhealthy": len(unhealthy_rules),
+        "missingRules": missing_rules,
+        "unhealthyRules": unhealthy_rules,
+        "actionRequired": bool(missing_rules or unhealthy_rules),
+    }
+
+
+def rules_payload(config: dict) -> tuple[int, dict]:
+    try:
+        payload = prometheus_get(config, "/api/v1/rules", {}, timeout=4.0)
+    except Exception as exc:  # noqa: BLE001 - rule health must remain visible when Prometheus fails.
+        return (
+            200,
+            {
+                "ok": False,
+                "available": False,
+                "status": "unavailable",
+                "message": f"Prometheus rule API unavailable: {exc}",
+                "summary": _rules_summary([]),
+                "rules": [],
+            },
+        )
+
+    expected_order = {name: index for index, name in enumerate(EXPECTED_OPS_ALERT_RULES)}
+    expected_names = set(EXPECTED_OPS_ALERT_RULES)
+    rules = [
+        _normalize_rule(rule, group)
+        for group in payload.get("data", {}).get("groups", []) or []
+        for rule in group.get("rules", []) or []
+        if str(rule.get("name") or "") in expected_names
+    ]
+    rules.sort(key=lambda rule: expected_order.get(rule["name"], 999))
+    summary = _rules_summary(rules)
+    status = "error" if summary["missing"] or summary["unhealthy"] else "ok"
+    message = ""
+    if summary["missing"]:
+        message = "Prometheus expected ops alert rules are missing."
+    elif summary["unhealthy"]:
+        message = "Prometheus has unhealthy ops alert rules."
+
+    return (
+        200,
+        {
+            "ok": True,
+            "available": True,
+            "status": status,
+            "message": message,
+            "summary": summary,
+            "rules": rules,
         },
     )
 

@@ -1582,6 +1582,65 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total"], 0)
         self.assertIn("timed out", result["message"])
 
+    def test_prometheus_rules_payload_reports_missing_or_unhealthy_ops_rules(self) -> None:
+        from backend import prometheus
+
+        payload = {
+            "status": "success",
+            "data": {
+                "groups": [
+                    {
+                        "name": "ops-platform",
+                        "file": "E:/ops-monitor/config/ops-alerts.yml",
+                        "rules": [
+                            {
+                                "name": "OpsDashboardSnapshotStale",
+                                "type": "alerting",
+                                "health": "ok",
+                                "state": "inactive",
+                                "query": "ops_platform_dashboard_snapshot_age_seconds > 90",
+                            },
+                            {
+                                "name": "OpsTargetCoverageMissing",
+                                "type": "alerting",
+                                "health": "err",
+                                "lastError": "unknown metric",
+                                "state": "inactive",
+                            },
+                        ],
+                    }
+                ]
+            },
+        }
+
+        with patch.object(prometheus, "prometheus_get", return_value=payload):
+            status, result = prometheus.rules_payload({"prometheusUrl": "http://prometheus.local"})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["available"])
+        self.assertEqual(result["summary"]["expected"], len(prometheus.EXPECTED_OPS_ALERT_RULES))
+        self.assertEqual(result["summary"]["loaded"], 2)
+        self.assertEqual(result["summary"]["unhealthy"], 1)
+        self.assertIn("OpsTargetCoverageMissing", result["summary"]["unhealthyRules"])
+        self.assertIn("OpsUnmanagedPrometheusTargets", result["summary"]["missingRules"])
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["rules"][0]["name"], "OpsDashboardSnapshotStale")
+        self.assertEqual(result["rules"][1]["health"], "err")
+        self.assertIn("unknown metric", result["rules"][1]["lastError"])
+
+    def test_prometheus_rules_payload_reports_collector_unavailable(self) -> None:
+        from backend import prometheus
+
+        with patch.object(prometheus, "prometheus_get", side_effect=TimeoutError("timed out")):
+            status, result = prometheus.rules_payload({"prometheusUrl": "http://prometheus.local"})
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["available"])
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("timed out", result["message"])
+
     def test_health_module_classifies_thresholds_without_app_import(self) -> None:
         from backend import health
 

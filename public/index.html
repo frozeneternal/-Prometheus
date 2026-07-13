@@ -50,6 +50,16 @@
           </div>
           <div id="prometheusAlertsList" class="prometheus-alerts-list"></div>
         </section>
+        <section id="prometheusRulesPanel" class="prometheus-rules-panel hidden" aria-live="polite">
+          <div class="prometheus-rules-head">
+            <div>
+              <strong>Prometheus 规则健康</strong>
+              <p id="prometheusRulesSummary" class="muted"></p>
+            </div>
+            <span id="prometheusRulesBadge" class="prometheus-rules-badge ok">0</span>
+          </div>
+          <div id="prometheusRulesList" class="prometheus-rules-list"></div>
+        </section>
         <section id="unmanagedTargetsPanel" class="unmanaged-targets-panel hidden" aria-live="polite">
           <div class="unmanaged-targets-head">
             <div>

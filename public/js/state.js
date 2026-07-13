@@ -2,6 +2,7 @@ export const state = {
   config: null,
   dashboard: null,
   prometheusAlerts: null,
+  prometheusRules: null,
   selectedGroup: "全部",
   chartMetric: "cpu",
   currentAction: null,

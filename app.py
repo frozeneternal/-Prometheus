@@ -444,6 +444,7 @@ from backend.prometheus import (  # noqa: E402 - transitional re-export while ap
     prometheus_ready,
     prometheus_ready_status,
     prometheus_url,
+    rules_payload,
     series_payload,
     server_data_quality,
     website_data_quality,
@@ -811,6 +812,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
         if path == "/api/prometheus/alerts":
             status, payload = alerts_payload(config)
+            json_response(self, status, payload)
+            return
+
+        if path == "/api/prometheus/rules":
+            status, payload = rules_payload(config)
             json_response(self, status, payload)
             return
 

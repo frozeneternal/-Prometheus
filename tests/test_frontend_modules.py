@@ -226,6 +226,26 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('path == "/api/prometheus/alerts"', backend_py)
         self.assertIn(".prometheus-alerts-panel", styles_css)
 
+    def test_prometheus_rule_health_is_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+        state_js = (PUBLIC / "js" / "state.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="prometheusRulesPanel"', index_html)
+        self.assertIn('id="prometheusRulesList"', index_html)
+        self.assertIn("prometheusRules", state_js)
+        self.assertIn("fetchPrometheusRules", client_js)
+        self.assertIn('"/api/prometheus/rules"', client_js)
+        self.assertIn("function renderPrometheusRules()", app_js)
+        self.assertIn("state.prometheusRules?.rules", app_js)
+        self.assertIn("renderPrometheusRules();", app_js)
+        self.assertIn("missingRules", app_js)
+        self.assertIn('path == "/api/prometheus/rules"', backend_py)
+        self.assertIn(".prometheus-rules-panel", styles_css)
+
     def test_target_diagnostics_are_visible_in_data_quality_blocks(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")

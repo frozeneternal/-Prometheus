@@ -26,6 +26,7 @@ import {
   fetchDashboard,
   fetchMetricSeries,
   fetchPrometheusAlerts,
+  fetchPrometheusRules,
 } from "./client.js";
 import { $, camelToKebab, escapeHtml } from "./dom.js";
 import {
@@ -118,6 +119,25 @@ function unavailableAlertsPayload(error) {
   };
 }
 
+function unavailableRulesPayload(error) {
+  return {
+    ok: false,
+    available: false,
+    status: "unavailable",
+    message: error?.message || "Prometheus 规则接口不可用",
+    summary: {
+      expected: 0,
+      loaded: 0,
+      missing: 0,
+      unhealthy: 0,
+      missingRules: [],
+      unhealthyRules: [],
+      actionRequired: true,
+    },
+    rules: [],
+  };
+}
+
 async function loadPrometheusAlerts() {
   try {
     return await fetchPrometheusAlerts();
@@ -126,15 +146,25 @@ async function loadPrometheusAlerts() {
   }
 }
 
+async function loadPrometheusRules() {
+  try {
+    return await fetchPrometheusRules();
+  } catch (error) {
+    return unavailableRulesPayload(error);
+  }
+}
+
 async function refreshDashboard() {
   $("#refreshButton").disabled = true;
   try {
-    const [dashboard, prometheusAlerts] = await Promise.all([
+    const [dashboard, prometheusAlerts, prometheusRules] = await Promise.all([
       fetchDashboard(),
       loadPrometheusAlerts(),
+      loadPrometheusRules(),
     ]);
     state.dashboard = dashboard;
     state.prometheusAlerts = prometheusAlerts;
+    state.prometheusRules = prometheusRules;
     render();
   } catch (error) {
     renderError(error);
@@ -159,6 +189,8 @@ function renderError(error) {
   $("#accountSecurityPanel").classList.add("hidden");
   $("#prometheusAlertsPanel").classList.add("hidden");
   $("#prometheusAlertsList").innerHTML = "";
+  $("#prometheusRulesPanel").classList.add("hidden");
+  $("#prometheusRulesList").innerHTML = "";
   $("#unmanagedTargetsPanel").classList.add("hidden");
   $("#unmanagedTargetsList").innerHTML = "";
   $("#emergencyRunbookPanel").classList.add("hidden");
@@ -198,6 +230,7 @@ function render() {
   renderPlatformHealth();
   renderAuthControls();
   renderPrometheusAlerts();
+  renderPrometheusRules();
   renderUnmanagedTargets();
   renderEmergencyRunbook();
   renderGroups();
@@ -388,6 +421,82 @@ function prometheusAlertCard(alert) {
       <p class="muted">${escapeHtml(meta)}</p>
       ${alert.description ? `<p>${escapeHtml(alert.description)}</p>` : ""}
       <p class="alert-action">应急建议：${escapeHtml(alert.actionHint || "查看 Prometheus 告警详情并按应急处置执行。")}</p>
+    </article>
+  `;
+}
+
+function renderPrometheusRules() {
+  const panel = $("#prometheusRulesPanel");
+  const rules = state.prometheusRules?.rules || [];
+  const summary = state.prometheusRules?.summary || {
+    expected: 0,
+    loaded: 0,
+    missing: 0,
+    unhealthy: 0,
+    missingRules: [],
+    unhealthyRules: [],
+  };
+  if (!state.prometheusRules) {
+    panel.classList.add("hidden");
+    $("#prometheusRulesList").innerHTML = "";
+    return;
+  }
+
+  const level = state.prometheusRules.available === false
+    ? "warning"
+    : summary.missing || summary.unhealthy
+      ? "critical"
+      : "ok";
+  panel.className = `prometheus-rules-panel ${level}`;
+  $("#prometheusRulesBadge").className = `prometheus-rules-badge ${level}`;
+  $("#prometheusRulesBadge").textContent = String(summary.missing || summary.unhealthy || summary.loaded || 0);
+  $("#prometheusRulesSummary").textContent = state.prometheusRules.available === false
+    ? `规则接口不可用：${state.prometheusRules.message || "未知错误"}`
+    : `预期 ${summary.expected || 0} 条，已加载 ${summary.loaded || 0} 条，缺失 ${summary.missing || 0} 条，异常 ${summary.unhealthy || 0} 条`;
+
+  if (state.prometheusRules.available === false) {
+    $("#prometheusRulesList").innerHTML = `
+      <article class="prometheus-rule-item warning">
+        <div class="prometheus-rule-item-head">
+          <strong>规则健康不可确认</strong>
+          <span>warning</span>
+        </div>
+        <p>${escapeHtml(state.prometheusRules.message || "")}</p>
+        <p class="alert-action">应急建议：检查 Prometheus /api/v1/rules、规则文件路径和 Prometheus reload 日志。</p>
+      </article>
+    `;
+    return;
+  }
+
+  const missingCards = (summary.missingRules || []).map((name) => `
+    <article class="prometheus-rule-item critical">
+      <div class="prometheus-rule-item-head">
+        <strong>${escapeHtml(name)}</strong>
+        <span>missing</span>
+      </div>
+      <p class="alert-action">应急建议：确认 ops-alerts.yml 已写入 Prometheus rule_files，并 reload Prometheus。</p>
+    </article>
+  `);
+  const ruleCards = rules.map(prometheusRuleCard);
+  $("#prometheusRulesList").innerHTML = missingCards.concat(ruleCards).join("");
+}
+
+function prometheusRuleCard(rule) {
+  const health = rule.health || "unknown";
+  const level = health === "ok" ? "ok" : "critical";
+  const meta = [
+    rule.group ? `group ${rule.group}` : "",
+    rule.file ? `file ${rule.file}` : "",
+    rule.state ? `state ${rule.state}` : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <article class="prometheus-rule-item ${escapeHtml(level)}">
+      <div class="prometheus-rule-item-head">
+        <strong>${escapeHtml(rule.name || "Prometheus rule")}</strong>
+        <span>${escapeHtml(health)}</span>
+      </div>
+      ${meta ? `<p class="muted">${escapeHtml(meta)}</p>` : ""}
+      ${rule.lastError ? `<p>${escapeHtml(rule.lastError)}</p>` : ""}
     </article>
   `;
 }

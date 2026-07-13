@@ -22,6 +22,10 @@ export function fetchPrometheusAlerts() {
   return getJson("/api/prometheus/alerts");
 }
 
+export function fetchPrometheusRules() {
+  return getJson("/api/prometheus/rules");
+}
+
 export function fetchMetricSeries({ serverId, metric, minutes = 60 }) {
   const params = new URLSearchParams({
     serverId,
