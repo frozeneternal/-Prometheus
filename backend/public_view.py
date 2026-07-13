@@ -3,7 +3,7 @@ from __future__ import annotations
 from backend.auth import auth_policy, configured_users, public_user, users_enabled
 from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
 from backend.expiry import resource_config_records, safe_resource_renew_url
-from backend.inventory import config_list_records
+from backend.inventory import config_dict_field, config_list_records
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -41,7 +41,7 @@ def public_auto_recovery(entity: dict, default_action_server_id: str = "") -> di
 
 
 def public_cert_renewal(website: dict, default_action_server_id: str = "") -> dict:
-    raw = website.get("certRenewal") or {}
+    raw, _invalid_raw = config_dict_field(website, "certRenewal")
     return {
         "enabled": bool(raw.get("enabled")),
         "actionId": raw.get("actionId", ""),
@@ -173,7 +173,7 @@ def public_manual_backup(server: dict, default_action_server_id: str = "") -> di
 
 
 def public_manual_cert_renewal(website: dict, default_action_server_id: str = "") -> dict:
-    raw = website.get("manualCertRenewal") or {}
+    raw, _invalid_raw = config_dict_field(website, "manualCertRenewal")
     if raw.get("actionId"):
         action_server_id = raw.get("actionServerId", default_action_server_id)
         return {

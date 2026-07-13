@@ -7,6 +7,7 @@ from typing import Callable
 
 from backend.actions import find_action
 from backend.config import find_server
+from backend.inventory import config_dict_field
 
 
 def _empty_state(_target_type: str, _target_id: str) -> dict:
@@ -137,7 +138,7 @@ def can_trigger_cert_renewal(
     *,
     now: float | None = None,
 ) -> tuple[bool, str]:
-    renewal = website.get("certRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
     if not renewal.get("enabled"):
         return False, "证书自动续期未启用。"
 
@@ -254,7 +255,7 @@ def record_manual_cert_renewal_result(
 
 
 def resolve_cert_renewal_action(config: dict, website: dict) -> tuple[dict | None, dict | None, str]:
-    renewal = website.get("certRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
     action_server_id = renewal.get("actionServerId") or website.get("serverId") or ""
     action_id = renewal.get("actionId") or ""
     if not action_server_id or not action_id:
@@ -287,7 +288,7 @@ def maybe_trigger_cert_renewal(
     target_id = str(website.get("id") or "")
     state = active_runtime.get_state("website-cert", target_id)
     reason = certificate_reason(snapshot, website)
-    renewal_config = website.get("certRenewal") or {}
+    renewal_config, _invalid_renewal = config_dict_field(website, "certRenewal")
     enabled = bool(renewal_config.get("enabled"))
     cert_expires_in = cert_expiry_metric(snapshot)
     invalid_cert_metric = has_invalid_cert_expiry_metric(snapshot)

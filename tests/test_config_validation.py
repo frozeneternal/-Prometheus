@@ -705,6 +705,30 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("cert-renewal-verification-timeout-invalid:bad-site", issue_ids)
         self.assertIn("cert-renewal-verification-timeout-invalid:zero-site", issue_ids)
 
+    def test_config_validation_reports_malformed_cert_renewal_objects(self) -> None:
+        config = {
+            "servers": [{"id": "ops-host", "actions": []}],
+            "websites": [
+                {
+                    "id": "bad-cert-config",
+                    "serverId": "ops-host",
+                    "url": "https://bad-cert.example.test/",
+                    "certRenewal": "enabled",
+                    "manualCertRenewal": ["renew"],
+                }
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issues = {issue["id"]: issue for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("cert-renewal-config-invalid:bad-cert-config", issues)
+        self.assertIn("manual-cert-renewal-config-invalid:bad-cert-config", issues)
+        self.assertIn("cert-renewal-handling-missing:bad-cert-config", issues)
+        self.assertEqual(issues["cert-renewal-config-invalid:bad-cert-config"]["severity"], "error")
+
     def test_config_validation_reports_https_site_without_cert_renewal_handling(self) -> None:
         config = {
             "servers": [

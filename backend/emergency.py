@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.inventory import config_dict_field
+
 
 SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 TYPE_RANK = {
@@ -338,7 +340,7 @@ def _backup_item(server: dict) -> dict | None:
 
 
 def _cert_renewal_item(website: dict, recovery_log_lookup: dict[str, dict] | None = None) -> dict | None:
-    renewal = website.get("certRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
     if not renewal.get("enabled") or str(renewal.get("status") or "") != "failed":
         return None
 
@@ -381,7 +383,7 @@ def _website_item(website: dict, recovery_log_lookup: dict[str, dict] | None = N
     recovery = website.get("autoRecovery") or {}
     recovery_status = str(recovery.get("status") or "idle")
     last_log_id = str(recovery.get("lastLogId") or "")
-    renewal = website.get("certRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
     next_steps = [
         "先确认 blackbox 探测目标 URL 与配置完全一致。",
         "检查网站状态码、响应时间和证书剩余时间，区分服务中断和证书风险。",

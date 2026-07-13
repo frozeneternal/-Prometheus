@@ -14,7 +14,7 @@ from backend.exporter_diagnostics import empty_exporter_diagnostics
 from backend.expiry import resource_expiry_items, resource_expiry_summary
 from backend.emergency import emergency_items, emergency_summary
 from backend.health import data_quality_summary
-from backend.inventory import config_list_records
+from backend.inventory import config_dict_field, config_list_records
 from backend.platform_health import platform_health_summary
 from backend.prometheus import prometheus_ready_status
 from backend.prometheus import prometheus_active_targets, target_diagnostics_for_labels
@@ -540,7 +540,7 @@ def _cert_renewal_summary(websites: list[dict]) -> dict:
     unknown_expiry = 0
 
     for website in websites:
-        renewal = website.get("certRenewal") or {}
+        renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
         status = str(renewal.get("status") or "idle")
         statuses[status] = statuses.get(status, 0) + 1
         if renewal.get("enabled"):

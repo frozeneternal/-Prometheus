@@ -7,6 +7,7 @@ from typing import Callable
 from backend.auth import public_user
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
+from backend.inventory import config_dict_field
 from backend.public_view import public_manual_cert_renewal, public_manual_recovery
 
 
@@ -294,7 +295,7 @@ def persist_cert_renewal_enabled(
     if website is None:
         return 404, {"ok": False, "message": "网站不存在。"}
 
-    renewal = website.get("certRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
     default_action_server_id = website.get("serverId") or ""
     if enabled:
         inferred = public_manual_cert_renewal(website, default_action_server_id)
@@ -317,13 +318,15 @@ def persist_cert_renewal_enabled(
                 "message": f"证书续期动作未允许后台自动执行 allowAuto：{action_server_id}/{action_id}。",
             }
 
-        renewal = website.setdefault("certRenewal", {})
+        renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
+        website["certRenewal"] = renewal
         renewal["actionServerId"] = action_server_id
         renewal["actionId"] = action_id
         renewal.setdefault("renewBeforeDays", 14)
         renewal.setdefault("cooldownSeconds", 86400)
     else:
-        renewal = website.setdefault("certRenewal", {})
+        renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
+        website["certRenewal"] = renewal
 
     renewal["enabled"] = bool(enabled)
     active_runtime.save_config_raw(raw_config)

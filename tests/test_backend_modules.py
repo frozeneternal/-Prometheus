@@ -1163,6 +1163,49 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(logs[0]["sourceIp"], "10.0.0.10")
         self.assertIn("启用", logs[0]["message"])
 
+    def test_settings_module_replaces_malformed_cert_renewal_when_enabling(self) -> None:
+        from backend.settings import SettingsRuntime, persist_cert_renewal_enabled
+
+        raw_config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "renew-cert", "enabled": True, "allowAuto": True}],
+                }
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "serverId": "ops-host",
+                    "certRenewal": "enabled",
+                    "manualCertRenewal": {"actionServerId": "ops-host", "actionId": "renew-cert"},
+                }
+            ],
+        }
+        saved: list[dict] = []
+        resets: list[tuple[str, str, str]] = []
+        logs: list[dict] = []
+        runtime = SettingsRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+            append_recovery_log=lambda _config, event: logs.append(event),
+        )
+
+        status, payload = persist_cert_renewal_enabled("site1", True, runtime=runtime)
+
+        renewal = saved[0]["websites"][0]["certRenewal"]
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertIsInstance(renewal, dict)
+        self.assertTrue(renewal["enabled"])
+        self.assertEqual(renewal["actionServerId"], "ops-host")
+        self.assertEqual(renewal["actionId"], "renew-cert")
+        self.assertEqual(len(resets), 1)
+        self.assertEqual(len(logs), 1)
+
     def test_settings_module_rejects_cert_renewal_when_action_is_not_auto_allowed(self) -> None:
         from backend.settings import SettingsRuntime, persist_cert_renewal_enabled
 
@@ -1622,6 +1665,30 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("stdout/stderr", steps)
         self.assertIn("ACME", steps)
         self.assertIn("DNS/CDN", steps)
+
+    def test_emergency_module_tolerates_malformed_cert_renewal_object(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "warning",
+                    "status": "online",
+                    "issues": ["certificate expires soon"],
+                    "certRenewal": "failed",
+                }
+            ],
+            resources=[],
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], "website:site1:warning")
+        self.assertNotEqual(items[0]["targetType"], "website-cert")
 
     def test_emergency_module_includes_failed_cert_renewal_log_summary(self) -> None:
         from backend.emergency import emergency_items
@@ -2817,6 +2884,42 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["notApplicable"], 1)
         self.assertEqual(summary["statuses"]["failed"], 1)
         self.assertEqual(summary["statuses"]["blocked"], 1)
+
+    def test_dashboard_payload_tolerates_malformed_cert_renewal_summary_state(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        runtime = DashboardRuntime(
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            website_snapshot=lambda _config, website: {
+                "id": website["id"],
+                "name": website["name"],
+                "url": website["url"],
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {},
+                "errors": {},
+            },
+            active_targets=lambda _config: [],
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_cert_renewal=lambda _config, _website, _snapshot: "failed",
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [],
+                "websites": [{"id": "site1", "name": "Site 1", "url": "https://example.test"}],
+            },
+            runtime=runtime,
+        )
+
+        summary = payload["certRenewalSummary"]
+        self.assertEqual(summary["total"], 1)
+        self.assertEqual(summary["enabled"], 0)
+        self.assertEqual(summary["statuses"]["idle"], 1)
+        self.assertEqual(summary["unknownExpiry"], 1)
 
     def test_dashboard_target_coverage_keeps_collector_down_targets_unknown(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
@@ -4048,6 +4151,41 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIsNone(result["expiresInDays"])
         self.assertIn("certExpiresIn", result["message"])
 
+    def test_certificates_module_treats_malformed_cert_renewal_as_disabled_without_app_import(self) -> None:
+        from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
+
+        states: dict[str, dict] = {}
+        runtime = CertRenewalRuntime(
+            now=lambda: 1000.0,
+            get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+            set_state=lambda target_type, target_id, state: states.__setitem__(
+                f"{target_type}:{target_id}", state.copy()
+            ),
+            execute_server_action=lambda *_args, **_kwargs: self.fail("malformed renewal config must not run commands"),
+        )
+        website = {
+            "id": "site1",
+            "name": "Site 1",
+            "url": "https://example.test/",
+            "certRenewal": "enabled",
+        }
+        snapshot = {
+            "id": "site1",
+            "name": "Site 1",
+            "status": "online",
+            "health": "warning",
+            "issues": ["cert expires soon"],
+            "metrics": {"certExpiresIn": 3 * 86400},
+            "dataQuality": {"trusted": True},
+        }
+
+        result = maybe_trigger_cert_renewal({"servers": []}, website, snapshot, runtime=runtime)
+
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["status"], "idle")
+        self.assertEqual(result["renewBeforeDays"], 14)
+        self.assertIn("lastReason", states["website-cert:site1"])
+
     def test_certificates_module_marks_http_site_certificate_not_applicable_without_app_import(self) -> None:
         from backend.certificates import CertRenewalRuntime, maybe_trigger_cert_renewal
 
@@ -4680,6 +4818,34 @@ class BackendModuleTests(unittest.TestCase):
         renewal = view["websites"][0]["certRenewal"]
         self.assertEqual(renewal["renewBeforeDays"], 14)
         self.assertEqual(renewal["cooldownSeconds"], 86400)
+
+    def test_public_view_tolerates_malformed_cert_renewal_objects(self) -> None:
+        from backend import public_view
+
+        view = public_view.public_config(
+            {
+                "monitoring": {},
+                "servers": [{"id": "srv1"}],
+                "websites": [
+                    {
+                        "id": "site1",
+                        "serverId": "srv1",
+                        "url": "https://example.test/",
+                        "certRenewal": "enabled",
+                        "manualCertRenewal": ["renew"],
+                    }
+                ],
+                "resources": [],
+            }
+        )
+
+        website = view["websites"][0]
+        self.assertFalse(website["certRenewal"]["enabled"])
+        self.assertEqual(website["certRenewal"]["actionId"], "")
+        self.assertEqual(website["certRenewal"]["actionServerId"], "srv1")
+        self.assertEqual(website["certRenewal"]["renewBeforeDays"], 14)
+        self.assertFalse(website["manualCertRenewal"]["available"])
+        self.assertEqual(website["manualCertRenewal"]["actionId"], "")
 
     def test_public_view_tolerates_invalid_auto_backup_policy_values(self) -> None:
         from backend import public_view

@@ -4,7 +4,7 @@ import re
 
 from .auth import ROLE_RANK, login_attempt_key
 from .expiry import parse_expiry_datetime, resource_config_records, resource_handling_state, safe_resource_renew_url
-from .inventory import config_list_records
+from .inventory import config_dict_field, config_list_records
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -571,7 +571,7 @@ def auto_recovery_policy_issues(owner: dict, owner_type: str) -> list[dict]:
 
 def cert_renewal_policy_issues(website: dict) -> list[dict]:
     website_id = str(website.get("id") or "")
-    renewal = website.get("certRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
     issues = []
 
     if positive_int_value(renewal.get("renewBeforeDays", 14)) is None:
@@ -632,14 +632,43 @@ def cert_renewal_policy_issues(website: dict) -> list[dict]:
     return issues
 
 
+def cert_renewal_config_shape_issues(website: dict) -> list[dict]:
+    website_id = str(website.get("id") or "")
+    issues = []
+    _renewal, invalid_renewal = config_dict_field(website, "certRenewal")
+    if invalid_renewal:
+        issues.append(
+            make_issue(
+                f"cert-renewal-config-invalid:{website_id}",
+                "error",
+                "certRenewal must be a JSON object; the platform will ignore this malformed automatic renewal config.",
+                "website",
+                website_id,
+            )
+        )
+
+    _manual_renewal, invalid_manual_renewal = config_dict_field(website, "manualCertRenewal")
+    if invalid_manual_renewal:
+        issues.append(
+            make_issue(
+                f"manual-cert-renewal-config-invalid:{website_id}",
+                "error",
+                "manualCertRenewal must be a JSON object; the platform will ignore this malformed manual renewal config.",
+                "website",
+                website_id,
+            )
+        )
+    return issues
+
+
 def cert_renewal_handling_issues(website: dict) -> list[dict]:
     website_id = str(website.get("id") or "")
     url = str(website.get("url") or "").strip().lower()
     if not url.startswith("https://"):
         return []
 
-    renewal = website.get("certRenewal") or {}
-    manual_renewal = website.get("manualCertRenewal") or {}
+    renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
+    manual_renewal, _invalid_manual_renewal = config_dict_field(website, "manualCertRenewal")
     has_automatic_action = bool(renewal.get("actionId") or renewal.get("actionServerId"))
     has_manual_action = bool(manual_renewal.get("actionId") or manual_renewal.get("actionServerId"))
     if has_automatic_action or has_manual_action:
@@ -969,6 +998,7 @@ def config_validation_summary(config: dict) -> dict:
         website_id = str(website.get("id") or "")
         issues.extend(prometheus_label_issues(website, "website"))
         issues.extend(metric_threshold_issues(website, "website", WEBSITE_THRESHOLD_KEYS))
+        issues.extend(cert_renewal_config_shape_issues(website))
         issues.extend(cert_renewal_handling_issues(website))
         server_id = str(website.get("serverId") or "")
         if server_id and server_id not in server_ids:
@@ -998,7 +1028,7 @@ def config_validation_summary(config: dict) -> dict:
                 )
             )
 
-        renewal = website.get("certRenewal") or {}
+        renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
         if renewal.get("enabled"):
             issues.extend(cert_renewal_policy_issues(website))
             issues.extend(
@@ -1029,7 +1059,7 @@ def config_validation_summary(config: dict) -> dict:
                 )
             )
 
-        manual_renewal = website.get("manualCertRenewal") or {}
+        manual_renewal, _invalid_manual_renewal = config_dict_field(website, "manualCertRenewal")
         if manual_renewal.get("actionId") or manual_renewal.get("actionServerId"):
             issues.extend(
                 validate_action_reference(
