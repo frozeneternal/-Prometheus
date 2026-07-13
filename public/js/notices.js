@@ -18,6 +18,7 @@ export function renderSystemNotice() {
   const certRenewalSummary = state.dashboard?.certRenewalSummary;
   const resourceExpirySummary = state.dashboard?.resourceExpirySummary;
   const accountSecurity = state.dashboard?.accountSecurity;
+  const accountRuntimeSecurity = state.dashboard?.accountRuntimeSecurity;
   const actionSafetySummary = state.dashboard?.actionSafetySummary;
   const configSource = state.dashboard?.configSource || {};
 
@@ -96,6 +97,10 @@ export function renderSystemNotice() {
     const accountIssueCount = (accountSecurity.issues || []).length;
     const accountSeverityText = accountSecurity.severity === "error" ? "严重" : "预警";
     messages.push(`账号安全：${accountSeverityText}，启用账号 ${accountSecurity.enabledUsers ?? 0}，管理员 ${accountSecurity.adminUsers ?? 0}，运维账号 ${accountSecurity.operatorUsers ?? 0}，问题 ${accountIssueCount}。`);
+  }
+
+  if (accountRuntimeSecurity && accountRuntimeSecurity.status !== "ok") {
+    messages.push(`账号运行态：锁定 ${accountRuntimeSecurity.lockedUsers ?? 0}，失败账号 ${accountRuntimeSecurity.failedUsers ?? 0}，失败次数 ${accountRuntimeSecurity.recentFailures ?? 0}，撤销会话 ${accountRuntimeSecurity.revokedSessions ?? 0}。`);
   }
 
   if (actionSafetySummary && actionSafetySummary.status !== "ok") {

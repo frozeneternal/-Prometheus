@@ -336,6 +336,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("accountSecurity.operatorUsers", notice_block)
         self.assertIn("accountSecurity.issues", notice_block)
 
+    def test_account_runtime_security_summary_is_visible_in_system_notice(self) -> None:
+        notice_block = notice_js()
+
+        self.assertIn("state.dashboard?.accountRuntimeSecurity", notice_block)
+        self.assertIn("账号运行态", notice_block)
+        self.assertIn("accountRuntimeSecurity.lockedUsers", notice_block)
+        self.assertIn("accountRuntimeSecurity.recentFailures", notice_block)
+        self.assertIn("accountRuntimeSecurity.revokedSessions", notice_block)
+
     def test_platform_health_summary_is_visible_in_system_notice(self) -> None:
         notice_block = notice_js()
 

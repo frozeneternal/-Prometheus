@@ -1962,6 +1962,46 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["invalidCommand"], 1)
         self.assertEqual(summary["actionRequired"], 3)
 
+    def test_account_runtime_security_summary_counts_lockouts_and_failures(self) -> None:
+        from backend.account_runtime_security import account_runtime_security_summary
+
+        summary = account_runtime_security_summary(
+            lockouts=[{"username": "ops"}, {"username": "admin"}],
+            login_attempts={
+                "ops": {"failures": [1000.0, 1001.0], "lockedUntil": 1100.0},
+                "viewer": {"failures": [1002.0], "lockedUntil": 0.0},
+            },
+            revoked_sessions={"sid1": 2000.0, "sid2": 3000.0},
+        )
+
+        self.assertEqual(summary["status"], "attention")
+        self.assertEqual(summary["lockedUsers"], 2)
+        self.assertEqual(summary["failedUsers"], 2)
+        self.assertEqual(summary["recentFailures"], 3)
+        self.assertEqual(summary["revokedSessions"], 2)
+
+    def test_dashboard_payload_includes_account_runtime_security_summary(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            account_runtime_security=lambda: {
+                "status": "attention",
+                "lockedUsers": 1,
+                "failedUsers": 2,
+                "recentFailures": 3,
+                "revokedSessions": 1,
+            },
+        )
+
+        payload = dashboard_payload({"monitoring": {}, "servers": [], "websites": []}, runtime=runtime)
+
+        self.assertEqual(payload["accountRuntimeSecurity"]["status"], "attention")
+        self.assertEqual(payload["accountRuntimeSecurity"]["lockedUsers"], 1)
+        self.assertEqual(payload["accountRuntimeSecurity"]["recentFailures"], 3)
+
     def test_dashboard_payload_summarizes_active_and_recovered_incidents(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 

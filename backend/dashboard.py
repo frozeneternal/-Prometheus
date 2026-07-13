@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from backend.account_runtime_security import account_runtime_security_summary
 from backend.action_safety import action_safety_summary
 from backend.config import DEFAULT_CONFIG, config_source_info
 from backend.auth_security import account_security_summary
@@ -57,6 +58,10 @@ def _default_exporter_diagnostics(_config: dict) -> dict:
     return empty_exporter_diagnostics()
 
 
+def _default_account_runtime_security() -> dict:
+    return account_runtime_security_summary()
+
+
 def _ignore_dashboard(_payload: dict) -> None:
     return None
 
@@ -76,6 +81,7 @@ class DashboardRuntime:
     config_validation: Callable[[dict], dict] = config_validation_summary
     platform_health: Callable[[dict], dict] = _default_platform_health
     exporter_diagnostics: Callable[[dict], dict] = _default_exporter_diagnostics
+    account_runtime_security: Callable[[], dict] = _default_account_runtime_security
     active_targets: Callable[[dict], list[dict]] = prometheus_active_targets
     get_recovery_logs: Callable[[], list[dict]] = _empty_logs
     get_incident_logs: Callable[[], list[dict]] = _empty_logs
@@ -521,6 +527,7 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "configSource": active_runtime.config_source(),
         "configValidation": config_validation,
         "accountSecurity": account_security_summary(config),
+        "accountRuntimeSecurity": active_runtime.account_runtime_security(),
         "actionSafetySummary": action_safety_summary(config),
         "platformHealth": platform_health,
         "exporterDiagnostics": exporter_diagnostics,
