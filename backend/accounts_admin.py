@@ -48,6 +48,21 @@ def account_user_views(config: dict) -> list[dict]:
     return [account_user_view(user) for user in users if user.get("username")]
 
 
+def account_user_issues(config: dict) -> list[dict]:
+    users, _invalid_entries = config_list_records(config, "users")
+    issues = []
+    for username in duplicate_username_keys(users):
+        issues.append(
+            {
+                "id": f"duplicate-user-username:{username}",
+                "severity": "error",
+                "message": f"账号配置存在 username 重复：{username}。账号新增、编辑、删除已暂停，请先手动修复重复账号。",
+                "duplicateUsernames": [username],
+            }
+        )
+    return issues
+
+
 def _copy_config(config: dict) -> dict:
     return json.loads(json.dumps(config or {}))
 
@@ -158,6 +173,7 @@ def account_users_payload(
     return 200, {
         "ok": True,
         "users": account_user_views(raw_config),
+        "issues": account_user_issues(raw_config),
         "user": auth_payload.get("user"),
     }
 
@@ -255,6 +271,7 @@ def upsert_account_user_payload(
         "ok": True,
         "message": "账号已保存。",
         "users": account_user_views(raw_config),
+        "issues": account_user_issues(raw_config),
         "user": auth_payload.get("user"),
     }
 
@@ -316,5 +333,6 @@ def delete_account_user_payload(
         "ok": True,
         "message": "账号已删除。",
         "users": account_user_views(raw_config),
+        "issues": account_user_issues(raw_config),
         "user": auth_payload.get("user"),
     }

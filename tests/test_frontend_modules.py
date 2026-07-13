@@ -897,6 +897,20 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('parsed.path == "/api/auth/users/delete"', backend_py)
         self.assertIn('authorize_operation(config, body, "admin")', account_admin_py)
 
+    def test_admin_account_management_surfaces_duplicate_username_issues(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+        state_js = (PUBLIC / "js" / "state.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+        account_admin_py = (ROOT / "backend" / "accounts_admin.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountUserIssueList"', index_html)
+        self.assertIn("account-management-issues", styles_css)
+        self.assertIn("accountUserIssues", state_js)
+        self.assertIn("state.accountUserIssues = payload.issues || [];", accounts_js)
+        self.assertIn("duplicateUsernames", account_admin_py)
+        self.assertIn("username 重复", account_admin_py)
+
     def test_admin_account_form_surfaces_password_policy(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")

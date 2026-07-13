@@ -10,6 +10,7 @@ export const state = {
   sessionToken: window.localStorage.getItem("monitorSessionToken") || "",
   currentUser: null,
   accountUsers: [],
+  accountUserIssues: [],
   accountLockouts: [],
   accountAuditLogs: [],
   accountAuditPage: { total: 0, limit: 50, offset: 0, hasMore: false },

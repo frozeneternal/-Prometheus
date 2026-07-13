@@ -589,6 +589,27 @@ select {
   gap: 10px;
 }
 
+.account-management-issues {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #f3b0b0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bad-bg);
+}
+
+.account-management-issues:empty {
+  display: none;
+}
+
+.account-management-issues p {
+  margin: 0;
+  color: var(--bad);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .account-user-form {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 120px minmax(130px, 1fr) auto auto auto minmax(120px, 1fr);

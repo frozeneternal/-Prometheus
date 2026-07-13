@@ -588,6 +588,32 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(saved, [])
         self.assertEqual(audit_events, [])
 
+    def test_accounts_admin_list_payload_reports_duplicate_username_issues_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, account_users_payload
+        from backend.auth import hash_password
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].append(
+            {
+                "username": " ADMIN ",
+                "displayName": "Duplicate Admin",
+                "role": "admin",
+                "passwordHash": hash_password("duplicate-pass", salt="duplicate-salt", iterations=1000),
+            }
+        )
+        config = json.loads(json.dumps(raw_config))
+        runtime = AccountsAdminRuntime(load_config_raw=lambda: raw_config)
+
+        status, payload = account_users_payload(config, {"sessionToken": token}, runtime=runtime)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["issues"][0]["id"], "duplicate-user-username:admin")
+        self.assertEqual(payload["issues"][0]["severity"], "error")
+        self.assertEqual(payload["issues"][0]["duplicateUsernames"], ["admin"])
+        self.assertIn("username 重复", payload["issues"][0]["message"])
+        self.assertIn("已暂停", payload["issues"][0]["message"])
+
     def test_accounts_admin_module_respects_password_min_length_policy_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
 

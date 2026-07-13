@@ -193,14 +193,17 @@ export async function loadAccountLockouts() {
 export async function loadAccountUsers() {
   if (!state.sessionToken || !isAdminUser()) {
     state.accountUsers = [];
+    state.accountUserIssues = [];
     return;
   }
 
   try {
     const payload = await fetchAccountUsers(state.sessionToken);
     state.accountUsers = payload.users || [];
+    state.accountUserIssues = payload.issues || [];
   } catch (error) {
     state.accountUsers = [];
+    state.accountUserIssues = [];
   }
 }
 
@@ -232,12 +235,14 @@ export function renderAccountManagement() {
   if (!isAdminUser() && !bootstrapFirstAdmin) {
     panel.classList.add("hidden");
     $("#accountUserList").innerHTML = "";
+    $("#accountUserIssueList").innerHTML = "";
     $("#accountUserSummary").textContent = "";
     $("#accountPasswordPolicy").textContent = "";
     return;
   }
 
   const users = state.accountUsers || [];
+  const issues = state.accountUserIssues || [];
   panel.classList.remove("hidden");
   renderAccountPasswordPolicy();
   $("#accountRole").disabled = bootstrapFirstAdmin;
@@ -245,6 +250,9 @@ export function renderAccountManagement() {
   $("#accountUserSummary").textContent = bootstrapFirstAdmin
     ? "创建首个管理员账号"
     : (users.length ? `${users.length} 个账号` : "当前没有账号");
+  $("#accountUserIssueList").innerHTML = issues.length
+    ? issues.map((issue) => `<p>${escapeHtml(issue.message || "账号配置存在风险，请先核查。")}</p>`).join("")
+    : "";
   $("#accountUserList").innerHTML = users.length
     ? users.map((user) => `
       <div class="account-user-item ${user.enabled ? "" : "disabled"}">
@@ -297,6 +305,7 @@ export function renderAccountLockouts() {
     panel.classList.add("hidden");
     $("#accountManagementPanel").classList.add("hidden");
     $("#accountUserList").innerHTML = "";
+    $("#accountUserIssueList").innerHTML = "";
     $("#accountUserSummary").textContent = "";
     $("#accountLockoutList").innerHTML = "";
     $("#accountLockoutSummary").textContent = "";
@@ -395,6 +404,7 @@ export async function saveAccountUser(event) {
       auth: authPayload(),
     });
     state.accountUsers = payload.users || [];
+    state.accountUserIssues = payload.issues || [];
     if (state.config?.auth) {
       state.config.auth.users = state.accountUsers;
       if (bootstrapFirstAdmin) state.config.auth.mode = "users";
@@ -431,6 +441,7 @@ export async function deleteManagedAccount(username) {
   try {
     const payload = await removeAccountUser({ username, auth: { sessionToken: state.sessionToken } });
     state.accountUsers = payload.users || [];
+    state.accountUserIssues = payload.issues || [];
     if (state.config?.auth) state.config.auth.users = state.accountUsers;
     await loadAccountAudit();
     renderAuthControls();
@@ -489,6 +500,7 @@ export async function logoutCurrentUser() {
     state.sessionToken = "";
     state.currentUser = null;
     state.accountUsers = [];
+    state.accountUserIssues = [];
     state.accountLockouts = [];
     state.accountAuditLogs = [];
     window.localStorage.removeItem("monitorSessionToken");
