@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -9,6 +10,14 @@ from backend.subprocess_utils import hidden_subprocess_kwargs
 
 
 MAX_OUTPUT_CHARS = 20000
+REDACTED_TEXT = "[REDACTED]"
+SENSITIVE_QUERY_PATTERN = re.compile(
+    r"(?i)([?&](?:access[_-]?token|api[_-]?key|password|passwd|pwd|secret|session[_-]?token|token)=)([^&\s]+)"
+)
+SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|pwd|secret|api[_-]?key|access[_-]?key|access[_-]?token|session[_-]?token|token)\s*([=:])\s*([^\s'\";]+)"
+)
+BEARER_PATTERN = re.compile(r"(?i)\b(authorization\s*[:=]\s*bearer\s+)([^\s'\"]+)")
 
 
 def _noop_append(_config: dict, _event: dict) -> None:
@@ -56,6 +65,17 @@ def trim_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         value = value.decode("utf-8", errors="replace")
     return (value or "")[:MAX_OUTPUT_CHARS]
+
+
+def redact_sensitive_output(value: str | bytes | None) -> str:
+    text = trim_output(value)
+    text = BEARER_PATTERN.sub(lambda match: f"{match.group(1)}{REDACTED_TEXT}", text)
+    text = SENSITIVE_QUERY_PATTERN.sub(lambda match: f"{match.group(1)}{REDACTED_TEXT}", text)
+    text = SENSITIVE_ASSIGNMENT_PATTERN.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}{REDACTED_TEXT}",
+        text,
+    )
+    return text
 
 
 def normalize_success_codes(action: dict) -> set[int]:
@@ -292,8 +312,8 @@ def execute_server_action(
             "message": "操作完成。" if ok else "操作返回了非零退出码。",
             "returnCode": completed.returncode,
             "durationSeconds": round(active_runtime.now() - started, 2),
-            "stdout": trim_output(completed.stdout),
-            "stderr": trim_output(completed.stderr),
+            "stdout": redact_sensitive_output(completed.stdout),
+            "stderr": redact_sensitive_output(completed.stderr),
         }
         http_status = 200 if ok else 500
     except subprocess.TimeoutExpired as exc:
@@ -302,8 +322,8 @@ def execute_server_action(
             "message": "操作超时。",
             "returnCode": None,
             "durationSeconds": round(active_runtime.now() - started, 2),
-            "stdout": trim_output(exc.stdout),
-            "stderr": trim_output(exc.stderr),
+            "stdout": redact_sensitive_output(exc.stdout),
+            "stderr": redact_sensitive_output(exc.stderr),
         }
         http_status = 504
     except FileNotFoundError as exc:
@@ -319,7 +339,7 @@ def execute_server_action(
     except Exception as exc:  # noqa: BLE001 - keep action endpoint diagnosable.
         payload = {
             "ok": False,
-            "message": str(exc),
+            "message": redact_sensitive_output(str(exc)),
             "returnCode": None,
             "durationSeconds": round(active_runtime.now() - started, 2),
             "stdout": "",

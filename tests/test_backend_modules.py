@@ -3214,6 +3214,47 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(appended[0]["actor"], {"username": "ops"})
         self.assertEqual(normalize_success_codes({"successReturnCodes": [0, 2]}), {0, 2})
 
+    def test_actions_module_redacts_sensitive_output_in_payload_and_log(self) -> None:
+        from backend.actions import ActionRuntime, execute_server_action
+
+        appended: list[dict] = []
+
+        class Completed:
+            returncode = 1
+            stdout = "password=plain-secret token: api-token invalid dns token"
+            stderr = "Authorization: Bearer bearer-token\nhttps://ops.example/renew?access_token=url-token&dryRun=1"
+
+        runtime = ActionRuntime(
+            now=lambda: 100.0,
+            runner=lambda _command, **_kwargs: Completed(),
+            append_recovery_log=lambda _config, event: appended.append(event),
+            public_user=lambda user: {"username": user.get("username")},
+            id_factory=lambda: "redacted-log",
+            cwd="C:\\ops-console",
+        )
+
+        status, payload = execute_server_action(
+            {},
+            {"id": "srv1", "name": "Server 1"},
+            {"id": "renew-cert", "name": "Renew certificate", "command": ["renew"]},
+            invocation="manual-cert-renewal",
+            target_type="website",
+            target_id="site1",
+            target_name="Site 1",
+            reason="manual",
+            actor={"username": "ops"},
+            runtime=runtime,
+        )
+
+        serialized = json.dumps({"payload": payload, "log": appended}, ensure_ascii=False)
+        self.assertEqual(status, 500)
+        self.assertNotIn("plain-secret", serialized)
+        self.assertNotIn("api-token", serialized)
+        self.assertNotIn("bearer-token", serialized)
+        self.assertNotIn("url-token", serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertIn("invalid dns token", serialized)
+
     def test_actions_default_runner_uses_hidden_windows_process(self) -> None:
         from backend import actions
         from backend.actions import ActionRuntime, execute_server_action
