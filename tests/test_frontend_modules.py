@@ -324,6 +324,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("resourceExpirySummary.critical", notice_block)
         self.assertIn("resourceExpirySummary.warning", notice_block)
         self.assertIn("resourceExpirySummary.unknown", notice_block)
+        self.assertIn("resourceExpirySummary.actionRequiredWithoutHandling", notice_block)
 
     def test_account_security_summary_is_visible_in_system_notice(self) -> None:
         notice_block = notice_js()

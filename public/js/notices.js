@@ -89,7 +89,7 @@ export function renderSystemNotice() {
   }
 
   if ((resourceExpirySummary?.actionRequired ?? 0) > 0) {
-    messages.push(`资源到期：需处理 ${resourceExpirySummary.actionRequired ?? 0}/${resourceExpirySummary.total ?? 0}，已过期 ${resourceExpirySummary.expired ?? 0}，严重 ${resourceExpirySummary.critical ?? 0}，预警 ${resourceExpirySummary.warning ?? 0}，未知 ${resourceExpirySummary.unknown ?? 0}。`);
+    messages.push(`资源到期：需处理 ${resourceExpirySummary.actionRequired ?? 0}/${resourceExpirySummary.total ?? 0}，已过期 ${resourceExpirySummary.expired ?? 0}，严重 ${resourceExpirySummary.critical ?? 0}，预警 ${resourceExpirySummary.warning ?? 0}，未知 ${resourceExpirySummary.unknown ?? 0}，缺处置入口 ${resourceExpirySummary.actionRequiredWithoutHandling ?? 0}。`);
   }
 
   if (accountSecurity && accountSecurity.severity !== "ok") {

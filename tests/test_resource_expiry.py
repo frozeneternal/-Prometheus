@@ -139,6 +139,26 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(summary["unknown"], 1)
         self.assertEqual(summary["actionRequired"], 4)
 
+    def test_resource_expiry_summary_counts_actionable_items_without_handling_path(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {"id": "expired", "name": "Expired", "expiresAt": "2026-07-01"},
+                {
+                    "id": "critical-handled",
+                    "name": "Critical Handled",
+                    "expiresAt": "2026-07-05",
+                    "renewUrl": "https://billing.example.com/critical",
+                },
+                {"id": "ok-missing", "name": "OK Missing", "expiresAt": "2026-12-01"},
+            ]
+        }
+
+        summary = app.resource_expiry_summary(app.resource_expiry_items(config, now=now))
+
+        self.assertEqual(summary["handlingMissing"], 2)
+        self.assertEqual(summary["actionRequiredWithoutHandling"], 1)
+
     def test_acknowledged_resource_expiry_is_not_action_required_until_ack_expires(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {

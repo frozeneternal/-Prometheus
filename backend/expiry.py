@@ -196,6 +196,8 @@ def resource_expiry_summary(items: list[dict]) -> dict:
         "ok": 0,
         "unknown": 0,
         "actionRequired": 0,
+        "handlingMissing": 0,
+        "actionRequiredWithoutHandling": 0,
     }
     for item in items:
         status = item.get("status", "unknown")
@@ -206,5 +208,9 @@ def resource_expiry_summary(items: list[dict]) -> dict:
             summary["acknowledged"] = summary.get("acknowledged", 0) + 1
         if item.get("actionRequired", status in {"expired", "critical", "warning", "unknown"}):
             summary["actionRequired"] += 1
+            if item.get("handlingReady") is False:
+                summary["actionRequiredWithoutHandling"] += 1
+        if item.get("handlingReady") is False:
+            summary["handlingMissing"] += 1
     summary.setdefault("acknowledged", 0)
     return summary
