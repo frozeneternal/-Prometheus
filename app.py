@@ -484,7 +484,6 @@ from backend.validation import config_validation_summary  # noqa: E402 - transit
 
 configure_action_runtime(
     ActionRuntime(
-        runner=lambda command, **kwargs: subprocess.run(command, **kwargs),
         append_recovery_log=append_recovery_log,
         public_user=public_user,
         cwd=str(BASE_DIR),

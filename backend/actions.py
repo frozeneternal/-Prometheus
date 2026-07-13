@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from backend.subprocess_utils import hidden_subprocess_kwargs
+
 
 MAX_OUTPUT_CHARS = 20000
 
@@ -18,7 +20,7 @@ def _anonymous_user(_user: dict) -> dict:
 
 
 def _default_runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-    return subprocess.run(command, **kwargs)
+    return subprocess.run(command, **hidden_subprocess_kwargs(kwargs))
 
 
 def _default_id() -> str:

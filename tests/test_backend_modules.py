@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import unittest
 import json
@@ -2443,6 +2444,7 @@ class BackendModuleTests(unittest.TestCase):
         def fake_run(command: list[str], **kwargs: object) -> Completed:
             captured["command"] = command
             captured["encoding"] = kwargs.get("encoding")
+            captured["creationflags"] = kwargs.get("creationflags", 0)
             return Completed()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2460,7 +2462,40 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("diagnose-exporters.ps1", command_text)
         self.assertNotIn("$args", command_text)
         self.assertEqual(captured["encoding"], "utf-8")
+        if os.name == "nt":
+            self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
         self.assertEqual(records[0]["Name"], "中文测试服务器")
+
+    def test_platform_health_runner_uses_hidden_powershell_window(self) -> None:
+        from backend import platform_health
+
+        captured: dict[str, object] = {}
+
+        class Completed:
+            returncode = 0
+            stdout = '{"localStack":[]}'
+            stderr = ""
+
+        def fake_run(command: list[str], **kwargs: object) -> Completed:
+            captured["command"] = command
+            captured["encoding"] = kwargs.get("encoding")
+            captured["creationflags"] = kwargs.get("creationflags", 0)
+            return Completed()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            script_dir = root / "scripts"
+            script_dir.mkdir()
+            (script_dir / "status-local-monitor.ps1").write_text("{}", encoding="utf-8")
+
+            with patch.object(platform_health.subprocess, "run", side_effect=fake_run):
+                payload = platform_health.run_status_script(root, timeout=5.0)
+
+        self.assertEqual(payload["localStack"], [])
+        self.assertIn("status-local-monitor.ps1", " ".join(str(part) for part in captured["command"]))
+        self.assertEqual(captured["encoding"], "utf-8")
+        if os.name == "nt":
+            self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
 
     def test_exporter_diagnostics_summary_reuses_last_success_after_runner_error(self) -> None:
         from backend import exporter_diagnostics
@@ -2728,6 +2763,48 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(appended[0]["id"], "log-fixed")
         self.assertEqual(appended[0]["actor"], {"username": "ops"})
         self.assertEqual(normalize_success_codes({"successReturnCodes": [0, 2]}), {0, 2})
+
+    def test_actions_default_runner_uses_hidden_windows_process(self) -> None:
+        from backend import actions
+        from backend.actions import ActionRuntime, execute_server_action
+
+        captured: dict[str, object] = {}
+
+        class Completed:
+            returncode = 0
+            stdout = "ran"
+            stderr = ""
+
+        def fake_run(command: list[str], **kwargs: object) -> Completed:
+            captured["command"] = command
+            captured["creationflags"] = kwargs.get("creationflags", 0)
+            return Completed()
+
+        runtime = ActionRuntime(
+            now=lambda: 100.0,
+            append_recovery_log=lambda _config, _event: None,
+            id_factory=lambda: "hidden-runner-log",
+            cwd="C:\\ops-console",
+        )
+
+        with patch.object(actions.subprocess, "run", side_effect=fake_run):
+            status, payload = execute_server_action(
+                {},
+                {"id": "srv1", "name": "Server 1"},
+                {"id": "restart", "name": "Restart", "command": ["restart"]},
+                invocation="manual-recovery",
+                target_type="server",
+                target_id="srv1",
+                target_name="Server 1",
+                reason="manual",
+                runtime=runtime,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(captured["command"], ["restart"])
+        if os.name == "nt":
+            self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
 
     def test_actions_module_records_source_ip_in_recovery_log(self) -> None:
         from backend.actions import ActionRuntime, execute_server_action

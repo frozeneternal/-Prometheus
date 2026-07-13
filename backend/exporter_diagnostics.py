@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from backend.subprocess_utils import hidden_subprocess_kwargs
+
 
 DEFAULT_ROOT = r"E:\ops-monitor"
 DEFAULT_CACHE_SECONDS = 120.0
@@ -90,12 +92,16 @@ def run_diagnostics_script(root: Path, timeout: float) -> list[dict]:
             "-Command",
             command,
         ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-        check=False,
+        **hidden_subprocess_kwargs(
+            {
+                "capture_output": True,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "timeout": timeout,
+                "check": False,
+            }
+        ),
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
