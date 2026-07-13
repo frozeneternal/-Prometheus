@@ -157,6 +157,21 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertNotIn("10.0.0.6", text)
         self.assertNotIn("Server 1", text)
 
+    def test_platform_metrics_exports_dashboard_snapshot_freshness(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        text = platform_metrics_text(
+            {"servers": [], "resources": []},
+            now=self.now,
+            dashboard_generated_at=self.now - 45,
+            dashboard_stale_after_seconds=30,
+        )
+
+        self.assertIn("ops_platform_dashboard_snapshot_available 1", text)
+        self.assertIn(f"ops_platform_dashboard_snapshot_generated_timestamp_seconds {int(self.now - 45)}", text)
+        self.assertIn("ops_platform_dashboard_snapshot_age_seconds 45", text)
+        self.assertIn("ops_platform_dashboard_snapshot_fresh 0", text)
+
     def test_metrics_response_uses_prometheus_text_content_type(self) -> None:
         status, content_type, body = app.metrics_response(self.config, now=self.now)
 
@@ -194,6 +209,22 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertIn("ops_platform_target_coverage_total 2", body)
         self.assertIn("ops_platform_target_coverage_unmanaged_total 1", body)
         self.assertIn('ops_platform_target_issue_category_total{category="unmanaged_target"} 1', body)
+
+    def test_metrics_response_uses_monitoring_interval_for_snapshot_freshness(self) -> None:
+        previous_dashboard = app.get_runtime_dashboard()
+        try:
+            app.set_runtime_dashboard({"generatedAt": self.now - 31})
+
+            status, _content_type, body = app.metrics_response(
+                {"resources": [], "monitoring": {"pollIntervalSeconds": 10}},
+                now=self.now,
+            )
+        finally:
+            app.set_runtime_dashboard(previous_dashboard)
+
+        self.assertEqual(status, 200)
+        self.assertIn("ops_platform_dashboard_snapshot_age_seconds 31", body)
+        self.assertIn("ops_platform_dashboard_snapshot_fresh 0", body)
 
 
 if __name__ == "__main__":

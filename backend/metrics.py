@@ -39,6 +39,14 @@ def _count_value(source: dict | None, key: str) -> int:
         return 0
 
 
+def _finite_float(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def platform_metrics_text(
     config: dict,
     now: float | None = None,
@@ -46,6 +54,8 @@ def platform_metrics_text(
     account_runtime_summary: dict | None = None,
     target_coverage: dict | None = None,
     target_issue_summary: dict | None = None,
+    dashboard_generated_at: float | None = None,
+    dashboard_stale_after_seconds: float | None = None,
 ) -> str:
     current = time.time() if now is None else float(now)
     items = resource_expiry_items(config, now=current)
@@ -54,6 +64,13 @@ def platform_metrics_text(
     account_runtime = account_runtime_security_summary() if account_runtime_summary is None else account_runtime_summary
     coverage_available = 1 if isinstance(target_coverage, dict) and bool(target_coverage) else 0
     prometheus_available = 1 if coverage_available and target_coverage.get("prometheusAvailable") is not False else 0
+    generated_at = _finite_float(dashboard_generated_at)
+    stale_after_seconds = _finite_float(dashboard_stale_after_seconds)
+    if stale_after_seconds is None or stale_after_seconds < 0:
+        stale_after_seconds = 0
+    snapshot_available = 1 if generated_at is not None else 0
+    snapshot_age = max(0.0, current - generated_at) if generated_at is not None else 0
+    snapshot_fresh = 1 if snapshot_available and (stale_after_seconds == 0 or snapshot_age <= stale_after_seconds) else 0
     known_days = [
         item["daysRemaining"]
         for item in items
@@ -133,6 +150,21 @@ def platform_metrics_text(
                 "ops_platform_account_runtime_revoked_sessions_total",
                 account_runtime.get("revokedSessions", 0),
             ),
+            "# HELP ops_platform_dashboard_snapshot_available Whether a dashboard runtime snapshot is available.",
+            "# TYPE ops_platform_dashboard_snapshot_available gauge",
+            _metric_line("ops_platform_dashboard_snapshot_available", snapshot_available),
+            "# HELP ops_platform_dashboard_snapshot_generated_timestamp_seconds Unix timestamp when the dashboard snapshot was generated.",
+            "# TYPE ops_platform_dashboard_snapshot_generated_timestamp_seconds gauge",
+            _metric_line("ops_platform_dashboard_snapshot_generated_timestamp_seconds", generated_at or 0),
+            "# HELP ops_platform_dashboard_snapshot_age_seconds Age of the dashboard runtime snapshot used by platform metrics.",
+            "# TYPE ops_platform_dashboard_snapshot_age_seconds gauge",
+            _metric_line("ops_platform_dashboard_snapshot_age_seconds", snapshot_age),
+            "# HELP ops_platform_dashboard_snapshot_stale_after_seconds Freshness threshold for dashboard runtime snapshots.",
+            "# TYPE ops_platform_dashboard_snapshot_stale_after_seconds gauge",
+            _metric_line("ops_platform_dashboard_snapshot_stale_after_seconds", stale_after_seconds),
+            "# HELP ops_platform_dashboard_snapshot_fresh Whether the dashboard runtime snapshot is inside the freshness threshold.",
+            "# TYPE ops_platform_dashboard_snapshot_fresh gauge",
+            _metric_line("ops_platform_dashboard_snapshot_fresh", snapshot_fresh),
             "# HELP ops_platform_target_coverage_available Whether target coverage data is available from the runtime dashboard.",
             "# TYPE ops_platform_target_coverage_available gauge",
             _metric_line("ops_platform_target_coverage_available", coverage_available),

@@ -585,6 +585,7 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, conte
 
 def metrics_response(config: dict, now: float | None = None) -> tuple[int, str, str]:
     dashboard = get_runtime_dashboard() or {}
+    snapshot_stale_after = monitoring_options(config)["pollIntervalSeconds"] * 3
     return (
         200,
         "text/plain; version=0.0.4; charset=utf-8",
@@ -593,6 +594,8 @@ def metrics_response(config: dict, now: float | None = None) -> tuple[int, str, 
             now=now,
             target_coverage=dashboard.get("targetCoverage"),
             target_issue_summary=dashboard.get("targetIssueSummary"),
+            dashboard_generated_at=dashboard.get("generatedAt"),
+            dashboard_stale_after_seconds=snapshot_stale_after,
         ),
     )
 

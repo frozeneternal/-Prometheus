@@ -21,10 +21,20 @@ export function renderSystemNotice() {
   const accountRuntimeSecurity = state.dashboard?.accountRuntimeSecurity;
   const actionSafetySummary = state.dashboard?.actionSafetySummary;
   const configSource = state.dashboard?.configSource || {};
+  const dashboardGeneratedAt = Number(state.dashboard?.generatedAt || 0);
+  const pollIntervalSeconds = Number(state.config?.monitoring?.pollIntervalSeconds || 30);
+  const snapshotStaleAfterSeconds = Math.max(30, pollIntervalSeconds * 3);
+  const snapshotAgeSeconds = dashboardGeneratedAt > 0
+    ? Math.max(0, Math.floor(Date.now() / 1000 - dashboardGeneratedAt))
+    : 0;
 
   if (prometheus && !prometheus.available) {
     const detail = prometheus.error ? `（${prometheus.error}）` : "";
     messages.push(`Prometheus 当前不可用：${prometheus.message || "无法连接采集服务"}${detail}。这会导致所有目标显示“未知”，不代表服务器全部宕机。`);
+  }
+
+  if (dashboardGeneratedAt > 0 && snapshotAgeSeconds > snapshotStaleAfterSeconds) {
+    messages.push(`数据刷新：页面快照已 ${snapshotAgeSeconds} 秒未刷新，超过 ${snapshotStaleAfterSeconds} 秒阈值；请先刷新页面或检查后台轮询。`);
   }
 
   if (coverage) {

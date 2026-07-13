@@ -240,6 +240,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("issueSummary.categories", app_js)
         self.assertIn("category.count", app_js)
 
+    def test_dashboard_snapshot_freshness_is_visible_in_system_notice(self) -> None:
+        notice_block = notice_js()
+
+        self.assertIn("state.dashboard?.generatedAt", notice_block)
+        self.assertIn("state.config?.monitoring?.pollIntervalSeconds", notice_block)
+        self.assertIn("snapshotAgeSeconds", notice_block)
+        self.assertIn("Date.now()", notice_block)
+        self.assertIn("数据刷新", notice_block)
+
     def test_exporter_diagnostics_summary_is_visible_in_system_notice(self) -> None:
         app_js = notice_js()
 
