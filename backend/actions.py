@@ -78,6 +78,14 @@ def redact_sensitive_output(value: str | bytes | None) -> str:
     return text
 
 
+def sanitize_action_log_event(event: dict) -> dict:
+    sanitized = dict(event)
+    for key in ("message", "reason", "stdout", "stderr"):
+        if key in sanitized:
+            sanitized[key] = redact_sensitive_output(sanitized.get(key))
+    return sanitized
+
+
 def normalize_success_codes(action: dict) -> set[int]:
     raw = action.get("successReturnCodes")
     if not isinstance(raw, list) or not raw:

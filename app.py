@@ -29,8 +29,8 @@ from backend.actions import (
     execute_server_action,
     find_action,
     normalize_success_codes,
+    sanitize_action_log_event,
     success_return_codes_error,
-    trim_output,
 )
 
 
@@ -82,30 +82,34 @@ def load_recovery_logs_from_disk() -> list[dict]:
     except (OSError, json.JSONDecodeError):
         return []
 
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    return [sanitize_action_log_event(event) for event in data if isinstance(event, dict)]
 
 
 def save_recovery_logs_to_disk(logs: list[dict]) -> None:
     ensure_data_dir()
+    sanitized_logs = [sanitize_action_log_event(event) for event in logs if isinstance(event, dict)]
     with RECOVERY_LOG_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(logs, fh, ensure_ascii=False, indent=2)
+        json.dump(sanitized_logs, fh, ensure_ascii=False, indent=2)
 
 
 def get_recent_recovery_logs(limit: int = 50) -> list[dict]:
     with RUNTIME_LOCK:
         logs = list(RUNTIME_STATE["recoveryLogs"])
-    return logs[-limit:]
+    return [sanitize_action_log_event(event) for event in logs[-limit:] if isinstance(event, dict)]
 
 
 def append_recovery_log(config: dict, event: dict) -> dict:
     limit = monitoring_options(config)["recoveryLogLimit"]
+    sanitized_event = sanitize_action_log_event(event)
     with RUNTIME_LOCK:
         logs = list(RUNTIME_STATE["recoveryLogs"])
-        logs.append(event)
+        logs.append(sanitized_event)
         logs = logs[-limit:]
         RUNTIME_STATE["recoveryLogs"] = logs
     save_recovery_logs_to_disk(logs)
-    return event
+    return sanitized_event
 
 
 def load_incident_logs_from_disk() -> list[dict]:

@@ -3255,6 +3255,34 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("[REDACTED]", serialized)
         self.assertIn("invalid dns token", serialized)
 
+    def test_app_recent_recovery_logs_redacts_legacy_sensitive_output(self) -> None:
+        import app
+
+        legacy_logs = [
+            {
+                "id": "legacy-log",
+                "message": "renew failed token=message-secret",
+                "stdout": "password=legacy-password invalid dns token",
+                "stderr": "Authorization: Bearer legacy-bearer\nhttps://ops.example/run?access_token=legacy-url-token",
+            }
+        ]
+        with app.RUNTIME_LOCK:
+            previous_logs = list(app.RUNTIME_STATE["recoveryLogs"])
+            app.RUNTIME_STATE["recoveryLogs"] = legacy_logs
+        try:
+            logs = app.get_recent_recovery_logs()
+        finally:
+            with app.RUNTIME_LOCK:
+                app.RUNTIME_STATE["recoveryLogs"] = previous_logs
+
+        serialized = json.dumps(logs, ensure_ascii=False)
+        self.assertNotIn("message-secret", serialized)
+        self.assertNotIn("legacy-password", serialized)
+        self.assertNotIn("legacy-bearer", serialized)
+        self.assertNotIn("legacy-url-token", serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertIn("invalid dns token", serialized)
+
     def test_actions_default_runner_uses_hidden_windows_process(self) -> None:
         from backend import actions
         from backend.actions import ActionRuntime, execute_server_action
