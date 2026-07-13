@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from backend.auth import auth_policy, authorize_operation, hash_password, normalize_role
+from backend.auth import ROLE_RANK, auth_policy, authorize_operation, hash_password, normalize_role
 from backend.auth_audit import auth_audit_event
 from backend.config import load_config_raw as default_load_config_raw
 from backend.config import save_config_raw as default_save_config_raw
@@ -78,6 +78,13 @@ def _enabled_from_body(value: object, default: bool) -> tuple[bool | None, str]:
     if value is None:
         return default, ""
     return None, "enabled 必须是 JSON 布尔值 true 或 false。"
+
+
+def _role_from_body(value: object) -> tuple[str | None, str]:
+    role = str(value or "viewer").strip().lower()
+    if role not in ROLE_RANK:
+        return None, "role 必须是 viewer、operator 或 admin。"
+    return role, ""
 
 
 def _enabled_admin_count(users: list[dict]) -> int:
@@ -177,7 +184,10 @@ def upsert_account_user_payload(
     next_user = dict(existing)
     next_user["username"] = username
     next_user["displayName"] = str(body.get("displayName") or username).strip() or username
-    next_user["role"] = normalize_role(body.get("role"))
+    role, role_error = _role_from_body(body.get("role"))
+    if role_error:
+        return 400, {"ok": False, "message": role_error}
+    next_user["role"] = role
     enabled, enabled_error = _enabled_from_body(body.get("enabled"), existing.get("enabled", True) is not False)
     if enabled_error:
         return 400, {"ok": False, "message": enabled_error}
