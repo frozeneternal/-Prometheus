@@ -954,7 +954,14 @@ class BackendModuleTests(unittest.TestCase):
             "servers": [
                 {
                     "id": "ops-host",
-                    "actions": [{"id": "renew-cert", "name": "Renew certificate", "enabled": False}],
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "name": "Renew certificate",
+                            "enabled": True,
+                            "allowAuto": True,
+                        }
+                    ],
                 }
             ],
             "websites": [
@@ -1004,6 +1011,60 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(logs[0]["actor"]["username"], "ops")
         self.assertEqual(logs[0]["sourceIp"], "10.0.0.10")
         self.assertIn("启用", logs[0]["message"])
+
+    def test_settings_module_rejects_cert_renewal_when_action_is_not_auto_allowed(self) -> None:
+        from backend.settings import SettingsRuntime, persist_cert_renewal_enabled
+
+        raw_config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {
+                            "id": "renew-cert",
+                            "name": "Renew certificate",
+                            "enabled": True,
+                            "allowAuto": False,
+                        }
+                    ],
+                }
+            ],
+            "websites": [
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "serverId": "ops-host",
+                    "manualCertRenewal": {"actionServerId": "ops-host", "actionId": "renew-cert"},
+                }
+            ],
+        }
+        saved: list[dict] = []
+        resets: list[tuple[str, str, str]] = []
+        logs: list[dict] = []
+        runtime = SettingsRuntime(
+            now=lambda: 1000.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            reset_state=lambda target_type, target_id, reason="": resets.append((target_type, target_id, reason)),
+            append_recovery_log=lambda _config, event: logs.append(event),
+        )
+
+        status, payload = persist_cert_renewal_enabled(
+            "site1",
+            True,
+            actor={"username": "ops", "role": "operator"},
+            source_ip="10.0.0.10",
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("allowAuto", payload["message"])
+        self.assertFalse(raw_config["servers"][0]["actions"][0]["allowAuto"])
+        self.assertNotIn("certRenewal", raw_config["websites"][0])
+        self.assertEqual(saved, [])
+        self.assertEqual(resets, [])
+        self.assertEqual(logs, [])
 
     def test_emergency_module_builds_runbook_items_without_app_import(self) -> None:
         from backend.emergency import emergency_items, emergency_summary

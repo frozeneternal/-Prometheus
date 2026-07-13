@@ -284,7 +284,7 @@ def persist_cert_renewal_enabled(
     if website is None:
         return 404, {"ok": False, "message": "网站不存在。"}
 
-    renewal = website.setdefault("certRenewal", {})
+    renewal = website.get("certRenewal") or {}
     default_action_server_id = website.get("serverId") or ""
     if enabled:
         inferred = public_manual_cert_renewal(website, default_action_server_id)
@@ -292,17 +292,28 @@ def persist_cert_renewal_enabled(
         action_id = inferred.get("actionId") or renewal.get("actionId") or ""
         if not action_server_id or not action_id:
             return 400, {"ok": False, "message": "启用证书续期前需要先配置续期动作。"}
+
+        action_server = find_raw_entity(raw_config, "server", action_server_id)
+        if action_server is None:
+            return 400, {"ok": False, "message": f"证书续期动作服务器不存在：{action_server_id}。"}
+        action = find_raw_action(action_server, action_id)
+        if action is None:
+            return 400, {"ok": False, "message": f"证书续期动作不存在：{action_server_id}/{action_id}。"}
+        if action.get("enabled", True) is False:
+            return 400, {"ok": False, "message": f"证书续期动作已禁用：{action_server_id}/{action_id}。"}
+        if not action.get("allowAuto", False):
+            return 400, {
+                "ok": False,
+                "message": f"证书续期动作未允许后台自动执行 allowAuto：{action_server_id}/{action_id}。",
+            }
+
+        renewal = website.setdefault("certRenewal", {})
         renewal["actionServerId"] = action_server_id
         renewal["actionId"] = action_id
         renewal.setdefault("renewBeforeDays", 14)
         renewal.setdefault("cooldownSeconds", 86400)
-
-        action_server = find_raw_entity(raw_config, "server", action_server_id)
-        if action_server is not None:
-            action = find_raw_action(action_server, action_id)
-            if action is not None:
-                action["enabled"] = True
-                action["allowAuto"] = True
+    else:
+        renewal = website.setdefault("certRenewal", {})
 
     renewal["enabled"] = bool(enabled)
     active_runtime.save_config_raw(raw_config)
