@@ -122,16 +122,31 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
     def test_local_start_all_launches_web_console_in_background(self) -> None:
         script = (ROOT / "scripts" / "start-all.cmd").read_text(encoding="utf-8")
 
-        self.assertIn('start "" /b cmd /c', script)
+        self.assertIn("run-hidden.vbs", script)
+        self.assertIn("wscript.exe //B", script)
+        self.assertIn("start-console-background.ps1", script)
+        self.assertIn("server.out.log", script)
+        self.assertIn("server.err.log", script)
+        self.assertNotIn('start "" /b cmd /c', script)
+        self.assertNotIn("powershell -NoProfile", script)
+        self.assertNotIn('start "Local Monitor Console"', script)
+
+    def test_local_console_background_launcher_uses_hidden_python_process(self) -> None:
+        script = (ROOT / "scripts" / "start-console-background.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("python.exe", script)
+        self.assertNotIn("pythonw.exe", script)
+        self.assertIn("Start-Process", script)
         self.assertIn("-WindowStyle Hidden", script)
         self.assertIn("server.out.log", script)
         self.assertIn("server.err.log", script)
-        self.assertNotIn('start "Local Monitor Console"', script)
 
     def test_start_prometheus_waits_for_docker_without_visible_powershell(self) -> None:
         script = (ROOT / "scripts" / "start-prometheus.cmd").read_text(encoding="utf-8")
 
-        self.assertIn("-WindowStyle Hidden", script)
+        self.assertIn("run-hidden.vbs", script)
+        self.assertIn("wscript.exe //B", script)
+        self.assertNotIn("powershell -NoProfile", script)
 
     def test_hidden_launcher_uses_wscript_shell_run_without_window(self) -> None:
         launcher = (STANDALONE / "run-hidden.vbs").read_text(encoding="utf-8")
