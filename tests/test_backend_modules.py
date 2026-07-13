@@ -2717,6 +2717,9 @@ class BackendModuleTests(unittest.TestCase):
 
         self.assertEqual(payload["localStack"], [])
         self.assertIn("status-local-monitor.ps1", " ".join(str(part) for part in captured["command"]))
+        self.assertIn("-NonInteractive", captured["command"])
+        self.assertIn("-WindowStyle", captured["command"])
+        self.assertIn("Hidden", captured["command"])
         self.assertEqual(captured["encoding"], "utf-8")
         if os.name == "nt":
             self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)

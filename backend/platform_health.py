@@ -71,6 +71,9 @@ def run_status_script(root: Path, timeout: float) -> dict:
         [
             "powershell",
             "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
