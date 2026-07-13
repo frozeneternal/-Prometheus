@@ -3037,6 +3037,91 @@ class BackendModuleTests(unittest.TestCase):
             self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
         self.assertEqual(records[0]["Name"], "中文测试服务器")
 
+    def test_exporter_diagnostics_summary_prefers_fresh_background_snapshot(self) -> None:
+        from backend import exporter_diagnostics
+
+        exporter_diagnostics._CACHE.clear()
+        exporter_diagnostics._CACHE.update(
+            {"key": "", "expires_at": 0.0, "payload": None, "last_success_key": "", "last_success_payload": None}
+        )
+
+        def fail_runner(_root: Path, _timeout: float) -> list[dict]:
+            raise AssertionError("dashboard request must not spawn PowerShell when a fresh snapshot exists")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            snapshot = run_dir / "exporter-diagnostics.local.json"
+            snapshot.write_text(
+                json.dumps(
+                    [
+                        {
+                            "Name": "srv-linux",
+                            "OS": "linux",
+                            "MetricsPort": 9100,
+                            "Diagnosis": "node_exporter_unreachable",
+                            "SuggestedCommands": ["systemctl status node_exporter"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            os.utime(snapshot, (1000.0, 1000.0))
+
+            summary = exporter_diagnostics.exporter_diagnostics_summary(
+                {
+                    "monitoring": {
+                        "standaloneRoot": str(root),
+                        "exporterDiagnosticsCacheSeconds": 0,
+                        "exporterDiagnosticsSnapshotMaxAgeSeconds": 300,
+                    }
+                },
+                now=lambda: 1100.0,
+                runner=fail_runner,
+            )
+
+        self.assertEqual(summary["status"], "warning")
+        self.assertEqual(summary["summary"]["total"], 1)
+        self.assertEqual(summary["summary"]["actionRequired"], 1)
+        self.assertEqual(summary["items"][0]["name"], "srv-linux")
+
+    def test_exporter_diagnostics_summary_falls_back_when_background_snapshot_is_stale(self) -> None:
+        from backend import exporter_diagnostics
+
+        exporter_diagnostics._CACHE.clear()
+        exporter_diagnostics._CACHE.update(
+            {"key": "", "expires_at": 0.0, "payload": None, "last_success_key": "", "last_success_payload": None}
+        )
+        calls = {"runner": 0}
+
+        def fake_runner(_root: Path, _timeout: float) -> list[dict]:
+            calls["runner"] += 1
+            return [{"Name": "srv-linux", "OS": "linux", "Diagnosis": "metrics_open"}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            snapshot = run_dir / "exporter-diagnostics.local.json"
+            snapshot.write_text("[]", encoding="utf-8")
+            os.utime(snapshot, (1000.0, 1000.0))
+
+            summary = exporter_diagnostics.exporter_diagnostics_summary(
+                {
+                    "monitoring": {
+                        "standaloneRoot": str(root),
+                        "exporterDiagnosticsCacheSeconds": 0,
+                        "exporterDiagnosticsSnapshotMaxAgeSeconds": 60,
+                    }
+                },
+                now=lambda: 1100.0,
+                runner=fake_runner,
+            )
+
+        self.assertEqual(calls["runner"], 1)
+        self.assertEqual(summary["summary"]["total"], 1)
+
     def test_platform_health_runner_uses_hidden_powershell_window(self) -> None:
         from backend import platform_health
 
@@ -3071,6 +3156,88 @@ class BackendModuleTests(unittest.TestCase):
         if os.name == "nt":
             self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
 
+    def test_platform_health_summary_prefers_fresh_background_snapshot(self) -> None:
+        from backend import platform_health
+
+        platform_health._CACHE.clear()
+        platform_health._CACHE.update({"expires_at": 0.0, "payload": None})
+
+        def fail_runner(_root: Path, _timeout: float) -> dict:
+            raise AssertionError("dashboard request must not spawn PowerShell when a fresh snapshot exists")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            snapshot = run_dir / "platform-health.local.json"
+            snapshot.write_text(
+                json.dumps(
+                    {
+                        "localStack": [{"Name": "Prometheus", "Status": 200}],
+                        "runtimeBinaryHealth": [],
+                        "appDirectoryHealth": [],
+                        "rootVolumeHealth": {"Status": "ok"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(snapshot, (1000.0, 1000.0))
+
+            summary = platform_health.platform_health_summary(
+                {
+                    "monitoring": {
+                        "standaloneRoot": str(root),
+                        "platformHealthCacheSeconds": 0,
+                        "platformHealthSnapshotMaxAgeSeconds": 300,
+                    }
+                },
+                now=lambda: 1100.0,
+                runner=fail_runner,
+            )
+
+        self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["summary"]["localTotal"], 1)
+        self.assertEqual(summary["summary"]["localOk"], 1)
+
+    def test_platform_health_summary_falls_back_when_background_snapshot_is_stale(self) -> None:
+        from backend import platform_health
+
+        platform_health._CACHE.clear()
+        platform_health._CACHE.update({"expires_at": 0.0, "payload": None})
+        calls = {"runner": 0}
+
+        def fake_runner(_root: Path, _timeout: float) -> dict:
+            calls["runner"] += 1
+            return {
+                "localStack": [{"Name": "Prometheus", "Status": 200}],
+                "runtimeBinaryHealth": [],
+                "appDirectoryHealth": [],
+                "rootVolumeHealth": {"Status": "ok"},
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            snapshot = run_dir / "platform-health.local.json"
+            snapshot.write_text('{"localStack":[]}', encoding="utf-8")
+            os.utime(snapshot, (1000.0, 1000.0))
+
+            summary = platform_health.platform_health_summary(
+                {
+                    "monitoring": {
+                        "standaloneRoot": str(root),
+                        "platformHealthCacheSeconds": 0,
+                        "platformHealthSnapshotMaxAgeSeconds": 60,
+                    }
+                },
+                now=lambda: 1100.0,
+                runner=fake_runner,
+            )
+
+        self.assertEqual(calls["runner"], 1)
+        self.assertEqual(summary["summary"]["localTotal"], 1)
+
     def test_exporter_diagnostics_summary_reuses_last_success_after_runner_error(self) -> None:
         from backend import exporter_diagnostics
 
@@ -3091,7 +3258,13 @@ class BackendModuleTests(unittest.TestCase):
         def failing_runner(_root: Path, _timeout: float) -> list[dict]:
             raise RuntimeError("diagnostics failed")
 
-        config = {"monitoring": {"standaloneRoot": "E:\\ops-monitor", "exporterDiagnosticsCacheSeconds": 0}}
+        config = {
+            "monitoring": {
+                "standaloneRoot": "E:\\ops-monitor",
+                "exporterDiagnosticsCacheSeconds": 0,
+                "exporterDiagnosticsSnapshotMaxAgeSeconds": 0,
+            }
+        }
         first = exporter_diagnostics.exporter_diagnostics_summary(config, now=lambda: 100.0, runner=healthy_runner)
         stale = exporter_diagnostics.exporter_diagnostics_summary(config, now=lambda: 101.0, runner=failing_runner)
 
@@ -3264,7 +3437,7 @@ class BackendModuleTests(unittest.TestCase):
                 "rootVolumeHealth": {"Status": "ok"},
             }
 
-        config = {"monitoring": {"platformHealthCacheSeconds": 60}}
+        config = {"monitoring": {"platformHealthCacheSeconds": 60, "platformHealthSnapshotMaxAgeSeconds": 0}}
         first = platform_health.platform_health_summary(config, now=lambda: 100.0, runner=failing_runner)
         cached = platform_health.platform_health_summary(config, now=lambda: 105.0, runner=healthy_runner)
         refreshed = platform_health.platform_health_summary(config, now=lambda: 111.0, runner=healthy_runner)

@@ -7,13 +7,18 @@ $ErrorActionPreference = "Continue"
 
 $Config = Join-Path $Root "config"
 $Logs = Join-Path $Root "logs"
+$Run = Join-Path $Root "run"
 $WatchdogLog = Join-Path $Logs "watchdog-local-monitor.log"
 $RecoverPrometheus = Join-Path $Root "scripts\recover-prometheus-tsdb.ps1"
 $StartLocal = Join-Path $Root "scripts\start-local-monitor.ps1"
 $StartTunnels = Join-Path $Root "scripts\start-ssh-tunnels.ps1"
+$StatusLocal = Join-Path $Root "scripts\status-local-monitor.ps1"
+$DiagnoseExporters = Join-Path $Root "scripts\diagnose-exporters.ps1"
 $TunnelsConfig = Join-Path $Config "tunnels.local.json"
+$PlatformHealthSnapshot = Join-Path $Run "platform-health.local.json"
+$ExporterDiagnosticsSnapshot = Join-Path $Run "exporter-diagnostics.local.json"
 
-New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+New-Item -ItemType Directory -Force -Path $Logs, $Run | Out-Null
 
 function Write-WatchdogLog($Message) {
   $line = "$(Get-Date -Format o) $Message"
@@ -113,11 +118,16 @@ function Start-HiddenPowerShellProcess($EncodedCommand, $WorkingDirectory) {
 }
 
 function Save-ProcessOutput($Path, $OutputTask) {
+  $text = Get-ProcessOutputText $OutputTask
+  Set-Content -LiteralPath $Path -Value $text -NoNewline -Encoding UTF8
+}
+
+function Get-ProcessOutputText($OutputTask) {
   $text = ""
   if ($OutputTask) {
     $text = [string]$OutputTask.Result
   }
-  Set-Content -LiteralPath $Path -Value $text -NoNewline -Encoding UTF8
+  return $text
 }
 
 function Invoke-MonitorScript($ScriptPath, $Name, [string[]]$ExtraArguments = @()) {
@@ -201,6 +211,124 @@ exit `$exitCode
   }
 }
 
+function Write-PlatformHealthSnapshot {
+  if (-not (Test-Path $StatusLocal)) {
+    Write-WatchdogLog "platform health snapshot script missing: $StatusLocal"
+    return
+  }
+
+  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $stderr = Join-Path $Logs "watchdog-platform-health-snapshot-$stamp.err.log"
+  $safeScript = ([string]$StatusLocal).Replace("'", "''")
+  $safeRoot = ([string]$Root).Replace("'", "''")
+  $command = @"
+try {
+  & '$safeScript' -Root '$safeRoot' -Json -LocalOnly -AllowRunningWatchdog
+  if (`$global:LASTEXITCODE -ne `$null) {
+    exit `$global:LASTEXITCODE
+  }
+  if (`$?) { exit 0 }
+  exit 1
+} catch {
+  Write-Error `$_.Exception.Message
+  exit 1
+}
+"@
+
+  try {
+    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
+    $started = Start-HiddenPowerShellProcess -EncodedCommand $encodedCommand -WorkingDirectory $Root
+    $proc = $started.Process
+    $timeoutMs = [Math]::Max(1, $ScriptTimeoutSeconds) * 1000
+    if (-not $proc.WaitForExit($timeoutMs)) {
+      Write-WatchdogLog "platform health snapshot did not exit within $ScriptTimeoutSeconds seconds; terminating wrapper process: PID $($proc.Id)"
+      $proc.Kill()
+      $proc.WaitForExit()
+      return
+    }
+
+    $stdoutText = Get-ProcessOutputText $started.StdoutTask
+    Save-ProcessOutput $stderr $started.StderrTask
+    if ($proc.ExitCode -ne 0) {
+      Write-WatchdogLog "platform health snapshot exited with code $($proc.ExitCode)"
+      return
+    }
+
+    try {
+      $null = $stdoutText | ConvertFrom-Json
+    } catch {
+      Write-WatchdogLog "platform health snapshot produced invalid JSON: $($_.Exception.Message)"
+      return
+    }
+
+    $tmp = "$PlatformHealthSnapshot.tmp"
+    Set-Content -LiteralPath $tmp -Value $stdoutText -NoNewline -Encoding UTF8
+    Move-Item -LiteralPath $tmp -Destination $PlatformHealthSnapshot -Force
+    Write-WatchdogLog "platform health snapshot written: $PlatformHealthSnapshot"
+  } catch {
+    Write-WatchdogLog "platform health snapshot failed: $($_.Exception.Message)"
+  }
+}
+
+function Write-ExporterDiagnosticsSnapshot {
+  if (-not (Test-Path $DiagnoseExporters)) {
+    Write-WatchdogLog "exporter diagnostics snapshot script missing: $DiagnoseExporters"
+    return
+  }
+
+  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $stderr = Join-Path $Logs "watchdog-exporter-diagnostics-snapshot-$stamp.err.log"
+  $safeScript = ([string]$DiagnoseExporters).Replace("'", "''")
+  $safeRoot = ([string]$Root).Replace("'", "''")
+  $command = @"
+try {
+  & '$safeScript' -Root '$safeRoot' -Json
+  if (`$global:LASTEXITCODE -ne `$null) {
+    exit `$global:LASTEXITCODE
+  }
+  if (`$?) { exit 0 }
+  exit 1
+} catch {
+  Write-Error `$_.Exception.Message
+  exit 1
+}
+"@
+
+  try {
+    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
+    $started = Start-HiddenPowerShellProcess -EncodedCommand $encodedCommand -WorkingDirectory $Root
+    $proc = $started.Process
+    $timeoutMs = [Math]::Max(1, $ScriptTimeoutSeconds) * 1000
+    if (-not $proc.WaitForExit($timeoutMs)) {
+      Write-WatchdogLog "exporter diagnostics snapshot did not exit within $ScriptTimeoutSeconds seconds; terminating wrapper process: PID $($proc.Id)"
+      $proc.Kill()
+      $proc.WaitForExit()
+      return
+    }
+
+    $stdoutText = Get-ProcessOutputText $started.StdoutTask
+    Save-ProcessOutput $stderr $started.StderrTask
+    if ($proc.ExitCode -ne 0) {
+      Write-WatchdogLog "exporter diagnostics snapshot exited with code $($proc.ExitCode)"
+      return
+    }
+
+    try {
+      $null = $stdoutText | ConvertFrom-Json
+    } catch {
+      Write-WatchdogLog "exporter diagnostics snapshot produced invalid JSON: $($_.Exception.Message)"
+      return
+    }
+
+    $tmp = "$ExporterDiagnosticsSnapshot.tmp"
+    Set-Content -LiteralPath $tmp -Value $stdoutText -NoNewline -Encoding UTF8
+    Move-Item -LiteralPath $tmp -Destination $ExporterDiagnosticsSnapshot -Force
+    Write-WatchdogLog "exporter diagnostics snapshot written: $ExporterDiagnosticsSnapshot"
+  } catch {
+    Write-WatchdogLog "exporter diagnostics snapshot failed: $($_.Exception.Message)"
+  }
+}
+
 $localChecks = @(
   @{Name="grafana"; Url="http://127.0.0.1:3000/api/health"},
   @{Name="prometheus"; Url="http://127.0.0.1:19090/-/ready"},
@@ -266,3 +394,6 @@ if (Test-Path $TunnelsConfig) {
     Write-WatchdogLog "failed to inspect ssh tunnel config: $($_.Exception.Message)"
   }
 }
+
+Write-PlatformHealthSnapshot
+Write-ExporterDiagnosticsSnapshot

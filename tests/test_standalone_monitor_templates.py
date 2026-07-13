@@ -136,8 +136,14 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
 
         self.assertIn("python.exe", script)
         self.assertNotIn("pythonw.exe", script)
-        self.assertIn("Start-Process", script)
-        self.assertIn("-WindowStyle Hidden", script)
+        self.assertIn("[System.Diagnostics.ProcessStartInfo]::new()", script)
+        self.assertIn("$psi.CreateNoWindow = $true", script)
+        self.assertIn("[System.Diagnostics.ProcessWindowStyle]::Hidden", script)
+        self.assertIn("cmd.exe", script)
+        self.assertIn('/d /c `"$command`"', script)
+        self.assertIn("1>>", script)
+        self.assertIn("2>>", script)
+        self.assertNotIn("Start-Process", script)
         self.assertIn("server.out.log", script)
         self.assertIn("server.err.log", script)
 
@@ -359,6 +365,8 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("Get-PrometheusStorageHealth", status_script)
         self.assertIn("Get-WatchdogTaskHealth", status_script)
         self.assertIn("[switch]$LocalOnly", status_script)
+        self.assertIn("[switch]$AllowRunningWatchdog", status_script)
+        self.assertIn("$AllowRunningWatchdog -and $state -eq \"Running\"", status_script)
         self.assertIn("-not $LocalOnly", status_script)
         self.assertIn("Runtime binary health", status_script)
         self.assertIn("Root volume health", status_script)
@@ -496,6 +504,28 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertNotIn("docker", watchdog.lower())
         self.assertNotIn(" || ", watchdog)
         self.assertNotIn("| ForEach-Object { Write-WatchdogLog $_ }", watchdog)
+
+    def test_watchdog_writes_platform_health_snapshot_for_dashboard(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("status-local-monitor.ps1", watchdog)
+        self.assertIn("platform-health.local.json", watchdog)
+        self.assertIn("Write-PlatformHealthSnapshot", watchdog)
+        self.assertIn("-Json", watchdog)
+        self.assertIn("-LocalOnly", watchdog)
+        self.assertIn("-AllowRunningWatchdog", watchdog)
+        self.assertIn("$tmp = \"$PlatformHealthSnapshot.tmp\"", watchdog)
+        self.assertIn("Move-Item -LiteralPath $tmp -Destination $PlatformHealthSnapshot -Force", watchdog)
+
+    def test_watchdog_writes_exporter_diagnostics_snapshot_for_dashboard(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("diagnose-exporters.ps1", watchdog)
+        self.assertIn("exporter-diagnostics.local.json", watchdog)
+        self.assertIn("Write-ExporterDiagnosticsSnapshot", watchdog)
+        self.assertIn("-Json", watchdog)
+        self.assertIn("$tmp = \"$ExporterDiagnosticsSnapshot.tmp\"", watchdog)
+        self.assertIn("Move-Item -LiteralPath $tmp -Destination $ExporterDiagnosticsSnapshot -Force", watchdog)
 
     def test_watchdog_recovers_prometheus_tsdb_corruption_before_generic_restart(self) -> None:
         watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")

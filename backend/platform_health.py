@@ -14,6 +14,7 @@ from backend.subprocess_utils import hidden_subprocess_kwargs
 DEFAULT_ROOT = r"E:\ops-monitor"
 DEFAULT_CACHE_SECONDS = 60.0
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_SNAPSHOT_MAX_AGE_SECONDS = 600.0
 ERROR_CACHE_SECONDS = 10.0
 
 _CACHE: dict[str, object] = {"expires_at": 0.0, "payload": None}
@@ -44,8 +45,45 @@ def _timeout_seconds(config: dict) -> float:
     return max(1.0, value)
 
 
+def _snapshot_max_age_seconds(config: dict) -> float:
+    monitoring = config.get("monitoring") or {}
+    try:
+        value = float(monitoring.get("platformHealthSnapshotMaxAgeSeconds", DEFAULT_SNAPSHOT_MAX_AGE_SECONDS))
+    except (TypeError, ValueError):
+        return DEFAULT_SNAPSHOT_MAX_AGE_SECONDS
+    return max(0.0, value)
+
+
 def _status_script(root: Path) -> Path:
     return root / "scripts" / "status-local-monitor.ps1"
+
+
+def _status_snapshot(root: Path) -> Path:
+    return root / "run" / "platform-health.local.json"
+
+
+def read_status_snapshot(root: Path, max_age_seconds: float, current_time: float) -> dict | None:
+    if max_age_seconds <= 0:
+        return None
+
+    path = _status_snapshot(root)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+
+    if current_time - stat.st_mtime > max_age_seconds:
+        return None
+
+    try:
+        raw = path.read_text(encoding="utf-8-sig")
+        payload = json.loads(raw or "{}")
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 def _safe_id(value: object) -> str:
@@ -303,7 +341,11 @@ def platform_health_summary(
 
     cache_seconds = _cache_seconds(config)
     try:
-        payload = summarize_status_payload(runner(_monitor_root(config), _timeout_seconds(config)))
+        root = _monitor_root(config)
+        status_payload = read_status_snapshot(root, _snapshot_max_age_seconds(config), current_time)
+        if status_payload is None:
+            status_payload = runner(root, _timeout_seconds(config))
+        payload = summarize_status_payload(status_payload)
     except Exception as exc:
         payload = unavailable_platform_health(str(exc))
         cache_seconds = min(cache_seconds, ERROR_CACHE_SECONDS)

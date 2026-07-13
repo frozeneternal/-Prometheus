@@ -18,6 +18,10 @@ function Resolve-OutputPath([string]$Path, [string]$DefaultName) {
   return Join-Path $Root $Path
 }
 
+function Quote-CmdArgument([string]$Value) {
+  return '"' + $Value.Replace('"', '""') + '"'
+}
+
 Set-Location $Root
 $env:PYTHONIOENCODING = "utf-8"
 
@@ -33,13 +37,17 @@ $arguments = @(
   [string]$Port
 )
 
-$proc = Start-Process `
-  -FilePath $python `
-  -ArgumentList $arguments `
-  -WorkingDirectory $Root `
-  -WindowStyle Hidden `
-  -RedirectStandardOutput $stdout `
-  -RedirectStandardError $stderr `
-  -PassThru
+$pythonCommand = (($arguments | ForEach-Object { Quote-CmdArgument $_ }) -join " ")
+$command = "$(Quote-CmdArgument $python) $pythonCommand 1>> $(Quote-CmdArgument $stdout) 2>> $(Quote-CmdArgument $stderr)"
+
+$psi = [System.Diagnostics.ProcessStartInfo]::new()
+$psi.FileName = "cmd.exe"
+$psi.Arguments = "/d /c `"$command`""
+$psi.WorkingDirectory = $Root
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+
+$proc = [System.Diagnostics.Process]::Start($psi)
 
 Write-Host "Local console started in background: PID $($proc.Id)"

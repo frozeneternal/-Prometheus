@@ -11,6 +11,7 @@ from backend.subprocess_utils import hidden_subprocess_kwargs
 DEFAULT_ROOT = r"E:\ops-monitor"
 DEFAULT_CACHE_SECONDS = 120.0
 DEFAULT_TIMEOUT_SECONDS = 25.0
+DEFAULT_SNAPSHOT_MAX_AGE_SECONDS = 600.0
 ERROR_CACHE_SECONDS = 10.0
 OK_DIAGNOSES = {"metrics_open", "covered_by_ssh_tunnel"}
 
@@ -68,8 +69,46 @@ def _timeout_seconds(config: dict) -> float:
     return max(1.0, value)
 
 
+def _snapshot_max_age_seconds(config: dict) -> float:
+    monitoring = config.get("monitoring") or {}
+    try:
+        value = float(monitoring.get("exporterDiagnosticsSnapshotMaxAgeSeconds", DEFAULT_SNAPSHOT_MAX_AGE_SECONDS))
+    except (TypeError, ValueError):
+        return DEFAULT_SNAPSHOT_MAX_AGE_SECONDS
+    return max(0.0, value)
+
+
 def _diagnose_script(root: Path) -> Path:
     return root / "scripts" / "diagnose-exporters.ps1"
+
+
+def _diagnostics_snapshot(root: Path) -> Path:
+    return root / "run" / "exporter-diagnostics.local.json"
+
+
+def read_diagnostics_snapshot(root: Path, max_age_seconds: float, current_time: float) -> list[dict] | None:
+    if max_age_seconds <= 0:
+        return None
+
+    path = _diagnostics_snapshot(root)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+
+    if current_time - stat.st_mtime > max_age_seconds:
+        return None
+
+    try:
+        raw = json.loads((path.read_text(encoding="utf-8-sig") or "[]").strip() or "[]")
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return None
+
+    if isinstance(raw, dict):
+        return [raw]
+    if not isinstance(raw, list):
+        return None
+    return [item for item in raw if isinstance(item, dict)]
 
 
 def run_diagnostics_script(root: Path, timeout: float) -> list[dict]:
@@ -200,7 +239,10 @@ def exporter_diagnostics_summary(
 
     timeout = _timeout_seconds(config)
     try:
-        payload = summarize_diagnostics(runner(root, timeout))
+        records = read_diagnostics_snapshot(root, _snapshot_max_age_seconds(config), current)
+        if records is None:
+            records = runner(root, timeout)
+        payload = summarize_diagnostics(records)
         ttl = _cache_seconds(config)
         _CACHE["last_success_key"] = cache_key
         _CACHE["last_success_payload"] = payload

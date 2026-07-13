@@ -3,7 +3,8 @@
   [string]$WatchdogTaskName = "OpsMonitorWatchdog",
   [switch]$Json,
   [switch]$DeepDiskScan,
-  [switch]$LocalOnly
+  [switch]$LocalOnly,
+  [switch]$AllowRunningWatchdog
 )
 
 $ErrorActionPreference = "Continue"
@@ -260,9 +261,12 @@ function Get-WatchdogTaskHealth {
       $status = "warning"
       $message = "Watchdog scheduled task is disabled."
     }
-    if ($lastResult -ne 0) {
+    $runningAllowed = $AllowRunningWatchdog -and $state -eq "Running"
+    if (($lastResult -ne 0) -and (-not $runningAllowed)) {
       $status = "warning"
       $message = "Watchdog scheduled task last run did not finish cleanly."
+    } elseif ($runningAllowed) {
+      $message = "Watchdog scheduled task is currently running."
     }
 
     [pscustomobject]@{
