@@ -385,6 +385,21 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("certRenewalSummary.expiring", notice_block)
         self.assertIn("certRenewalSummary.unknownExpiry", notice_block)
 
+    def test_cert_renewal_risk_panel_is_visible_on_dashboard(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="certRenewalRiskPanel"', index_html)
+        self.assertIn('id="certRenewalRiskList"', index_html)
+        self.assertIn("function renderCertRenewalRisks()", app_js)
+        self.assertIn("certRenewalRiskItems()", app_js)
+        self.assertIn("state.dashboard?.websites", app_js)
+        self.assertIn("certRenewal.expiresInDays", app_js)
+        self.assertIn("data-cert-risk-manual-renewal", app_js)
+        self.assertIn("renderCertRenewalRisks();", app_js)
+        self.assertIn(".cert-renewal-risk-panel", styles_css)
+
     def test_resource_expiry_summary_is_visible_in_system_notice(self) -> None:
         notice_block = notice_js()
 

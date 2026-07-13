@@ -914,6 +914,69 @@ select {
   color: var(--warn);
 }
 
+.cert-renewal-risk-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #edd48d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--warn-bg);
+  box-shadow: var(--shadow);
+}
+
+.cert-renewal-risk-head,
+.cert-renewal-risk-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cert-renewal-risk-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cert-renewal-risk-badge,
+.cert-renewal-risk-item-head span {
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff3cf;
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cert-renewal-risk-item {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(174, 124, 17, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.cert-renewal-risk-item.failed .cert-renewal-risk-item-head span,
+.cert-renewal-risk-item.blocked .cert-renewal-risk-item-head span {
+  background: #fde2df;
+  color: var(--bad);
+}
+
+.cert-renewal-risk-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cert-renewal-risk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .config-validation-list {
   display: grid;
   gap: 8px;

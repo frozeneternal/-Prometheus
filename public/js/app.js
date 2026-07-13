@@ -195,6 +195,8 @@ function renderError(error) {
   $("#unmanagedTargetsList").innerHTML = "";
   $("#emergencyRunbookPanel").classList.add("hidden");
   $("#emergencyRunbookList").innerHTML = "";
+  $("#certRenewalRiskPanel").classList.add("hidden");
+  $("#certRenewalRiskList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
   $("#websiteEmptyState").classList.add("hidden");
   $("#resourceExpiryEmptyState").classList.add("hidden");
@@ -233,6 +235,7 @@ function render() {
   renderPrometheusRules();
   renderUnmanagedTargets();
   renderEmergencyRunbook();
+  renderCertRenewalRisks();
   renderGroups();
   renderServers();
   renderWebsites();
@@ -678,6 +681,79 @@ function emergencyActionButton(item) {
     return actions.join("");
   }
   return "";
+}
+
+function certRenewalRiskItems() {
+  return (state.dashboard?.websites || []).filter((website) => {
+    const certRenewal = website.certRenewal || {};
+    if (!certRenewal || certRenewal.notApplicable) return false;
+
+    const status = certRenewal.status || "idle";
+    if (["failed", "blocked", "verifying"].includes(status)) return true;
+
+    const expiresInDays = Number(certRenewal.expiresInDays);
+    if (!Number.isFinite(expiresInDays)) return Boolean(certRenewal.enabled);
+
+    const renewBeforeDays = Number(certRenewal.renewBeforeDays ?? 14);
+    const threshold = Number.isFinite(renewBeforeDays) ? renewBeforeDays : 14;
+    if (expiresInDays <= threshold) return true;
+    return !certRenewal.enabled && expiresInDays <= 30;
+  });
+}
+
+function renderCertRenewalRisks() {
+  const panel = $("#certRenewalRiskPanel");
+  const items = certRenewalRiskItems();
+  if (!items.length) {
+    panel.classList.add("hidden");
+    $("#certRenewalRiskList").innerHTML = "";
+    return;
+  }
+
+  panel.className = "cert-renewal-risk-panel warning";
+  $("#certRenewalRiskBadge").textContent = String(items.length);
+  $("#certRenewalRiskSummary").textContent = `发现 ${items.length} 个证书续期风险，需确认自动续期动作、证书剩余天数或手动续期结果。`;
+  $("#certRenewalRiskList").innerHTML = items.map(certRenewalRiskCard).join("");
+  $("#certRenewalRiskList").querySelectorAll("[data-cert-risk-manual-renewal]").forEach((button) => {
+    button.addEventListener("click", () => openManualCertRenewalDialog(button.dataset.websiteId));
+  });
+}
+
+function certRenewalRiskCard(website) {
+  const certRenewal = website.certRenewal || {};
+  const manualCertRenewal = website.manualCertRenewal || {};
+  const status = certRenewal.status || "idle";
+  const expiresText = certRenewal.expiresInDays === null || certRenewal.expiresInDays === undefined
+    ? "证书天数未知"
+    : `剩余 ${certRenewal.expiresInDays} 天`;
+  const reason = certRenewalRiskReason(certRenewal);
+  const manualButton = manualCertRenewal.available
+    ? `<button type="button" class="secondary recovery-trigger compact" data-cert-risk-manual-renewal="true" data-website-id="${escapeHtml(website.id)}">${escapeHtml(manualCertRenewal.label || "手动续期")}</button>`
+    : "";
+  return `
+    <article class="cert-renewal-risk-item ${escapeHtml(status)}">
+      <div class="cert-renewal-risk-item-head">
+        <strong>${escapeHtml(website.name || website.id || "未命名网站")}</strong>
+        <span>${escapeHtml(certRenewalLabels[status] || status)}</span>
+      </div>
+      <p class="muted">${escapeHtml([website.url, expiresText, `提前 ${certRenewal.renewBeforeDays ?? 14} 天续期`].filter(Boolean).join(" / "))}</p>
+      <p>${escapeHtml(reason)}</p>
+      ${certRenewal.message ? `<p class="alert-action">${escapeHtml(certRenewal.message)}</p>` : ""}
+      ${manualButton ? `<div class="cert-renewal-risk-actions">${manualButton}</div>` : ""}
+    </article>
+  `;
+}
+
+function certRenewalRiskReason(certRenewal) {
+  const status = certRenewal.status || "idle";
+  if (status === "failed") return "最近一次证书续期失败，需要查看恢复日志并手动确认。";
+  if (status === "blocked") return "自动续期被策略或数据质量阻断，执行前需要修正配置或监控数据。";
+  if (status === "verifying") return "续期命令已执行，正在等待证书到期时间延长确认。";
+  if (certRenewal.expiresInDays === null || certRenewal.expiresInDays === undefined) {
+    return "证书剩余天数未知，自动判断不可信。";
+  }
+  if (!certRenewal.enabled) return "证书接近到期，但自动续期未启用。";
+  return "证书已进入自动续期窗口，需要确认续期动作可执行。";
 }
 
 function renderGroups() {
