@@ -166,7 +166,7 @@ def _data_quality_overview(items: list[dict]) -> dict:
     }
 
 
-_INTERNAL_PROMETHEUS_JOBS = {"prometheus", "local_ops_platform"}
+_INTERNAL_PROMETHEUS_JOBS = {"prometheus", "local_ops_platform", "local_windows"}
 
 
 def _target_labels_from_item(item: dict) -> dict:

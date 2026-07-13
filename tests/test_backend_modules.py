@@ -1943,6 +1943,54 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(payload["unmanagedTargets"][0]["suggestedConfig"]["json"].startswith('{\n  "id": "not-in-config"'))
         self.assertIn("servers.local.json", payload["unmanagedTargets"][0]["actionHint"])
 
+    def test_dashboard_payload_ignores_internal_local_windows_target(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        configured_labels = {"job": "linux_servers_direct", "instance": "10.0.0.5:9100"}
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: {
+                "id": server["id"],
+                "name": server["name"],
+                "labels": server["labels"],
+                "status": "online",
+                "health": "healthy",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {"up": 1},
+                "errors": {},
+            },
+            website_snapshot=lambda _config, _website: {},
+            active_targets=lambda _config: [
+                {"labels": configured_labels, "health": "up", "lastError": ""},
+                {
+                    "labels": {
+                        "job": "local_windows",
+                        "instance": "127.0.0.1:9182",
+                        "name": "local-windows",
+                    },
+                    "health": "up",
+                    "lastError": "",
+                },
+            ],
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [{"id": "srv1", "name": "Server 1", "labels": configured_labels}],
+                "websites": [],
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(payload["targetCoverage"]["matched"], 1)
+        self.assertEqual(payload["targetCoverage"]["unmanaged"], 0)
+        self.assertEqual(payload["targetCoverage"]["status"], "healthy")
+        self.assertEqual(payload["targetIssueSummary"]["total"], 0)
+        self.assertEqual(payload["unmanagedTargets"], [])
+
     def test_dashboard_payload_summarizes_auto_recovery_safety_state(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
 
