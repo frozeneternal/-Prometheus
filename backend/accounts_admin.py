@@ -180,9 +180,10 @@ def upsert_account_user_payload(
         return 400, {"ok": False, "message": enabled_error}
     next_user["enabled"] = enabled
     enabled_changed = index is not None and (existing.get("enabled", True) is not False) != enabled
+    role_changed = index is not None and normalize_role(existing.get("role")) != normalize_role(next_user.get("role"))
     if password_provided:
         next_user["passwordHash"] = hash_password(password)
-    if index is not None and (password_provided or enabled_changed):
+    if index is not None and (password_provided or enabled_changed or role_changed):
         next_user["sessionsRevokedBefore"] = float(active_runtime.now())
 
     if _user_key(username) == _auth_username(auth_payload):
