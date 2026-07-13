@@ -95,7 +95,7 @@ def load_config(
         config["_usingOverrideConfig"] = using_override
         return config
 
-    with path.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8-sig") as fh:
         data = json.load(fh)
 
     config = DEFAULT_CONFIG.copy()
@@ -121,7 +121,7 @@ def load_config_raw(
     if not path.exists():
         return json.loads(json.dumps(DEFAULT_CONFIG))
 
-    with path.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8-sig") as fh:
         return json.load(fh)
 
 

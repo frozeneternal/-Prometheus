@@ -112,7 +112,7 @@ def proxy(local_sock: socket.socket, remote_channel: paramiko.Channel) -> None:
 
 
 def read_tunnels(path: Path) -> list[TunnelConfig]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw = json.loads(path.read_text(encoding="utf-8-sig"))
     tunnels: list[TunnelConfig] = []
     for item in raw.get("tunnels", []):
         if item.get("enabled") is False:

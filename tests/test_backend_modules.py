@@ -1363,6 +1363,26 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(options["resourceExpiryCriticalDays"], 2)
         self.assertEqual(options["resourceAckMaxDays"], 7)
 
+    def test_config_module_accepts_utf8_bom_json(self) -> None:
+        from backend import config as backend_config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "servers.json"
+            local_path = root / "servers.local.json"
+            config_path.write_text('{"appName":"sample","servers":[]}', encoding="utf-8")
+            local_path.write_text(
+                json.dumps({"appName": "local-bom", "servers": [{"id": "srv-bom"}]}),
+                encoding="utf-8-sig",
+            )
+
+            loaded = backend_config.load_config(config_path=config_path, local_config_path=local_path)
+            raw = backend_config.load_config_raw(config_path=config_path, local_config_path=local_path)
+
+        self.assertEqual(loaded["appName"], "local-bom")
+        self.assertEqual(loaded["servers"][0]["id"], "srv-bom")
+        self.assertEqual(raw["appName"], "local-bom")
+
     def test_config_module_environment_override_isolates_runtime_config(self) -> None:
         from backend import config as backend_config
 

@@ -1,5 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import importlib.util
+import sys
+import tempfile
 import unittest
 import json
 from pathlib import Path
@@ -328,6 +331,36 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("127.0.0.1", tunnel_example)
         self.assertIn("localPort", tunnel_example)
         self.assertIn("remoteHost", tunnel_example)
+
+    def test_ssh_tunnel_reader_accepts_utf8_bom_json(self) -> None:
+        spec = importlib.util.spec_from_file_location("ssh_metrics_tunnel_test", STANDALONE / "ssh_metrics_tunnel.py")
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "tunnels.local.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "tunnels": [
+                            {
+                                "name": "sample",
+                                "sshHost": "10.0.0.5",
+                                "localPort": 19105,
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8-sig",
+            )
+            tunnels = module.read_tunnels(config_path)
+
+        self.assertEqual(tunnels[0].name, "sample")
+        self.assertEqual(tunnels[0].local_host, "127.0.0.1")
+        self.assertEqual(tunnels[0].remote_host, "127.0.0.1")
 
     def test_powershell_param_block_comes_before_statements(self) -> None:
         for path in STANDALONE.glob("*.ps1"):
