@@ -123,13 +123,16 @@ def load_incident_logs_from_disk() -> list[dict]:
     except (OSError, json.JSONDecodeError):
         return []
 
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    return [sanitize_incident_log_event(event) for event in data if isinstance(event, dict)]
 
 
 def save_incident_logs_to_disk(logs: list[dict]) -> None:
     ensure_data_dir()
+    sanitized_logs = [sanitize_incident_log_event(event) for event in logs if isinstance(event, dict)]
     with INCIDENT_LOG_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(logs, fh, ensure_ascii=False, indent=2)
+        json.dump(sanitized_logs, fh, ensure_ascii=False, indent=2)
 
 
 def load_entity_states_from_disk() -> dict[str, dict]:
@@ -200,7 +203,7 @@ def save_login_attempts_to_disk(attempts: dict) -> None:
 def get_recent_incident_logs(limit: int = 50) -> list[dict]:
     with RUNTIME_LOCK:
         logs = list(RUNTIME_STATE["incidentLogs"])
-    return logs[-limit:]
+    return [sanitize_incident_log_event(event) for event in logs[-limit:] if isinstance(event, dict)]
 
 
 def get_auth_audit_logs(limit: int | None = None) -> list[dict]:
@@ -222,18 +225,19 @@ def append_auth_audit_log(config: dict, event: dict) -> dict:
 
 def upsert_incident_log(config: dict, event: dict) -> dict:
     limit = monitoring_options(config)["incidentLogLimit"]
+    sanitized_event = sanitize_incident_log_event(event)
     with RUNTIME_LOCK:
         logs = list(RUNTIME_STATE["incidentLogs"])
         for index, existing in enumerate(logs):
-            if existing.get("id") == event.get("id"):
-                logs[index] = {**existing, **event}
+            if existing.get("id") == sanitized_event.get("id"):
+                logs[index] = sanitize_incident_log_event({**existing, **sanitized_event})
                 break
         else:
-            logs.append(event)
+            logs.append(sanitized_event)
         logs = logs[-limit:]
         RUNTIME_STATE["incidentLogs"] = logs
     save_incident_logs_to_disk(logs)
-    return event
+    return sanitized_event
 
 
 def runtime_entity_key(target_type: str, target_id: str) -> str:
@@ -430,6 +434,7 @@ from backend.health import (  # noqa: E402 - transitional re-export while app.py
 from backend.incidents import (  # noqa: E402 - transitional re-export while app.py is split.
     IncidentRuntime,
     configure_incident_runtime,
+    sanitize_incident_log_event,
     summarize_incident_reason,
     target_display_type,
     update_incident_state,

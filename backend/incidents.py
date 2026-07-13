@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from backend.redaction import redact_sensitive_text
+
 
 def _noop_upsert(_config: dict, _event: dict) -> None:
     return None
@@ -30,6 +32,14 @@ def target_display_type(target_type: str) -> str:
         "website-cert": "网站证书",
         "server-backup": "服务器备份",
     }.get(target_type, target_type)
+
+
+def sanitize_incident_log_event(event: dict) -> dict:
+    sanitized = dict(event)
+    for key in ("reason", "summary", "lastStatus"):
+        if key in sanitized:
+            sanitized[key] = redact_sensitive_text(sanitized.get(key))
+    return sanitized
 
 
 def summarize_incident_reason(target_type: str, snapshot: dict) -> str:

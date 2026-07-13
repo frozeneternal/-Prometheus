@@ -3283,6 +3283,33 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("[REDACTED]", serialized)
         self.assertIn("invalid dns token", serialized)
 
+    def test_app_recent_incident_logs_redacts_legacy_sensitive_reason(self) -> None:
+        import app
+
+        legacy_logs = [
+            {
+                "id": "incident-legacy",
+                "reason": "Prometheus lastError token=incident-token invalid dns token",
+                "summary": "Site failed with Authorization: Bearer incident-bearer",
+                "lastStatus": "https://ops.example/check?access_token=incident-url-token",
+            }
+        ]
+        with app.RUNTIME_LOCK:
+            previous_logs = list(app.RUNTIME_STATE["incidentLogs"])
+            app.RUNTIME_STATE["incidentLogs"] = legacy_logs
+        try:
+            logs = app.get_recent_incident_logs()
+        finally:
+            with app.RUNTIME_LOCK:
+                app.RUNTIME_STATE["incidentLogs"] = previous_logs
+
+        serialized = json.dumps(logs, ensure_ascii=False)
+        self.assertNotIn("incident-token", serialized)
+        self.assertNotIn("incident-bearer", serialized)
+        self.assertNotIn("incident-url-token", serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertIn("invalid dns token", serialized)
+
     def test_actions_default_runner_uses_hidden_windows_process(self) -> None:
         from backend import actions
         from backend.actions import ActionRuntime, execute_server_action

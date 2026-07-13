@@ -2,22 +2,14 @@ from __future__ import annotations
 
 import subprocess
 import time
-import re
 from dataclasses import dataclass
 from typing import Callable
 
+from backend.redaction import redact_sensitive_text
 from backend.subprocess_utils import hidden_subprocess_kwargs
 
 
 MAX_OUTPUT_CHARS = 20000
-REDACTED_TEXT = "[REDACTED]"
-SENSITIVE_QUERY_PATTERN = re.compile(
-    r"(?i)([?&](?:access[_-]?token|api[_-]?key|password|passwd|pwd|secret|session[_-]?token|token)=)([^&\s]+)"
-)
-SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
-    r"(?i)\b(password|passwd|pwd|secret|api[_-]?key|access[_-]?key|access[_-]?token|session[_-]?token|token)\s*([=:])\s*([^\s'\";]+)"
-)
-BEARER_PATTERN = re.compile(r"(?i)\b(authorization\s*[:=]\s*bearer\s+)([^\s'\"]+)")
 
 
 def _noop_append(_config: dict, _event: dict) -> None:
@@ -68,14 +60,7 @@ def trim_output(value: str | bytes | None) -> str:
 
 
 def redact_sensitive_output(value: str | bytes | None) -> str:
-    text = trim_output(value)
-    text = BEARER_PATTERN.sub(lambda match: f"{match.group(1)}{REDACTED_TEXT}", text)
-    text = SENSITIVE_QUERY_PATTERN.sub(lambda match: f"{match.group(1)}{REDACTED_TEXT}", text)
-    text = SENSITIVE_ASSIGNMENT_PATTERN.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}{REDACTED_TEXT}",
-        text,
-    )
-    return text
+    return redact_sensitive_text(trim_output(value))
 
 
 def sanitize_action_log_event(event: dict) -> dict:
