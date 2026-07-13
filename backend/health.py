@@ -36,9 +36,19 @@ def data_quality_summary(items: list[dict]) -> dict:
     }
 
 
+def server_exporter_name(server: dict) -> str:
+    labels = server.get("labels") if isinstance(server.get("labels"), dict) else {}
+    os_name = str(server.get("os") or labels.get("os") or "").lower()
+    job = str(labels.get("job") or "").lower()
+    if os_name == "windows" or "windows" in job:
+        return "windows_exporter"
+    return "node_exporter"
+
+
 def server_health(server: dict, status: str, values: dict[str, float | None]) -> tuple[str, list[str]]:
     if status == "offline":
-        return "down", ["node_exporter 离线，Prometheus 无法采集这台服务器。"]
+        exporter = server_exporter_name(server)
+        return "down", [f"{exporter} 离线，Prometheus 无法采集这台服务器。"]
     if status == "unknown":
         return "unknown", ["Prometheus 暂无这台服务器的数据。"]
 

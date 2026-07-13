@@ -19,4 +19,11 @@ def hidden_subprocess_kwargs(kwargs: Mapping[str, object] | None = None) -> dict
     except (TypeError, ValueError):
         existing_flags = 0
     merged["creationflags"] = existing_flags | create_no_window
+
+    startupinfo = merged.get("startupinfo")
+    if startupinfo is None:
+        startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    merged["startupinfo"] = startupinfo
     return merged

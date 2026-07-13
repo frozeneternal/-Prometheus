@@ -139,6 +139,22 @@ def _target_diagnostics_step(target: dict) -> str:
     return f"Prometheus target diagnostics: {category}; {diagnostics.get('message')}{suffix}"
 
 
+def _server_exporter_hint(server: dict) -> str:
+    diagnostics = server.get("targetDiagnostics") or {}
+    category = str(diagnostics.get("category") or "").lower()
+    if "windows_exporter" in category:
+        return "windows_exporter"
+    if "node_exporter" in category:
+        return "node_exporter"
+
+    labels = server.get("labels") if isinstance(server.get("labels"), dict) else {}
+    os_name = str(server.get("os") or labels.get("os") or "").lower()
+    job = str(labels.get("job") or "").lower()
+    if os_name == "windows" or "windows" in job:
+        return "windows_exporter"
+    return "node_exporter"
+
+
 def _platform_health_items(platform_health: dict | None) -> list[dict]:
     if not isinstance(platform_health, dict):
         return []
@@ -252,8 +268,9 @@ def _server_item(server: dict, recovery_log_lookup: dict[str, dict] | None = Non
     recovery = server.get("autoRecovery") or {}
     recovery_status = str(recovery.get("status") or "idle")
     last_log_id = str(recovery.get("lastLogId") or "")
+    exporter_hint = _server_exporter_hint(server)
     next_steps = [
-        "先查看数据质量，确认不是 Prometheus 或 node_exporter 缺数导致的误判。",
+        f"先查看数据质量，确认不是 Prometheus 或 {exporter_hint} 缺数导致的误判。",
         "检查该服务器的最近恢复日志和中断事件，确认自动恢复是否已经触发。",
     ]
     diagnostics_step = _target_diagnostics_step(server)

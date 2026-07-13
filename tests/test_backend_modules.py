@@ -1248,6 +1248,39 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("存储空间", steps)
         self.assertIn("凭据", steps)
 
+    def test_emergency_module_uses_windows_exporter_wording_for_windows_server(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[
+                {
+                    "id": "win1",
+                    "name": "Windows Server",
+                    "health": "down",
+                    "status": "offline",
+                    "issues": ["windows_exporter 离线，Prometheus 无法采集这台服务器。"],
+                    "targetDiagnostics": {
+                        "category": "windows_exporter_down",
+                        "message": "Prometheus reached the Windows target, but windows_exporter refused the connection.",
+                        "lastError": "connectex: actively refused",
+                    },
+                    "autoRecovery": {"enabled": False},
+                }
+            ],
+            websites=[],
+            resources=[],
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["targetType"], "server")
+        self.assertIn("windows_exporter", items[0]["message"])
+        self.assertNotIn("node_exporter", items[0]["message"])
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("windows_exporter", steps)
+        self.assertNotIn("node_exporter 缺数", steps)
+
     def test_emergency_module_surfaces_failed_cert_renewal_without_app_import(self) -> None:
         from backend.emergency import emergency_items
 
@@ -1690,6 +1723,26 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["untrusted"], 1)
         self.assertEqual(summary["levels"]["ok"], 1)
         self.assertEqual(summary["levels"]["no_series"], 1)
+
+    def test_health_module_reports_offline_exporter_by_server_os(self) -> None:
+        from backend import health
+
+        windows_status, windows_issues = health.server_health(
+            {"id": "win1", "labels": {"os": "windows"}},
+            "offline",
+            {},
+        )
+        linux_status, linux_issues = health.server_health(
+            {"id": "linux1", "labels": {"os": "linux"}},
+            "offline",
+            {},
+        )
+
+        self.assertEqual(windows_status, "down")
+        self.assertIn("windows_exporter", windows_issues[0])
+        self.assertNotIn("node_exporter", windows_issues[0])
+        self.assertEqual(linux_status, "down")
+        self.assertIn("node_exporter", linux_issues[0])
 
     def test_snapshots_module_builds_server_and_website_snapshots_without_app_import(self) -> None:
         from backend import snapshots
@@ -2873,6 +2926,20 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(captured["command"], ["restart"])
         if os.name == "nt":
             self.assertTrue(int(captured["creationflags"]) & subprocess.CREATE_NO_WINDOW)
+
+    def test_subprocess_utils_hides_windows_startup_window(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows-only subprocess window behavior")
+
+        from backend.subprocess_utils import hidden_subprocess_kwargs
+
+        kwargs = hidden_subprocess_kwargs({"creationflags": 0})
+
+        self.assertTrue(int(kwargs["creationflags"]) & subprocess.CREATE_NO_WINDOW)
+        startupinfo = kwargs.get("startupinfo")
+        self.assertIsInstance(startupinfo, subprocess.STARTUPINFO)
+        self.assertTrue(startupinfo.dwFlags & subprocess.STARTF_USESHOWWINDOW)
+        self.assertEqual(startupinfo.wShowWindow, subprocess.SW_HIDE)
 
     def test_actions_module_records_source_ip_in_recovery_log(self) -> None:
         from backend.actions import ActionRuntime, execute_server_action

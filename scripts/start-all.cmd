@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0.."
+set PYTHONIOENCODING=utf-8
 
 call scripts\start-prometheus.cmd
 
@@ -10,4 +11,4 @@ for /l %%i in (1,1,30) do (
   timeout /t 2 /nobreak >nul
 )
 
-start "Local Monitor Console" /min scripts\start-console.cmd
+start "" /b cmd /c "python app.py --host 127.0.0.1 --port 8787 > server.out.log 2> server.err.log"

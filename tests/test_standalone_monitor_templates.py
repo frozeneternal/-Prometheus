@@ -114,6 +114,14 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertNotIn('-Execute "powershell.exe"', installer)
         self.assertIn("$Settings.Hidden = $true", installer)
 
+    def test_local_start_all_launches_web_console_in_background(self) -> None:
+        script = (ROOT / "scripts" / "start-all.cmd").read_text(encoding="utf-8")
+
+        self.assertIn('start "" /b cmd /c', script)
+        self.assertIn("server.out.log", script)
+        self.assertIn("server.err.log", script)
+        self.assertNotIn('start "Local Monitor Console"', script)
+
     def test_hidden_launcher_uses_wscript_shell_run_without_window(self) -> None:
         launcher = (STANDALONE / "run-hidden.vbs").read_text(encoding="utf-8")
 
