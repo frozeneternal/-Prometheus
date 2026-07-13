@@ -336,6 +336,7 @@ from backend.auth import (  # noqa: E402 - transitional re-export while app.py i
 from backend.auth_api import (  # noqa: E402 - transitional re-export while app.py is split.
     AuthApiRuntime,
     auth_audit_payload,
+    change_password_payload,
     configure_auth_api_runtime,
     login_lockouts_payload,
     login_payload,
@@ -545,6 +546,8 @@ configure_settings_runtime(
 configure_auth_api_runtime(
     AuthApiRuntime(
         now=lambda: time.time(),
+        load_config_raw=lambda: load_config_raw(),
+        save_config_raw=lambda raw_config: save_config_raw(raw_config),
         save_login_attempts=lambda attempts: save_login_attempts_to_disk(attempts),
         save_revoked_sessions=lambda session_ids: save_revoked_sessions_to_disk(session_ids),
         append_auth_audit=lambda config, event: append_auth_audit_log(config, event),
@@ -852,6 +855,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
                 return
             status, payload = logout_payload(config, body, source_ip=request_source_ip(self))
+            json_response(self, status, payload)
+            return
+
+        if parsed.path == "/api/auth/password":
+            try:
+                body = read_json_body(self)
+            except json.JSONDecodeError:
+                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
+                return
+            status, payload = change_password_payload(config, body, source_ip=request_source_ip(self))
             json_response(self, status, payload)
             return
 

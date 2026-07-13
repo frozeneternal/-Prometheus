@@ -201,6 +201,102 @@ class BackendModuleTests(unittest.TestCase):
         self.assertNotIn(token, serialized)
         self.assertNotIn("ops-pass", serialized)
 
+    def test_auth_api_module_changes_own_password_and_revokes_old_session_without_app_import(self) -> None:
+        from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
+        from backend.auth_api import AuthApiRuntime, change_password_payload
+
+        username = "module-ops"
+        raw_config = {
+            "sessionSecret": "session-secret",
+            "authPolicy": {"passwordMinLength": 10},
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Ops",
+                    "role": "operator",
+                    "passwordHash": hash_password("old-pass-1", salt="module-change-salt", iterations=1000),
+                }
+            ],
+        }
+        config = json.loads(json.dumps(raw_config))
+        user = authenticate_user(config, username, "old-pass-1")
+        old_token = create_session_token(config, user, now=1000)
+        saved_configs: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda next_config: saved_configs.append(json.loads(json.dumps(next_config))),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = change_password_payload(
+            config,
+            {
+                "sessionToken": old_token,
+                "currentPassword": "old-pass-1",
+                "newPassword": "new-pass-2",
+            },
+            source_ip="10.0.0.40",
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertIn("sessionToken", payload)
+        saved_config = saved_configs[0]
+        self.assertIsNone(authenticate_user(saved_config, username, "old-pass-1"))
+        self.assertIsNotNone(authenticate_user(saved_config, username, "new-pass-2"))
+        self.assertIsNone(verify_session_token(saved_config, old_token, now=1012))
+        self.assertEqual(verify_session_token(saved_config, payload["sessionToken"], now=1012)["username"], username)
+        self.assertEqual(audit_events[0]["event"], "password-change")
+        self.assertEqual(audit_events[0]["username"], username)
+        self.assertEqual(audit_events[0]["sourceIp"], "10.0.0.40")
+        serialized = json.dumps({"payload": payload, "audit": audit_events}, ensure_ascii=False)
+        self.assertNotIn("old-pass-1", serialized)
+        self.assertNotIn("new-pass-2", serialized)
+
+    def test_auth_api_module_rejects_own_password_change_with_wrong_current_password(self) -> None:
+        from backend.auth import authenticate_user, create_session_token, hash_password
+        from backend.auth_api import AuthApiRuntime, change_password_payload
+
+        username = "module-ops"
+        raw_config = {
+            "sessionSecret": "session-secret",
+            "users": [
+                {
+                    "username": username,
+                    "displayName": "Module Ops",
+                    "role": "operator",
+                    "passwordHash": hash_password("old-pass-1", salt="module-change-salt", iterations=1000),
+                }
+            ],
+        }
+        config = json.loads(json.dumps(raw_config))
+        user = authenticate_user(config, username, "old-pass-1")
+        token = create_session_token(config, user, now=1000)
+        saved_configs: list[dict] = []
+        runtime = AuthApiRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda next_config: saved_configs.append(next_config),
+        )
+
+        status, payload = change_password_payload(
+            config,
+            {
+                "sessionToken": token,
+                "currentPassword": "wrong-pass",
+                "newPassword": "new-pass-2",
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 403)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(saved_configs, [])
+        self.assertIsNotNone(authenticate_user(raw_config, username, "old-pass-1"))
+
     def test_auth_api_module_pages_audit_logs_without_app_import(self) -> None:
         from backend.auth_api import AuthApiRuntime, auth_audit_payload
 
@@ -4542,6 +4638,7 @@ class BackendModuleTests(unittest.TestCase):
             "login_lockouts_payload",
             "auth_audit_payload",
             "unlock_login_payload",
+            "change_password_payload",
         ]
 
         for function_name in forbidden_functions:
@@ -4571,6 +4668,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(app.login_lockouts_payload.__module__, "backend.auth_api")
         self.assertEqual(app.auth_audit_payload.__module__, "backend.auth_api")
         self.assertEqual(app.unlock_login_payload.__module__, "backend.auth_api")
+        self.assertEqual(app.change_password_payload.__module__, "backend.auth_api")
         self.assertEqual(app.account_users_payload.__module__, "backend.accounts_admin")
         self.assertEqual(app.upsert_account_user_payload.__module__, "backend.accounts_admin")
         self.assertEqual(app.delete_account_user_payload.__module__, "backend.accounts_admin")

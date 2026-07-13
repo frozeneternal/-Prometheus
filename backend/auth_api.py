@@ -13,14 +13,19 @@ from backend.auth import (
     create_session_token,
     login_attempt_snapshot,
     login_lockout_until,
+    public_user,
     record_login_failure,
     record_login_success,
     revoke_session_token,
     revoked_session_snapshot,
+    hash_password,
+    verify_password,
     users_enabled,
     verify_session_token,
 )
 from backend.auth_audit import auth_audit_event
+from backend.config import load_config_raw as default_load_config_raw
+from backend.config import save_config_raw as default_save_config_raw
 
 
 DEFAULT_AUTH_AUDIT_LIMIT = 50
@@ -46,6 +51,8 @@ def _empty_auth_audit_logs() -> list[dict]:
 @dataclass(frozen=True)
 class AuthApiRuntime:
     now: Callable[[], float] = time.time
+    load_config_raw: Callable[[], dict] = default_load_config_raw
+    save_config_raw: Callable[[dict], None] = default_save_config_raw
     save_login_attempts: Callable[[dict], None] = _noop_save_login_attempts
     save_revoked_sessions: Callable[[dict[str, float]], None] = _noop_save_revoked_sessions
     append_auth_audit: Callable[[dict, dict], dict] = _return_auth_audit_event
@@ -216,6 +223,83 @@ def logout_payload(
         except OSError as exc:
             return 500, {"ok": False, "message": f"会话已撤销，但账号审计日志保存失败：{exc}"}
     return 200, {"ok": True, "mode": "session", "message": "已退出登录。"}
+
+
+def _find_raw_user(raw_config: dict, username: str) -> dict | None:
+    for user in raw_config.get("users", []) or []:
+        if str(user.get("username") or "") == username:
+            return user
+    return None
+
+
+def change_password_payload(
+    config: dict,
+    body: dict,
+    *,
+    source_ip: str = "",
+    runtime: AuthApiRuntime | None = None,
+) -> tuple[int, dict]:
+    active_runtime = runtime or _runtime
+    if not users_enabled(config):
+        return 400, {"ok": False, "message": "当前未启用账号登录模式。"}
+
+    token = str(body.get("sessionToken") or "")
+    current_password = str(body.get("currentPassword") or "")
+    new_password = str(body.get("newPassword") or "")
+    current = active_runtime.now()
+    actor = verify_session_token(config, token, now=current)
+    if not actor:
+        return 401, {"ok": False, "message": "登录已失效。"}
+
+    password_min_length = auth_policy(config)["passwordMinLength"]
+    if len(new_password) < password_min_length:
+        return 400, {"ok": False, "message": f"新密码至少 {password_min_length} 位。"}
+    if new_password == current_password:
+        return 400, {"ok": False, "message": "新密码不能与当前密码相同。"}
+
+    username = str(actor.get("username") or "")
+    raw_config = active_runtime.load_config_raw()
+    raw_user = _find_raw_user(raw_config, username)
+    if raw_user is None or raw_user.get("enabled", True) is False:
+        return 401, {"ok": False, "message": "登录已失效。"}
+    if not verify_password(current_password, str(raw_user.get("passwordHash") or "")):
+        return 403, {"ok": False, "message": "当前密码不正确。"}
+
+    raw_user["passwordHash"] = hash_password(new_password)
+    raw_user["sessionsRevokedBefore"] = float(current)
+    try:
+        active_runtime.save_config_raw(raw_config)
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"密码未保存：{exc}"}
+
+    refreshed_user = public_user(raw_user)
+    try:
+        new_token = create_session_token(config, refreshed_user, now=current + 0.001)
+    except ValueError as exc:
+        return 500, {"ok": False, "message": str(exc)}
+    try:
+        active_runtime.append_auth_audit(
+            raw_config,
+            auth_audit_event(
+                "password-change",
+                username,
+                "账号密码已由本人更新。",
+                actor=refreshed_user,
+                source_ip=source_ip,
+                now=current,
+            ),
+        )
+    except OSError as exc:
+        return 500, {"ok": False, "message": f"密码已更新，但账号审计日志保存失败：{exc}"}
+
+    return 200, {
+        "ok": True,
+        "mode": "session",
+        "message": "密码已更新。",
+        "sessionToken": new_token,
+        "user": refreshed_user,
+        "expiresInSeconds": 12 * 3600,
+    }
 
 
 def login_lockouts_payload(

@@ -25,6 +25,12 @@
             <span id="accountUserLabel"></span>
             <button id="logoutButton" type="button">退出</button>
           </div>
+          <form id="accountPasswordForm" class="account-password-form hidden" autocomplete="off">
+            <input id="accountCurrentPassword" name="accountCurrentPassword" type="password" autocomplete="current-password" placeholder="当前密码">
+            <input id="accountNewPassword" name="accountNewPassword" type="password" autocomplete="new-password" placeholder="新密码">
+            <button id="accountPasswordButton" class="secondary" type="submit">改密</button>
+            <span id="accountPasswordMessage" class="account-password-message"></span>
+          </form>
           <label class="token-field" for="tokenInput">
             <span>操作口令</span>
             <input id="tokenInput" type="password" autocomplete="off" placeholder="Token">

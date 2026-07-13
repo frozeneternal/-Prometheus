@@ -907,6 +907,30 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("#accountPasswordPolicy", accounts_js)
         self.assertIn("renderAccountPasswordPolicy();", accounts_js)
 
+    def test_current_user_can_change_own_password_from_session_panel(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+        backend_py = (ROOT / "app.py").read_text(encoding="utf-8")
+        auth_api_py = (ROOT / "backend" / "auth_api.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="accountPasswordForm"', index_html)
+        self.assertIn('id="accountCurrentPassword"', index_html)
+        self.assertIn('id="accountNewPassword"', index_html)
+        self.assertIn("account-password-message", index_html)
+        self.assertIn("changeOwnPassword", client_js)
+        self.assertIn('"/api/auth/password"', client_js)
+        self.assertIn("changeCurrentUserPassword", accounts_js)
+        self.assertIn("setAccountPasswordMessage", accounts_js)
+        self.assertIn('setAccountPasswordMessage(payload.message || "密码已更新。", "ok")', accounts_js)
+        self.assertIn('setAccountPasswordMessage(error.message, "error")', accounts_js)
+        self.assertIn("state.sessionToken = payload.sessionToken || state.sessionToken", accounts_js)
+        self.assertIn("window.localStorage.setItem(\"monitorSessionToken\", state.sessionToken)", accounts_js)
+        self.assertIn('parsed.path == "/api/auth/password"', backend_py)
+        self.assertIn("change_password_payload(config, body, source_ip=request_source_ip(self))", backend_py)
+        self.assertIn("verify_password", auth_api_py)
+        self.assertIn("sessionsRevokedBefore", auth_api_py)
+
     def test_legacy_token_mode_can_bootstrap_first_admin_from_account_panel(self) -> None:
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
 

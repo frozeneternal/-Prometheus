@@ -47,6 +47,10 @@ export function logoutSession(sessionToken) {
   return postJson("/api/auth/logout", { sessionToken });
 }
 
+export function changeOwnPassword({ sessionToken, currentPassword, newPassword }) {
+  return postJson("/api/auth/password", { sessionToken, currentPassword, newPassword });
+}
+
 export function fetchAccountLockouts(sessionToken) {
   return postJson("/api/auth/lockouts", { sessionToken });
 }

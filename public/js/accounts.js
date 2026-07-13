@@ -1,4 +1,5 @@
 import {
+  changeOwnPassword,
   fetchAccountAudit,
   fetchAccountLockouts,
   fetchAccountUsers,
@@ -39,10 +40,12 @@ export function renderAuthControls() {
   const userMode = auth.mode === "users";
   $("#loginForm").classList.toggle("hidden", !userMode || Boolean(state.currentUser));
   $("#accountSession").classList.toggle("hidden", !userMode || !state.currentUser);
+  $("#accountPasswordForm").classList.toggle("hidden", !userMode || !state.currentUser);
   document.querySelector(".token-field").classList.toggle("hidden", userMode || !state.config?.actionsRequireToken);
   if (state.currentUser) {
     $("#accountUserLabel").textContent = `${state.currentUser.displayName || state.currentUser.username} · ${state.currentUser.role}`;
   }
+  bindAccountPasswordForm();
   renderAccountSecurity();
   renderAccountManagement();
   renderAccountLockouts();
@@ -57,6 +60,44 @@ export function authPayload() {
 
 export function isAdminUser() {
   return state.currentUser?.role === "admin";
+}
+
+function bindAccountPasswordForm() {
+  const form = $("#accountPasswordForm");
+  if (form.dataset.bound) return;
+  form.addEventListener("submit", changeCurrentUserPassword);
+  form.dataset.bound = "true";
+}
+
+function setAccountPasswordMessage(message, status = "") {
+  const element = $("#accountPasswordMessage");
+  element.className = `account-password-message ${status}`.trim();
+  element.textContent = message || "";
+}
+
+export async function changeCurrentUserPassword(event) {
+  event.preventDefault();
+  setAccountPasswordMessage("");
+  $("#accountPasswordButton").disabled = true;
+  try {
+    const payload = await changeOwnPassword({
+      sessionToken: state.sessionToken,
+      currentPassword: $("#accountCurrentPassword").value,
+      newPassword: $("#accountNewPassword").value,
+    });
+    state.sessionToken = payload.sessionToken || state.sessionToken;
+    state.currentUser = payload.user || state.currentUser;
+    window.localStorage.setItem("monitorSessionToken", state.sessionToken);
+    $("#accountCurrentPassword").value = "";
+    $("#accountNewPassword").value = "";
+    setAccountPasswordMessage(payload.message || "密码已更新。", "ok");
+    if (isAdminUser()) await loadAccountAudit();
+    renderAuthControls();
+  } catch (error) {
+    setAccountPasswordMessage(error.message, "error");
+  } finally {
+    $("#accountPasswordButton").disabled = false;
+  }
 }
 
 function canBootstrapFirstAdmin() {

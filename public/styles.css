@@ -120,14 +120,16 @@ h1 {
 }
 
 .account-form,
-.account-session {
+.account-session,
+.account-password-form {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.account-form input {
+.account-form input,
+.account-password-form input {
   width: 140px;
 }
 
@@ -143,6 +145,21 @@ h1 {
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+}
+
+.account-password-message {
+  max-width: 220px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-password-message.ok {
+  color: var(--good);
+}
+
+.account-password-message.error {
+  color: var(--bad);
 }
 
 .login-error {
