@@ -70,6 +70,16 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertNotIn("10.0.0.10", text)
         self.assertNotIn("Critical License", text)
 
+    def test_platform_metrics_tolerates_malformed_resource_entries(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        text = platform_metrics_text({"resources": ["not-a-resource-object"]}, now=self.now)
+
+        self.assertIn("ops_platform_resource_expiry_total 1", text)
+        self.assertIn('ops_platform_resource_expiry_status_total{status="unknown"} 1', text)
+        self.assertIn("ops_platform_resource_expiry_action_required_total 1", text)
+        self.assertNotIn("not-a-resource-object", text)
+
     def test_platform_metrics_exports_action_and_account_runtime_risks(self) -> None:
         from backend.metrics import platform_metrics_text
 

@@ -239,6 +239,38 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("resource-expiry-invalid:bool-expiry", issue_ids)
         self.assertNotIn("resource-expiry-invalid:valid-expiry", issue_ids)
 
+    def test_config_validation_reports_malformed_resource_entries(self) -> None:
+        config = {
+            "servers": [],
+            "websites": [],
+            "resources": [
+                {"id": "valid-resource", "expiresAt": "2026-08-01", "owner": "ops", "provider": "Registrar"},
+                "not-a-resource-object",
+                None,
+            ],
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("resource-entry-invalid:1", issue_ids)
+        self.assertIn("resource-entry-invalid:2", issue_ids)
+        self.assertNotIn("resource-entry-invalid:0", issue_ids)
+
+    def test_config_validation_reports_non_list_resource_inventory(self) -> None:
+        config = {
+            "servers": [],
+            "websites": [],
+            "resources": "not-a-resource-list",
+        }
+
+        result = app.config_validation_summary(config)
+        issue_ids = {issue["id"] for issue in result["issues"]}
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("resources-invalid", issue_ids)
+
     def test_config_validation_warns_when_resource_has_no_handling_path(self) -> None:
         config = {
             "servers": [],

@@ -283,6 +283,33 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertIsNone(items[0]["expiresAtTimestamp"])
         self.assertIsNone(items[0]["daysRemaining"])
 
+    def test_resource_expiry_surfaces_malformed_entries_without_crashing(self) -> None:
+        now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
+        config = {
+            "resources": [
+                {
+                    "id": "valid-domain",
+                    "name": "Valid Domain",
+                    "expiresAt": "2026-09-01",
+                    "owner": "ops@example.com",
+                    "provider": "Registrar",
+                },
+                "not-a-resource-object",
+                None,
+            ]
+        }
+
+        items = app.resource_expiry_items(config, now=now)
+        by_id = {item["id"]: item for item in items}
+
+        self.assertIn("valid-domain", by_id)
+        self.assertIn("invalid-resource-entry-1", by_id)
+        self.assertIn("invalid-resource-entry-2", by_id)
+        self.assertEqual(by_id["invalid-resource-entry-1"]["status"], "unknown")
+        self.assertTrue(by_id["invalid-resource-entry-1"]["actionRequired"])
+        self.assertIs(by_id["invalid-resource-entry-1"]["handlingReady"], False)
+        self.assertIn("resources[1]", by_id["invalid-resource-entry-1"]["message"])
+
     def test_resource_expiry_thresholds_tolerate_invalid_values(self) -> None:
         now = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp()
         config = {

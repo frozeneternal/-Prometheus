@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from .auth import ROLE_RANK, login_attempt_key
-from .expiry import parse_expiry_datetime, resource_handling_state, safe_resource_renew_url
+from .expiry import parse_expiry_datetime, resource_config_records, resource_handling_state, safe_resource_renew_url
 
 
 AUTO_RECOVERY_ALLOWED_TRIGGER_HEALTH = {"down", "warning", "unknown"}
@@ -830,7 +830,7 @@ def linked_target_exists(config: dict, linked_target: str) -> bool:
 def config_validation_summary(config: dict) -> dict:
     servers = config.get("servers", []) or []
     websites = config.get("websites", []) or []
-    resources = config.get("resources", []) or []
+    resources, invalid_resource_entries = resource_config_records(config)
     server_ids = {str(server.get("id") or "") for server in servers if server.get("id")}
     website_ids = {str(website.get("id") or "") for website in websites if website.get("id")}
     actions = action_lookup(config)
@@ -839,6 +839,19 @@ def config_validation_summary(config: dict) -> dict:
     issues.extend(duplicate_id_issues(servers, "server", "服务器"))
     issues.extend(duplicate_id_issues(websites, "website", "网站"))
     issues.extend(duplicate_id_issues(resources, "resource", "资源"))
+    for entry in invalid_resource_entries:
+        index = entry.get("index")
+        issue_id = "resources-invalid" if index is None else f"resource-entry-invalid:{index}"
+        target_id = "resources" if index is None else str(index)
+        issues.append(
+            make_issue(
+                issue_id,
+                "error",
+                f"{entry.get('path') or 'resources'} must be a JSON object resource entry.",
+                "resource",
+                target_id,
+            )
+        )
     issues.extend(monitoring_option_issues(config))
     issues.extend(account_configuration_issues(config))
 

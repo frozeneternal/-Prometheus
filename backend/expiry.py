@@ -98,6 +98,61 @@ def resource_requires_action(status: str, acknowledged: bool) -> bool:
     return False
 
 
+def resource_config_records(config: dict) -> tuple[list[dict], list[dict]]:
+    raw_resources = config.get("resources", [])
+    if raw_resources in (None, ""):
+        return [], []
+    if not isinstance(raw_resources, list):
+        return [], [{"index": None, "id": "resources-invalid", "path": "resources"}]
+
+    records = []
+    invalid_entries = []
+    for index, resource in enumerate(raw_resources):
+        if isinstance(resource, dict):
+            records.append(resource)
+            continue
+        invalid_entries.append(
+            {
+                "index": index,
+                "id": f"invalid-resource-entry-{index}",
+                "path": f"resources[{index}]",
+            }
+        )
+    return records, invalid_entries
+
+
+def invalid_resource_expiry_item(entry: dict) -> dict:
+    entry_id = str(entry.get("id") or "invalid-resource-entry")
+    path = str(entry.get("path") or "resources")
+    message = f"{path} is not a resource object; fix the resource inventory before expiry risk can be evaluated."
+    return {
+        "id": entry_id,
+        "name": path,
+        "type": "invalid",
+        "provider": "",
+        "owner": "",
+        "linkedTarget": "",
+        "renewUrl": "",
+        "notes": "",
+        "expiresAt": "",
+        "expiresAtTimestamp": None,
+        "daysRemaining": None,
+        "warningDays": 30,
+        "criticalDays": 7,
+        "status": "unknown",
+        "message": message,
+        "acknowledged": False,
+        "acknowledgedUntil": "",
+        "acknowledgedUntilTimestamp": None,
+        "acknowledgedBy": "",
+        "acknowledgedAt": "",
+        "actionRequired": True,
+        "handlingReady": False,
+        "missingHandlingFields": ["id", "expiresAt", "owner", "renewUrl", "provider"],
+        "handlingMessage": message,
+    }
+
+
 def safe_resource_renew_url(value: object) -> str:
     text = str(value or "").strip()
     if not text:
@@ -135,7 +190,8 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
     current = time.time() if now is None else float(now)
     current_day = datetime.fromtimestamp(current, timezone.utc).date()
     items = []
-    for resource in config.get("resources", []):
+    resources, invalid_entries = resource_config_records(config)
+    for resource in resources:
         expires_raw = resource.get("expiresAt") or resource.get("expiresOn") or resource.get("expiryDate")
         expires_dt = parse_expiry_datetime(expires_raw)
         expires_at = None if expires_dt is None else expires_dt.timestamp()
@@ -175,6 +231,8 @@ def resource_expiry_items(config: dict, now: float | None = None) -> list[dict]:
                 "handlingMessage": handling_message,
             }
         )
+    for entry in invalid_entries:
+        items.append(invalid_resource_expiry_item(entry))
 
     severity_rank = {"expired": 0, "unknown": 1, "critical": 2, "warning": 3, "ok": 4}
     return sorted(
