@@ -164,7 +164,56 @@ def _data_quality_overview(items: list[dict]) -> dict:
     }
 
 
-def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
+_INTERNAL_PROMETHEUS_JOBS = {"prometheus", "local_ops_platform"}
+
+
+def _target_labels_from_item(item: dict) -> dict:
+    diagnostics = item.get("targetDiagnostics") or {}
+    labels = dict(diagnostics.get("labels") or item.get("labels") or {})
+    if labels:
+        return labels
+    if item.get("url"):
+        return {"job": "blackbox", "instance": item.get("url")}
+    return {}
+
+
+def _target_labels_match(target_labels: dict, configured_labels: dict) -> bool:
+    if not configured_labels:
+        return False
+    return all(str(target_labels.get(key, "")) == str(value) for key, value in configured_labels.items())
+
+
+def _is_inventory_target(target: dict) -> bool:
+    labels = target.get("labels") or {}
+    job = str(labels.get("job") or "")
+    if job in _INTERNAL_PROMETHEUS_JOBS:
+        return False
+    return bool(labels.get("instance"))
+
+
+def _unmanaged_active_targets(active_targets: list[dict] | None, items: list[dict]) -> list[dict]:
+    configured_label_sets = [
+        labels
+        for labels in (_target_labels_from_item(item) for item in items)
+        if labels
+    ]
+    unmanaged = []
+    for target in active_targets or []:
+        if not _is_inventory_target(target):
+            continue
+
+        target_labels = dict(target.get("labels") or {})
+        if any(_target_labels_match(target_labels, labels) for labels in configured_label_sets):
+            continue
+        unmanaged.append(target)
+    return unmanaged
+
+
+def _target_coverage(
+    items: list[dict],
+    prometheus_available: bool,
+    active_targets: list[dict] | None = None,
+) -> dict:
     total = len(items)
     if not prometheus_available:
         return {
@@ -176,6 +225,7 @@ def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
             "unknown": total,
             "healthy": 0,
             "unhealthy": 0,
+            "unmanaged": 0,
         }
 
     matched = 0
@@ -194,9 +244,10 @@ def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
         else:
             unhealthy += 1
 
+    unmanaged = len(_unmanaged_active_targets(active_targets, items))
     if total == 0:
-        status = "empty"
-    elif missing or unhealthy:
+        status = "degraded" if unmanaged else "empty"
+    elif missing or unhealthy or unmanaged:
         status = "degraded"
     else:
         status = "healthy"
@@ -210,10 +261,15 @@ def _target_coverage(items: list[dict], prometheus_available: bool) -> dict:
         "unknown": 0,
         "healthy": healthy,
         "unhealthy": unhealthy,
+        "unmanaged": unmanaged,
     }
 
 
-def _target_issue_summary(items: list[dict], prometheus_available: bool) -> dict:
+def _target_issue_summary(
+    items: list[dict],
+    prometheus_available: bool,
+    active_targets: list[dict] | None = None,
+) -> dict:
     if not prometheus_available:
         total = len(items)
         return {
@@ -249,6 +305,15 @@ def _target_issue_summary(items: list[dict], prometheus_available: bool) -> dict
             },
         )
         bucket["count"] += 1
+
+    unmanaged = _unmanaged_active_targets(active_targets, items)
+    if unmanaged:
+        buckets["unmanaged_target"] = {
+            "category": "unmanaged_target",
+            "count": len(unmanaged),
+            "message": "Prometheus is scraping targets that are not mapped to a configured server or website.",
+            "actionHint": "Add each target to config/servers.local.json or remove stale scrape targets from Prometheus.",
+        }
 
     categories = sorted(buckets.values(), key=lambda item: (-item["count"], item["category"]))
     total = sum(item["count"] for item in categories)
@@ -531,8 +596,8 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "actionSafetySummary": action_safety_summary(config),
         "platformHealth": platform_health,
         "exporterDiagnostics": exporter_diagnostics,
-        "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available),
-        "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available),
+        "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available, active_targets),
+        "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available, active_targets),
         "dataQualitySummary": _data_quality_overview([*snapshots, *website_snapshots]),
         "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
         "backupSummary": _backup_summary(snapshots),

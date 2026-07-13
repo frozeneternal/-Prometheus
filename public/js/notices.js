@@ -31,7 +31,7 @@ export function renderSystemNotice() {
     if (coverage.prometheusAvailable === false) {
       messages.push(`Prometheus 覆盖：采集器不可用，${coverage.unknown ?? coverage.total ?? 0} 个配置目标无法核验。`);
     } else {
-      messages.push(`Prometheus 覆盖：已匹配 ${coverage.matched ?? 0}/${coverage.total ?? 0}，缺失 ${coverage.missing ?? 0}，异常 ${coverage.unhealthy ?? 0}。`);
+      messages.push(`Prometheus 覆盖：已匹配 ${coverage.matched ?? 0}/${coverage.total ?? 0}，缺失 ${coverage.missing ?? 0}，异常 ${coverage.unhealthy ?? 0}，未纳管 ${coverage.unmanaged ?? 0}。`);
     }
   }
 

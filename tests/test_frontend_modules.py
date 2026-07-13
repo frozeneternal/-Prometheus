@@ -222,6 +222,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("Prometheus 覆盖", app_js)
         self.assertIn("coverage.missing", app_js)
         self.assertIn("coverage.unhealthy", app_js)
+        self.assertIn("coverage.unmanaged", app_js)
         self.assertIn("coverage.unknown", app_js)
 
     def test_target_issue_summary_is_visible_in_system_notice(self) -> None:
@@ -232,6 +233,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("ssh_tunnel_down", format_js)
         self.assertIn("node_exporter_timeout", format_js)
         self.assertIn("windows_exporter_down", format_js)
+        self.assertIn("unmanaged_target", format_js)
         self.assertIn("targetDiagnosticLabels", app_js)
         self.assertIn("state.dashboard?.targetIssueSummary", app_js)
         self.assertIn("Prometheus 异常原因", app_js)

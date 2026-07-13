@@ -1705,6 +1705,7 @@ class BackendModuleTests(unittest.TestCase):
                 "unknown": 0,
                 "healthy": 0,
                 "unhealthy": 1,
+                "unmanaged": 0,
             },
         )
         self.assertEqual(payload["targetIssueSummary"]["status"], "degraded")
@@ -1727,6 +1728,62 @@ class BackendModuleTests(unittest.TestCase):
             recovery_snapshots[0]["dataQuality"]["details"]["targetDiagnostics"]["category"],
             "connection_refused",
         )
+
+    def test_dashboard_payload_flags_prometheus_targets_not_in_platform_inventory(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        configured_labels = {"job": "linux_servers_direct", "instance": "10.0.0.5:9100"}
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (True, ""),
+            metric_snapshot=lambda _config, server: {
+                "id": server["id"],
+                "name": server["name"],
+                "labels": server["labels"],
+                "status": "online",
+                "health": "ok",
+                "issues": [],
+                "dataQuality": {"level": "ok", "trusted": True, "details": {}},
+                "metrics": {"up": 1},
+                "errors": {},
+            },
+            website_snapshot=lambda _config, _website: {},
+            active_targets=lambda _config: [
+                {"labels": configured_labels, "health": "up", "lastError": ""},
+                {
+                    "labels": {
+                        "job": "linux_servers_direct",
+                        "instance": "10.0.0.6:9100",
+                        "name": "not-in-config",
+                    },
+                    "health": "up",
+                    "lastError": "",
+                },
+                {
+                    "labels": {"job": "local_ops_platform", "instance": "127.0.0.1:8787"},
+                    "health": "up",
+                    "lastError": "",
+                },
+            ],
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [{"id": "srv1", "name": "Server 1", "labels": configured_labels}],
+                "websites": [],
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(payload["targetCoverage"]["matched"], 1)
+        self.assertEqual(payload["targetCoverage"]["unmanaged"], 1)
+        self.assertEqual(payload["targetCoverage"]["status"], "degraded")
+        self.assertEqual(payload["targetIssueSummary"]["status"], "degraded")
+        self.assertEqual(payload["targetIssueSummary"]["total"], 1)
+        self.assertEqual(payload["targetIssueSummary"]["categories"][0]["category"], "unmanaged_target")
+        self.assertEqual(payload["targetIssueSummary"]["categories"][0]["count"], 1)
+        self.assertIn("servers.local.json", payload["targetIssueSummary"]["categories"][0]["actionHint"])
 
     def test_dashboard_payload_summarizes_auto_recovery_safety_state(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
@@ -2184,6 +2241,7 @@ class BackendModuleTests(unittest.TestCase):
                 "unknown": 2,
                 "healthy": 0,
                 "unhealthy": 0,
+                "unmanaged": 0,
             },
         )
         self.assertEqual(payload["targetIssueSummary"]["status"], "collector_down")

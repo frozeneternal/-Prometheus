@@ -68,6 +68,7 @@ export const targetDiagnosticLabels = {
   scrape_error: "采集错误",
   target_down: "目标不可达",
   no_target: "未匹配目标",
+  unmanaged_target: "未纳管目标",
   collector_down: "采集器不可用",
   unknown: "未知",
 };
