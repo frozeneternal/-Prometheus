@@ -45,19 +45,11 @@ function Test-PortFast($HostName, $Port, $TimeoutMs = 1000) {
   }
 }
 
-function Read-TextOrEmpty($Path) {
-  if (-not (Test-Path -LiteralPath $Path)) {
-    return ""
-  }
-  $text = Get-Content -LiteralPath $Path -Tail 400 -Encoding UTF8 -ErrorAction SilentlyContinue
-  if ($null -eq $text) {
-    return ""
-  }
-  return ($text -join "`n")
-}
-
 function Test-PrometheusTsdbCorruption {
-  $text = Read-TextOrEmpty (Join-Path $Logs "prometheus.err.log")
+  $path = Join-Path $Logs "prometheus.err.log"
+  if (-not (Test-Path -LiteralPath $path)) {
+    return $false
+  }
   $patterns = @(
     "fatal error: fault",
     "checkCRC32",
@@ -66,7 +58,7 @@ function Test-PrometheusTsdbCorruption {
     "unexpected fault address"
   )
   foreach ($pattern in $patterns) {
-    if ($text.Contains($pattern)) {
+    if (Select-String -LiteralPath $path -Pattern $pattern -SimpleMatch -Quiet -ErrorAction SilentlyContinue) {
       return $true
     }
   }

@@ -339,6 +339,18 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             watchdog,
         )
 
+    def test_watchdog_scans_full_prometheus_error_log_for_corruption_signatures(self) -> None:
+        watchdog = (STANDALONE / "watchdog-local-monitor.ps1").read_text(encoding="utf-8")
+        start = watchdog.index("function Test-PrometheusTsdbCorruption")
+        end = watchdog.index("function ConvertTo-MonitorScriptArguments", start)
+        corruption_block = watchdog[start:end]
+
+        self.assertIn("Select-String", corruption_block)
+        self.assertIn("-SimpleMatch", corruption_block)
+        self.assertIn("-Quiet", corruption_block)
+        self.assertNotIn("-Tail 400", corruption_block)
+        self.assertNotIn("Read-TextOrEmpty", corruption_block)
+
     def test_ssh_credentials_use_dpapi_export_file_not_plaintext(self) -> None:
         setter = (STANDALONE / "set-ssh-credential.ps1").read_text(encoding="utf-8")
         clearer = (STANDALONE / "clear-ssh-credential.ps1").read_text(encoding="utf-8")
