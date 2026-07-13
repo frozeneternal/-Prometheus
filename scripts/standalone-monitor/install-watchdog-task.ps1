@@ -25,7 +25,7 @@ $trigger = New-ScheduledTaskTrigger `
 
 $action = New-ScheduledTaskAction `
   -Execute "powershell.exe" `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Watchdog`" -Root `"$Root`"" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Watchdog`" -Root `"$Root`"" `
   -WorkingDirectory $Root
 
 $settings = New-ScheduledTaskSettingsSet `
@@ -34,6 +34,7 @@ $settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
   -MultipleInstances IgnoreNew `
   -ExecutionTimeLimit (New-TimeSpan -Minutes 3)
+$settings.Hidden = $true
 
 $principal = New-ScheduledTaskPrincipal `
   -UserId $env:USERNAME `

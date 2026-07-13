@@ -90,7 +90,18 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("-RepetitionDuration", installer)
         self.assertIn("Register-ScheduledTask", installer)
         self.assertIn("Start-ScheduledTask", installer)
+        self.assertIn("-WindowStyle Hidden", installer)
+        self.assertIn("$settings.Hidden = $true", installer)
         self.assertNotIn("docker", installer.lower())
+
+    def test_startup_installer_runs_login_task_hidden(self) -> None:
+        installer = (ROOT / "scripts" / "install-startup.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("LocalMonitorStartup", installer)
+        self.assertIn("powershell.exe", installer)
+        self.assertIn("-WindowStyle Hidden", installer)
+        self.assertIn("Start-Process -FilePath 'cmd.exe'", installer)
+        self.assertIn("$Settings.Hidden = $true", installer)
 
     def test_exporter_diagnostics_script_is_read_only(self) -> None:
         script = (STANDALONE / "diagnose-exporters.ps1").read_text(encoding="utf-8")

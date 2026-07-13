@@ -8,9 +8,12 @@ if (-not (Test-Path $StartAll)) {
   throw "Missing startup script: $StartAll"
 }
 
+$SafeRoot = $Root.Replace("'", "''")
+$SafeStartAll = $StartAll.Replace("'", "''")
+$StartupCommand = "Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '$SafeStartAll') -WorkingDirectory '$SafeRoot' -WindowStyle Hidden -Wait"
 $Action = New-ScheduledTaskAction `
-  -Execute "cmd.exe" `
-  -Argument "/c `"$StartAll`"" `
+  -Execute "powershell.exe" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$StartupCommand`"" `
   -WorkingDirectory $Root
 
 $Trigger = New-ScheduledTaskTrigger -AtLogOn
@@ -20,6 +23,7 @@ $Settings = New-ScheduledTaskSettingsSet `
   -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
   -RestartCount 3 `
   -RestartInterval (New-TimeSpan -Minutes 2)
+$Settings.Hidden = $true
 
 $Principal = New-ScheduledTaskPrincipal `
   -UserId $env:USERNAME `
