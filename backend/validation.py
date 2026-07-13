@@ -629,6 +629,30 @@ def cert_renewal_policy_issues(website: dict) -> list[dict]:
     return issues
 
 
+def cert_renewal_handling_issues(website: dict) -> list[dict]:
+    website_id = str(website.get("id") or "")
+    url = str(website.get("url") or "").strip().lower()
+    if not url.startswith("https://"):
+        return []
+
+    renewal = website.get("certRenewal") or {}
+    manual_renewal = website.get("manualCertRenewal") or {}
+    has_automatic_action = bool(renewal.get("actionId") or renewal.get("actionServerId"))
+    has_manual_action = bool(manual_renewal.get("actionId") or manual_renewal.get("actionServerId"))
+    if has_automatic_action or has_manual_action:
+        return []
+
+    return [
+        make_issue(
+            f"cert-renewal-handling-missing:{website_id}",
+            "warning",
+            "HTTPS 网站未配置证书自动续期或手动续期动作；证书到期风险出现时将缺少可执行处置入口。",
+            "website",
+            website_id,
+        )
+    ]
+
+
 def auto_backup_policy_issues(server: dict) -> list[dict]:
     server_id = str(server.get("id") or "")
     backup = server.get("autoBackup") or {}
@@ -886,6 +910,7 @@ def config_validation_summary(config: dict) -> dict:
         website_id = str(website.get("id") or "")
         issues.extend(prometheus_label_issues(website, "website"))
         issues.extend(metric_threshold_issues(website, "website", WEBSITE_THRESHOLD_KEYS))
+        issues.extend(cert_renewal_handling_issues(website))
         server_id = str(website.get("serverId") or "")
         if server_id and server_id not in server_ids:
             issues.append(

@@ -586,6 +586,54 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertIn("cert-renewal-verification-timeout-invalid:bad-site", issue_ids)
         self.assertIn("cert-renewal-verification-timeout-invalid:zero-site", issue_ids)
 
+    def test_config_validation_reports_https_site_without_cert_renewal_handling(self) -> None:
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [
+                        {"id": "manual-renew", "command": ["echo", "manual"]},
+                        {"id": "auto-renew", "command": ["echo", "auto"], "allowAuto": True},
+                    ],
+                }
+            ],
+            "websites": [
+                {
+                    "id": "https-no-renewal",
+                    "serverId": "ops-host",
+                    "url": "https://example.test/",
+                },
+                {
+                    "id": "http-no-renewal",
+                    "serverId": "ops-host",
+                    "url": "http://example.test/",
+                },
+                {
+                    "id": "https-manual-renewal",
+                    "serverId": "ops-host",
+                    "url": "https://manual.example.test/",
+                    "manualCertRenewal": {"actionId": "manual-renew", "actionServerId": "ops-host"},
+                },
+                {
+                    "id": "https-auto-renewal",
+                    "serverId": "ops-host",
+                    "url": "https://auto.example.test/",
+                    "certRenewal": {"actionId": "auto-renew", "actionServerId": "ops-host"},
+                },
+            ],
+            "resources": [],
+        }
+
+        result = app.config_validation_summary(config)
+        issues = {issue["id"]: issue for issue in result["issues"]}
+
+        self.assertIn("cert-renewal-handling-missing:https-no-renewal", issues)
+        self.assertEqual(issues["cert-renewal-handling-missing:https-no-renewal"]["severity"], "warning")
+        self.assertIn("HTTPS", issues["cert-renewal-handling-missing:https-no-renewal"]["message"])
+        self.assertNotIn("cert-renewal-handling-missing:http-no-renewal", issues)
+        self.assertNotIn("cert-renewal-handling-missing:https-manual-renewal", issues)
+        self.assertNotIn("cert-renewal-handling-missing:https-auto-renewal", issues)
+
     def test_config_validation_reports_auto_backup_policy_risks(self) -> None:
         config = {
             "servers": [
