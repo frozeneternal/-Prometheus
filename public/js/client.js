@@ -18,6 +18,10 @@ export function fetchDashboard() {
   return getJson("/api/dashboard");
 }
 
+export function fetchPrometheusAlerts() {
+  return getJson("/api/prometheus/alerts");
+}
+
 export function fetchMetricSeries({ serverId, metric, minutes = 60 }) {
   const params = new URLSearchParams({
     serverId,

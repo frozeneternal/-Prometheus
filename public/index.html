@@ -40,6 +40,16 @@
         <section id="configValidationPanel" class="config-validation-panel hidden" aria-live="polite"></section>
         <section id="platformHealthPanel" class="platform-health-panel hidden" aria-live="polite"></section>
         <section id="accountSecurityPanel" class="account-security-panel hidden" aria-live="polite"></section>
+        <section id="prometheusAlertsPanel" class="prometheus-alerts-panel hidden" aria-live="polite">
+          <div class="prometheus-alerts-head">
+            <div>
+              <strong>Prometheus 告警中心</strong>
+              <p id="prometheusAlertsSummary" class="muted"></p>
+            </div>
+            <span id="prometheusAlertsBadge" class="prometheus-alert-badge ok">0</span>
+          </div>
+          <div id="prometheusAlertsList" class="prometheus-alerts-list"></div>
+        </section>
         <section id="emergencyRunbookPanel" class="emergency-runbook-panel hidden" aria-live="polite">
           <div class="emergency-runbook-head">
             <div>

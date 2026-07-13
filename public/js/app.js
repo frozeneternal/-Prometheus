@@ -25,6 +25,7 @@ import {
   fetchConfig,
   fetchDashboard,
   fetchMetricSeries,
+  fetchPrometheusAlerts,
 } from "./client.js";
 import { $, camelToKebab, escapeHtml } from "./dom.js";
 import {
@@ -107,10 +108,33 @@ async function loadConfig() {
   document.querySelector(".token-field span").classList.toggle("hidden", !state.config.actionsRequireToken);
 }
 
+function unavailableAlertsPayload(error) {
+  return {
+    ok: false,
+    available: false,
+    message: error?.message || "Prometheus 告警接口不可用",
+    summary: { total: 0, firing: 0, pending: 0, severityCounts: {}, stateCounts: {}, actionRequired: false },
+    alerts: [],
+  };
+}
+
+async function loadPrometheusAlerts() {
+  try {
+    return await fetchPrometheusAlerts();
+  } catch (error) {
+    return unavailableAlertsPayload(error);
+  }
+}
+
 async function refreshDashboard() {
   $("#refreshButton").disabled = true;
   try {
-    state.dashboard = await fetchDashboard();
+    const [dashboard, prometheusAlerts] = await Promise.all([
+      fetchDashboard(),
+      loadPrometheusAlerts(),
+    ]);
+    state.dashboard = dashboard;
+    state.prometheusAlerts = prometheusAlerts;
     render();
   } catch (error) {
     renderError(error);
@@ -133,6 +157,8 @@ function renderError(error) {
   $("#platformHealthPanel").classList.add("hidden");
   $("#accountSecurityPanel").innerHTML = "";
   $("#accountSecurityPanel").classList.add("hidden");
+  $("#prometheusAlertsPanel").classList.add("hidden");
+  $("#prometheusAlertsList").innerHTML = "";
   $("#emergencyRunbookPanel").classList.add("hidden");
   $("#emergencyRunbookList").innerHTML = "";
   $("#emptyState").classList.remove("hidden");
@@ -169,6 +195,7 @@ function render() {
   renderConfigValidation();
   renderPlatformHealth();
   renderAuthControls();
+  renderPrometheusAlerts();
   renderEmergencyRunbook();
   renderGroups();
   renderServers();
@@ -285,6 +312,80 @@ function renderPlatformHealth() {
         </div>
       `).join("")}
     </div>` : ""}
+  `;
+}
+
+function renderPrometheusAlerts() {
+  const panel = $("#prometheusAlertsPanel");
+  const alerts = state.prometheusAlerts?.alerts || [];
+  const summary = state.prometheusAlerts?.summary || { total: 0, firing: 0, pending: 0, severityCounts: {} };
+  if (!state.prometheusAlerts) {
+    panel.classList.add("hidden");
+    $("#prometheusAlertsList").innerHTML = "";
+    return;
+  }
+
+  const level = state.prometheusAlerts.available === false
+    ? "warning"
+    : summary.firing > 0
+      ? "critical"
+      : summary.pending > 0
+        ? "warning"
+        : "ok";
+  panel.className = `prometheus-alerts-panel ${level}`;
+  $("#prometheusAlertsBadge").className = `prometheus-alert-badge ${level}`;
+  $("#prometheusAlertsBadge").textContent = String(summary.firing || summary.pending || summary.total || 0);
+  $("#prometheusAlertsSummary").textContent = state.prometheusAlerts.available === false
+    ? `告警接口不可用：${state.prometheusAlerts.message || "未知错误"}`
+    : `当前 ${summary.total || alerts.length} 条，触发中 ${summary.firing || 0} 条，等待触发 ${summary.pending || 0} 条`;
+
+  if (state.prometheusAlerts.available === false) {
+    $("#prometheusAlertsList").innerHTML = `
+      <article class="prometheus-alert-item warning">
+        <div class="prometheus-alert-item-head">
+          <strong>告警数据不可用</strong>
+          <span>warning</span>
+        </div>
+        <p>${escapeHtml(state.prometheusAlerts.message || "")}</p>
+        <p class="alert-action">应急建议：检查 Prometheus /-/ready、/api/v1/alerts 和本平台 Prometheus 地址配置。</p>
+      </article>
+    `;
+    return;
+  }
+
+  $("#prometheusAlertsList").innerHTML = alerts.length
+    ? alerts.map(prometheusAlertCard).join("")
+    : `
+      <article class="prometheus-alert-item ok">
+        <div class="prometheus-alert-item-head">
+          <strong>当前无 Prometheus 告警</strong>
+          <span>ok</span>
+        </div>
+        <p>Prometheus 告警接口可用，当前没有 firing 或 pending 告警。</p>
+      </article>
+    `;
+}
+
+function prometheusAlertCard(alert) {
+  const stateLabel = { firing: "触发中", pending: "等待触发" }[alert.state] || alert.state || "未知";
+  const severity = alert.severity || "unknown";
+  const title = alert.summary || alert.alertName || "Prometheus 告警";
+  const meta = [
+    alert.alertName,
+    stateLabel,
+    alert.activeAt ? `开始 ${formatDateTime(alert.activeAt)}` : "",
+    alert.value ? `值 ${alert.value}` : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <article class="prometheus-alert-item ${escapeHtml(severity)}">
+      <div class="prometheus-alert-item-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(severity)}</span>
+      </div>
+      <p class="muted">${escapeHtml(meta)}</p>
+      ${alert.description ? `<p>${escapeHtml(alert.description)}</p>` : ""}
+      <p class="alert-action">应急建议：${escapeHtml(alert.actionHint || "查看 Prometheus 告警详情并按应急处置执行。")}</p>
+    </article>
   `;
 }
 

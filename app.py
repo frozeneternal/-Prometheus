@@ -431,6 +431,7 @@ from backend.incidents import (  # noqa: E402 - transitional re-export while app
 )
 from backend.metrics import platform_metrics_text  # noqa: E402 - transitional re-export while app.py is split.
 from backend.prometheus import (  # noqa: E402 - transitional re-export while app.py is split.
+    alerts_payload,
     build_metric_queries,
     build_website_queries,
     data_quality,
@@ -806,6 +807,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if path == "/api/prometheus/ready":
             ok, message = prometheus_ready_status(config)
             json_response(self, 200 if ok else 502, {"ok": ok, "message": message})
+            return
+
+        if path == "/api/prometheus/alerts":
+            status, payload = alerts_payload(config)
+            json_response(self, status, payload)
             return
 
         self.serve_static(path)

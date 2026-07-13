@@ -547,6 +547,103 @@ select {
   color: var(--bad);
 }
 
+.prometheus-alerts-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.prometheus-alerts-panel.warning {
+  border-color: #edd48d;
+  background: var(--warn-bg);
+}
+
+.prometheus-alerts-panel.critical {
+  border-color: #f1c2bd;
+  background: var(--bad-bg);
+}
+
+.prometheus-alerts-panel.ok {
+  border-color: #bbe3d2;
+  background: var(--good-bg);
+}
+
+.prometheus-alerts-head,
+.prometheus-alert-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prometheus-alerts-head p {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.prometheus-alert-badge,
+.prometheus-alert-item-head span {
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.prometheus-alert-badge.warning,
+.prometheus-alert-item.warning .prometheus-alert-item-head span {
+  color: var(--warn);
+  background: #fff3cf;
+}
+
+.prometheus-alert-badge.critical,
+.prometheus-alert-item.critical .prometheus-alert-item-head span,
+.prometheus-alert-item.error .prometheus-alert-item-head span {
+  color: var(--bad);
+  background: #fde2df;
+}
+
+.prometheus-alert-badge.ok,
+.prometheus-alert-item.ok .prometheus-alert-item-head span {
+  color: var(--good);
+  background: #d8f0e5;
+}
+
+.prometheus-alerts-list {
+  display: grid;
+  gap: 8px;
+}
+
+.prometheus-alert-item {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(98, 113, 130, 0.28);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.prometheus-alert-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.alert-action {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .emergency-runbook-panel {
   display: grid;
   gap: 10px;

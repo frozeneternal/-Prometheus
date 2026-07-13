@@ -1516,6 +1516,72 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("windows_exporter", windows_refused["message"])
         self.assertIn("9182", windows_refused["actionHint"])
 
+    def test_prometheus_alerts_payload_normalizes_active_alerts(self) -> None:
+        from backend import prometheus
+
+        payload = {
+            "status": "success",
+            "data": {
+                "alerts": [
+                    {
+                        "labels": {
+                            "alertname": "OpsTargetScrapeIssues",
+                            "severity": "warning",
+                            "instance": "10.0.0.5:9100",
+                        },
+                        "annotations": {
+                            "summary": "Prometheus target scrape issues detected",
+                            "description": "One or more targets are down.",
+                        },
+                        "state": "firing",
+                        "activeAt": "2026-07-13T11:30:00Z",
+                        "value": "2e+00",
+                    },
+                    {
+                        "labels": {
+                            "alertname": "OpsUnmanagedPrometheusTargets",
+                            "severity": "info",
+                        },
+                        "annotations": {"summary": "Unmanaged target"},
+                        "state": "pending",
+                        "activeAt": "2026-07-13T11:40:00Z",
+                        "value": "1e+00",
+                    },
+                ]
+            },
+        }
+
+        with patch.object(prometheus, "prometheus_get", return_value=payload):
+            status, result = prometheus.alerts_payload({"prometheusUrl": "http://prometheus.local"})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["available"])
+        self.assertEqual(result["summary"]["total"], 2)
+        self.assertEqual(result["summary"]["firing"], 1)
+        self.assertEqual(result["summary"]["pending"], 1)
+        self.assertEqual(result["summary"]["severityCounts"]["warning"], 1)
+        self.assertEqual(result["alerts"][0]["alertName"], "OpsTargetScrapeIssues")
+        self.assertEqual(result["alerts"][0]["state"], "firing")
+        self.assertEqual(result["alerts"][0]["severity"], "warning")
+        self.assertEqual(result["alerts"][0]["summary"], "Prometheus target scrape issues detected")
+        self.assertEqual(result["alerts"][0]["labels"]["instance"], "10.0.0.5:9100")
+        self.assertIn("exporter", result["alerts"][0]["actionHint"])
+        self.assertEqual(result["alerts"][1]["alertName"], "OpsUnmanagedPrometheusTargets")
+        self.assertIn("纳管", result["alerts"][1]["actionHint"])
+
+    def test_prometheus_alerts_payload_reports_collector_unavailable(self) -> None:
+        from backend import prometheus
+
+        with patch.object(prometheus, "prometheus_get", side_effect=TimeoutError("timed out")):
+            status, result = prometheus.alerts_payload({"prometheusUrl": "http://prometheus.local"})
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["available"])
+        self.assertEqual(result["summary"]["total"], 0)
+        self.assertIn("timed out", result["message"])
+
     def test_health_module_classifies_thresholds_without_app_import(self) -> None:
         from backend import health
 

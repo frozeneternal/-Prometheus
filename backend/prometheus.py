@@ -165,6 +165,97 @@ def prometheus_active_targets(config: dict) -> list[dict]:
     return list(payload.get("data", {}).get("activeTargets", []) or [])
 
 
+def _alert_action_hint(alert_name: str) -> str:
+    hints = {
+        "OpsDashboardSnapshotStale": "检查本平台后台轮询线程、/api/dashboard 和 Prometheus /-/ready，确认数据是否仍在刷新。",
+        "OpsTargetCoverageMissing": "检查 config/servers.json 与 Prometheus targets 标签是否一致，重新生成并 reload Prometheus 配置。",
+        "OpsUnmanagedPrometheusTargets": "确认这些 Prometheus 目标是否属于公司资产；如果属于，补录到平台配置完成纳管，并标注责任人和应急动作。",
+        "OpsTargetScrapeIssues": "先确认 exporter 进程和端口是否正常，再检查防火墙、SSH 隧道和 Prometheus scrape 错误。",
+        "OpsResourceExpiryActionRequired": "检查资源到期清单，补齐负责人、续费入口和备注；已处理的资源需要人工确认。",
+    }
+    return hints.get(alert_name, "查看 Prometheus 告警详情、目标标签和平台应急处置面板，再执行对应恢复动作。")
+
+
+def _normalize_alert(alert: dict) -> dict:
+    labels = dict(alert.get("labels") or {})
+    annotations = dict(alert.get("annotations") or {})
+    alert_name = str(labels.get("alertname") or "")
+    severity = str(labels.get("severity") or "unknown")
+    state = str(alert.get("state") or "unknown")
+    return {
+        "alertName": alert_name,
+        "severity": severity,
+        "state": state,
+        "activeAt": str(alert.get("activeAt") or ""),
+        "value": str(alert.get("value") or ""),
+        "summary": str(annotations.get("summary") or alert_name or "Prometheus alert"),
+        "description": str(annotations.get("description") or ""),
+        "runbook": str(annotations.get("runbook") or ""),
+        "labels": labels,
+        "annotations": annotations,
+        "actionHint": _alert_action_hint(alert_name),
+    }
+
+
+def _alert_sort_key(alert: dict) -> tuple[int, int, str, str]:
+    state_rank = {"firing": 0, "pending": 1}
+    severity_rank = {"critical": 0, "error": 1, "warning": 2, "info": 3}
+    return (
+        state_rank.get(str(alert.get("state") or ""), 9),
+        severity_rank.get(str(alert.get("severity") or ""), 9),
+        str(alert.get("activeAt") or ""),
+        str(alert.get("alertName") or ""),
+    )
+
+
+def _alerts_summary(alerts: list[dict]) -> dict:
+    severity_counts: dict[str, int] = {}
+    state_counts: dict[str, int] = {}
+    for alert in alerts:
+        severity = str(alert.get("severity") or "unknown")
+        state = str(alert.get("state") or "unknown")
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        state_counts[state] = state_counts.get(state, 0) + 1
+
+    return {
+        "total": len(alerts),
+        "firing": state_counts.get("firing", 0),
+        "pending": state_counts.get("pending", 0),
+        "severityCounts": severity_counts,
+        "stateCounts": state_counts,
+        "actionRequired": bool(state_counts.get("firing") or severity_counts.get("critical") or severity_counts.get("error")),
+    }
+
+
+def alerts_payload(config: dict) -> tuple[int, dict]:
+    try:
+        payload = prometheus_get(config, "/api/v1/alerts", {}, timeout=4.0)
+    except Exception as exc:  # noqa: BLE001 - alert center must surface collector availability.
+        return (
+            200,
+            {
+                "ok": False,
+                "available": False,
+                "message": f"Prometheus 告警接口不可用：{exc}",
+                "summary": _alerts_summary([]),
+                "alerts": [],
+            },
+        )
+
+    alerts = [_normalize_alert(alert) for alert in payload.get("data", {}).get("alerts", []) or []]
+    alerts.sort(key=_alert_sort_key)
+    return (
+        200,
+        {
+            "ok": True,
+            "available": True,
+            "message": "",
+            "summary": _alerts_summary(alerts),
+            "alerts": alerts,
+        },
+    )
+
+
 def _labels_match(target_labels: dict, labels: dict) -> bool:
     if not labels:
         return False
