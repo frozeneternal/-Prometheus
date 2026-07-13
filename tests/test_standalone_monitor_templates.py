@@ -100,6 +100,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("Start-ScheduledTask", installer)
         self.assertIn('-Execute "wscript.exe"', installer)
         self.assertIn("//B", installer)
+        self.assertIn('"-NonInteractive"', installer)
         self.assertIn('"-WindowStyle"', installer)
         self.assertIn('"Hidden"', installer)
         self.assertNotIn('-Execute "powershell.exe"', installer)
@@ -114,6 +115,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn('-Execute "wscript.exe"', installer)
         self.assertIn("//B", installer)
         self.assertIn("start-all.cmd", installer)
+        self.assertIn('"-NonInteractive"', installer)
         self.assertIn('"-WindowStyle"', installer)
         self.assertIn('"Hidden"', installer)
         self.assertNotIn('-Execute "powershell.exe"', installer)
@@ -171,6 +173,17 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("$psi.UseShellExecute = $false", watchdog)
         self.assertIn("-NonInteractive", watchdog)
         self.assertIn("[System.Diagnostics.ProcessWindowStyle]::Hidden", watchdog)
+
+    def test_recovery_launchers_use_no_window_process_start(self) -> None:
+        for script_name in ("start-local-monitor.ps1", "start-ssh-tunnels.ps1"):
+            with self.subTest(script_name=script_name):
+                script = (STANDALONE / script_name).read_text(encoding="utf-8")
+
+                self.assertIn("System.Diagnostics.ProcessStartInfo", script)
+                self.assertIn("$psi.UseShellExecute = $false", script)
+                self.assertIn("$psi.CreateNoWindow = $true", script)
+                self.assertIn("[System.Diagnostics.ProcessWindowStyle]::Hidden", script)
+                self.assertNotIn("Start-Process", script)
 
     def test_exporter_diagnostics_script_uses_utf8_bom_for_windows_powershell(self) -> None:
         data = (STANDALONE / "diagnose-exporters.ps1").read_bytes()

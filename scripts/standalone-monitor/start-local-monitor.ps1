@@ -59,6 +59,34 @@ function Get-RootOwnedPortPid($Port, $ExpectedRoot) {
   return $null
 }
 
+function Quote-CmdArgument([string]$Value) {
+  return '"' + $Value.Replace('"', '""') + '"'
+}
+
+function ConvertTo-LoggedCommand($FilePath, [string[]]$ArgumentList, $StdoutPath, $StderrPath) {
+  $parts = @((Quote-CmdArgument $FilePath))
+  foreach ($argument in $ArgumentList) {
+    $parts += Quote-CmdArgument ([string]$argument)
+  }
+  return (($parts -join " ") + " 1>> " + (Quote-CmdArgument $StdoutPath) + " 2>> " + (Quote-CmdArgument $StderrPath))
+}
+
+function Start-NoWindowLoggedCommand($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $StdoutPath, $StderrPath) {
+  $command = ConvertTo-LoggedCommand $FilePath $ArgumentList $StdoutPath $StderrPath
+  $psi = [System.Diagnostics.ProcessStartInfo]::new()
+  $psi.FileName = "cmd.exe"
+  $psi.Arguments = "/d /c `"$command`""
+  $psi.WorkingDirectory = $WorkingDirectory
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+
+  $proc = [System.Diagnostics.Process]::new()
+  $proc.StartInfo = $psi
+  [void]$proc.Start()
+  return $proc
+}
+
 function Start-ManagedProcess($Name, $FilePath, $ArgumentList, $WorkingDirectory, $Port) {
   $pidFile = Join-Path $Run "$Name.pid"
   if (Test-Path $pidFile) {
@@ -83,9 +111,29 @@ function Start-ManagedProcess($Name, $FilePath, $ArgumentList, $WorkingDirectory
 
   $stdout = Join-Path $Logs "$Name.out.log"
   $stderr = Join-Path $Logs "$Name.err.log"
-  $proc = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
-  Set-Content -LiteralPath $pidFile -Value $proc.Id -Encoding ASCII
-  Write-Host "$Name started: PID $($proc.Id)"
+  $launcher = Start-NoWindowLoggedCommand `
+    -FilePath $FilePath `
+    -ArgumentList $ArgumentList `
+    -WorkingDirectory $WorkingDirectory `
+    -StdoutPath $stdout `
+    -StderrPath $stderr
+
+  $ownedPid = $null
+  for ($i = 0; $i -lt 20; $i++) {
+    Start-Sleep -Milliseconds 250
+    $ownedPid = Get-RootOwnedPortPid $Port $Root
+    if ($ownedPid) {
+      break
+    }
+  }
+
+  if ($ownedPid) {
+    Set-Content -LiteralPath $pidFile -Value $ownedPid -Encoding ASCII
+    Write-Host "$Name started: PID $ownedPid"
+  } else {
+    Set-Content -LiteralPath $pidFile -Value $launcher.Id -Encoding ASCII
+    Write-Host "$Name launch wrapper started: PID $($launcher.Id)"
+  }
 }
 
 function Ensure-GrafanaProvisioning {

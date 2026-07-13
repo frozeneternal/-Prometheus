@@ -40,6 +40,7 @@ $watchdogArguments = ConvertTo-HiddenLauncherArguments @(
   $HiddenLauncher,
   "powershell.exe",
   "-NoProfile",
+  "-NonInteractive",
   "-WindowStyle",
   "Hidden",
   "-ExecutionPolicy",

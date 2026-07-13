@@ -37,6 +37,50 @@ function Get-ProcessCommandLine($ProcessId) {
   return ""
 }
 
+function Get-TunnelProcessId($ScriptPath) {
+  $escapedPath = [string]$ScriptPath
+  $processes = @(
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object {
+        $_.Name -match '^python(\.exe)?$' -and
+        $_.CommandLine -and
+        ([string]$_.CommandLine).Contains($escapedPath)
+      }
+  )
+  if ($processes.Count -gt 0) {
+    return $processes[0].ProcessId
+  }
+  return $null
+}
+
+function Quote-CmdArgument([string]$Value) {
+  return '"' + $Value.Replace('"', '""') + '"'
+}
+
+function ConvertTo-LoggedCommand($FilePath, [string[]]$ArgumentList, $StdoutPath, $StderrPath) {
+  $parts = @((Quote-CmdArgument $FilePath))
+  foreach ($argument in $ArgumentList) {
+    $parts += Quote-CmdArgument ([string]$argument)
+  }
+  return (($parts -join " ") + " 1>> " + (Quote-CmdArgument $StdoutPath) + " 2>> " + (Quote-CmdArgument $StderrPath))
+}
+
+function Start-NoWindowLoggedCommand($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $StdoutPath, $StderrPath) {
+  $command = ConvertTo-LoggedCommand $FilePath $ArgumentList $StdoutPath $StderrPath
+  $psi = [System.Diagnostics.ProcessStartInfo]::new()
+  $psi.FileName = "cmd.exe"
+  $psi.Arguments = "/d /c `"$command`""
+  $psi.WorkingDirectory = $WorkingDirectory
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+
+  $proc = [System.Diagnostics.Process]::new()
+  $proc.StartInfo = $psi
+  [void]$proc.Start()
+  return $proc
+}
+
 if (Test-Path $PidFile) {
   $oldPid = [int](Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue)
   $oldCommandLine = Get-ProcessCommandLine $oldPid
@@ -58,6 +102,26 @@ if (Test-Path $PidFile) {
 
 $stdout = Join-Path $Logs "ssh_metrics_tunnel.out.log"
 $stderr = Join-Path $Logs "ssh_metrics_tunnel.err.log"
-$proc = Start-Process -FilePath "python" -ArgumentList @($ScriptPath, "--config", $ConfigPath) -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
-Set-Content -LiteralPath $PidFile -Value $proc.Id -Encoding ASCII
-Write-Host "ssh_metrics_tunnel started: PID $($proc.Id)"
+$launcher = Start-NoWindowLoggedCommand `
+  -FilePath "python" `
+  -ArgumentList @($ScriptPath, "--config", $ConfigPath) `
+  -WorkingDirectory $Root `
+  -StdoutPath $stdout `
+  -StderrPath $stderr
+
+$tunnelPid = $null
+for ($i = 0; $i -lt 20; $i++) {
+  Start-Sleep -Milliseconds 250
+  $tunnelPid = Get-TunnelProcessId $ScriptPath
+  if ($tunnelPid) {
+    break
+  }
+}
+
+if (-not $tunnelPid) {
+  Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue
+  throw "ssh_metrics_tunnel launch wrapper started, but no python tunnel process was found. See $stderr"
+}
+
+Set-Content -LiteralPath $PidFile -Value $tunnelPid -Encoding ASCII
+Write-Host "ssh_metrics_tunnel started: PID $tunnelPid"
