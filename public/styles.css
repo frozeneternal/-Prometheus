@@ -1272,6 +1272,18 @@ select {
   font-size: 13px;
 }
 
+.platform-health-runbook {
+  grid-column: 2;
+  display: block;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .summary-card {
   min-height: 86px;
   border: 1px solid var(--line);

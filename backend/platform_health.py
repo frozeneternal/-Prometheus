@@ -172,15 +172,23 @@ def _prometheus_storage_issue(storage_health: dict) -> list[dict]:
     message = str(storage_health.get("Message") or "").strip()
     if latest:
         message = f"{message} Latest quarantine: {latest}".strip()
+    try:
+        quarantine_size_mb = float(storage_health.get("QuarantineSizeMB") or 0)
+    except (TypeError, ValueError):
+        quarantine_size_mb = 0.0
+    if quarantine_count and quarantine_size_mb > 0:
+        message = f"{message} Total quarantine size: {quarantine_size_mb:g} MB.".strip()
     if not message:
         message = "Prometheus storage requires attention."
-    return [
-        {
-            "id": "prometheus-storage-quarantine" if quarantine_count else "prometheus-storage-unhealthy",
-            "severity": severity,
-            "message": message,
-        }
-    ]
+    issue = {
+        "id": "prometheus-storage-quarantine" if quarantine_count else "prometheus-storage-unhealthy",
+        "severity": severity,
+        "message": message,
+    }
+    cleanup_command = str(storage_health.get("CleanupCommand") or "").strip()
+    if cleanup_command:
+        issue["runbook"] = cleanup_command
+    return [issue]
 
 
 def _watchdog_task_issue(watchdog_task: dict) -> list[dict]:

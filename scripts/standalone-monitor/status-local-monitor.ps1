@@ -161,6 +161,21 @@ function Get-RootVolumeStatus {
   }
 }
 
+function Get-DirectorySizeBytes($Path) {
+  try {
+    $sum = (
+      Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Measure-Object -Property Length -Sum
+    ).Sum
+    if ($null -eq $sum) {
+      return 0
+    }
+    return [int64]$sum
+  } catch {
+    return 0
+  }
+}
+
 function Get-PrometheusStorageHealth {
   $dataRoot = Join-Path $Root "data"
   $dataPath = Join-Path $dataRoot "prometheus"
@@ -171,6 +186,16 @@ function Get-PrometheusStorageHealth {
         Sort-Object LastWriteTime -Descending
     )
     $latest = if ($quarantines.Count -gt 0) { $quarantines[0] } else { $null }
+    $quarantineSizeBytes = [int64]0
+    foreach ($quarantine in $quarantines) {
+      $quarantineSizeBytes += Get-DirectorySizeBytes $quarantine.FullName
+    }
+    $cleanupScript = Join-Path $PSScriptRoot "cleanup-prometheus-quarantines.ps1"
+    $cleanupCommand = if ($quarantines.Count -gt 0) {
+      "powershell -ExecutionPolicy Bypass -File `"$cleanupScript`" -Root `"$Root`" -MinAgeHours 24 -DryRun"
+    } else {
+      ""
+    }
     $status = "ok"
     $message = "Prometheus TSDB is active and no quarantined TSDB directories were found."
     if (-not $dataExists) {
@@ -186,9 +211,11 @@ function Get-PrometheusStorageHealth {
       DataPath = $dataPath
       DataExists = $dataExists
       QuarantineCount = $quarantines.Count
+      QuarantineSizeMB = [math]::Round($quarantineSizeBytes / 1MB, 2)
       LatestQuarantine = if ($latest) { $latest.Name } else { "" }
       LatestQuarantinePath = if ($latest) { $latest.FullName } else { "" }
       LatestQuarantineTime = if ($latest) { $latest.LastWriteTime.ToString("o") } else { "" }
+      CleanupCommand = $cleanupCommand
       Message = $message
     }
   } catch {
@@ -197,9 +224,11 @@ function Get-PrometheusStorageHealth {
       DataPath = $dataPath
       DataExists = $false
       QuarantineCount = 0
+      QuarantineSizeMB = 0
       LatestQuarantine = ""
       LatestQuarantinePath = ""
       LatestQuarantineTime = ""
+      CleanupCommand = ""
       Message = $_.Exception.Message
     }
   }

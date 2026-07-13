@@ -184,9 +184,13 @@ class FrontendModuleTests(unittest.TestCase):
 
     def test_platform_health_panel_surfaces_prometheus_storage_quarantines(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("summary.prometheusQuarantineCount", app_js)
         self.assertIn("prometheus TSDB", app_js)
+        self.assertIn("item.runbook", app_js)
+        self.assertIn("platform-health-runbook", app_js)
+        self.assertIn(".platform-health-runbook", styles_css)
 
     def test_platform_health_panel_surfaces_watchdog_task_status(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")

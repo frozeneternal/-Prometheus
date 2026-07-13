@@ -2742,8 +2742,10 @@ class BackendModuleTests(unittest.TestCase):
                     "Status": "warning",
                     "DataPath": "E:\\ops-monitor\\data\\prometheus",
                     "QuarantineCount": 1,
+                    "QuarantineSizeMB": 128.5,
                     "LatestQuarantine": "prometheus-corrupt-20260707-212937",
                     "LatestQuarantineTime": "2026-07-07T21:29:37",
+                    "CleanupCommand": "powershell -ExecutionPolicy Bypass -File cleanup-prometheus-quarantines.ps1 -DryRun",
                 },
             }
         )
@@ -2753,6 +2755,11 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(summary["prometheusStorageHealth"]["LatestQuarantine"], "prometheus-corrupt-20260707-212937")
         self.assertEqual(summary["issues"][0]["id"], "prometheus-storage-quarantine")
         self.assertIn("prometheus-corrupt-20260707-212937", summary["issues"][0]["message"])
+        self.assertIn("128.5 MB", summary["issues"][0]["message"])
+        self.assertEqual(
+            summary["issues"][0]["runbook"],
+            "powershell -ExecutionPolicy Bypass -File cleanup-prometheus-quarantines.ps1 -DryRun",
+        )
 
     def test_platform_health_summary_reports_watchdog_task_failure(self) -> None:
         from backend.platform_health import summarize_status_payload

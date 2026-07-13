@@ -357,6 +357,7 @@ function renderPlatformHealth() {
         <div class="platform-health-item ${escapeHtml(item.severity || "unknown")}">
           <span>${escapeHtml(item.severity || "unknown")}</span>
           <p>${escapeHtml(item.message || item.id || "")}</p>
+          ${item.runbook ? `<code class="platform-health-runbook">${escapeHtml(item.runbook)}</code>` : ""}
         </div>
       `).join("")}
     </div>` : ""}

@@ -20,6 +20,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "stop-local-monitor.ps1",
             STANDALONE / "status-local-monitor.ps1",
             STANDALONE / "recover-prometheus-tsdb.ps1",
+            STANDALONE / "cleanup-prometheus-quarantines.ps1",
             STANDALONE / "ssh_metrics_tunnel.py",
             STANDALONE / "set-ssh-credential.ps1",
             STANDALONE / "clear-ssh-credential.ps1",
@@ -318,6 +319,9 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("watchdogTaskHealth", status_script)
         self.assertIn("OpsMonitorWatchdog", status_script)
         self.assertIn("prometheus-corrupt-*", status_script)
+        self.assertIn("QuarantineSizeMB", status_script)
+        self.assertIn("CleanupCommand", status_script)
+        self.assertIn("cleanup-prometheus-quarantines.ps1", status_script)
         self.assertIn("prometheus\\prometheus.exe", status_script)
         self.assertIn("grafana\\bin\\grafana.exe", status_script)
         self.assertIn("windows_exporter\\windows_exporter.exe", status_script)
@@ -342,6 +346,19 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertIn("start-local-monitor.ps1", recover_script)
         self.assertNotIn("Remove-Item -Recurse", recover_script)
         self.assertNotIn("docker", recover_script.lower())
+
+    def test_prometheus_quarantine_cleanup_script_is_explicit_and_scoped(self) -> None:
+        cleanup_script = (STANDALONE / "cleanup-prometheus-quarantines.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("[switch]$ConfirmCleanup", cleanup_script)
+        self.assertIn("[switch]$Json", cleanup_script)
+        self.assertIn("Assert-PathUnderRoot", cleanup_script)
+        self.assertIn("Test-PrometheusReady", cleanup_script)
+        self.assertIn("prometheus-corrupt-*", cleanup_script)
+        self.assertIn("-not $ConfirmCleanup", cleanup_script)
+        self.assertIn("Remove-Item -LiteralPath", cleanup_script)
+        self.assertIn("-Recurse", cleanup_script)
+        self.assertNotIn("docker", cleanup_script.lower())
 
     def test_ssh_tunnel_script_uses_environment_credentials_and_loopback_listeners(self) -> None:
         tunnel_script = (STANDALONE / "ssh_metrics_tunnel.py").read_text(encoding="utf-8")
