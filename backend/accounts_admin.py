@@ -190,6 +190,8 @@ def upsert_account_user_payload(
             return 400, {"ok": False, "message": "不能停用当前登录账号。"}
         if normalize_role(next_user.get("role")) != "admin":
             return 400, {"ok": False, "message": "不能降低当前登录账号的管理员权限。"}
+        if password_provided:
+            return 400, {"ok": False, "message": "不能在账号管理中修改当前登录账号密码，请使用“修改当前密码”表单。"}
 
     next_users = list(users)
     if index is None:

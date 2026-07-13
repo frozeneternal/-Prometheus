@@ -559,6 +559,39 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIsNone(verify_session_token(saved[0], ops_token, now=1011))
         self.assertIsNotNone(authenticate_user(saved[0], "ops", "ops-pass-2"))
 
+    def test_accounts_admin_module_blocks_current_admin_password_change_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+
+        config, raw_config, token = self.account_admin_fixture()
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "admin",
+                "displayName": "Admin",
+                "role": "admin",
+                "password": "new-admin-pass",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("当前登录账号", payload["message"])
+        self.assertIn("修改当前密码", payload["message"])
+        self.assertEqual(saved, [])
+        self.assertEqual(audit_events, [])
+
     def test_accounts_admin_module_keeps_old_session_revoked_after_disable_and_reenable_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
         from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
