@@ -452,6 +452,90 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(saved, [])
         self.assertEqual(audit_events, [])
 
+    def test_accounts_admin_module_blocks_upsert_when_usernames_are_duplicated_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
+        from backend.auth import hash_password
+
+        config, raw_config, token = self.account_admin_fixture()
+        duplicate = {
+            "username": " ADMIN ",
+            "displayName": "Duplicate Admin",
+            "role": "admin",
+            "passwordHash": hash_password("duplicate-pass", salt="duplicate-salt", iterations=1000),
+        }
+        raw_config["users"].append(duplicate)
+        config = json.loads(json.dumps(raw_config))
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = upsert_account_user_payload(
+            config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "password": "ops-pass-1",
+                "enabled": True,
+            },
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 409)
+        self.assertFalse(payload["ok"])
+        self.assertIn("username 重复", payload["message"])
+        self.assertIn("admin", payload["message"])
+        self.assertEqual(saved, [])
+        self.assertEqual(audit_events, [])
+
+    def test_accounts_admin_module_blocks_delete_when_usernames_are_duplicated_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, delete_account_user_payload
+        from backend.auth import hash_password
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].extend(
+            [
+                {
+                    "username": "ops",
+                    "displayName": "Operations",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass-1", salt="ops-salt", iterations=1000),
+                },
+                {
+                    "username": " OPS ",
+                    "displayName": "Duplicate Operations",
+                    "role": "operator",
+                    "passwordHash": hash_password("ops-pass-2", salt="ops-two-salt", iterations=1000),
+                },
+            ]
+        )
+        config = json.loads(json.dumps(raw_config))
+        saved: list[dict] = []
+        audit_events: list[dict] = []
+        runtime = AccountsAdminRuntime(
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+            append_auth_audit=lambda _config, event: audit_events.append(event) or event,
+        )
+
+        status, payload = delete_account_user_payload(
+            config,
+            {"sessionToken": token, "username": "ops"},
+            runtime=runtime,
+        )
+
+        self.assertEqual(status, 409)
+        self.assertFalse(payload["ok"])
+        self.assertIn("username 重复", payload["message"])
+        self.assertIn("ops", payload["message"])
+        self.assertEqual(saved, [])
+        self.assertEqual(audit_events, [])
+
     def test_accounts_admin_module_respects_password_min_length_policy_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
 

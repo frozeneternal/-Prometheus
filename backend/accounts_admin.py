@@ -72,6 +72,31 @@ def _find_user_index(users: list[dict], username: str) -> int | None:
     return None
 
 
+def _duplicate_username_keys(users: list[dict]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for user in users:
+        key = _user_key(user.get("username"))
+        if not key:
+            continue
+        if key in seen:
+            duplicates.add(key)
+        else:
+            seen.add(key)
+    return sorted(duplicates)
+
+
+def _duplicate_username_response(users: list[dict]) -> tuple[int, dict] | None:
+    duplicates = _duplicate_username_keys(users)
+    if not duplicates:
+        return None
+    names = "、".join(duplicates)
+    return 409, {
+        "ok": False,
+        "message": f"账号配置存在 username 重复：{names}。请先手动修复重复账号后再继续管理账号。",
+    }
+
+
 def _enabled_from_body(value: object, default: bool) -> tuple[bool | None, str]:
     if isinstance(value, bool):
         return value, ""
@@ -171,6 +196,9 @@ def upsert_account_user_payload(
     raw_config = _copy_config(active_runtime.load_config_raw())
     users, _invalid_entries = config_list_records(raw_config, "users")
     users = list(users)
+    duplicate_response = _duplicate_username_response(users)
+    if duplicate_response:
+        return duplicate_response
     index = _find_user_index(users, username)
     existing = users[index] if index is not None else {}
     password = str(body.get("password") or "")
@@ -264,6 +292,9 @@ def delete_account_user_payload(
     raw_config = _copy_config(active_runtime.load_config_raw())
     users, _invalid_entries = config_list_records(raw_config, "users")
     users = list(users)
+    duplicate_response = _duplicate_username_response(users)
+    if duplicate_response:
+        return duplicate_response
     index = _find_user_index(users, username)
     if index is None:
         return 404, {"ok": False, "message": "账号不存在。"}
