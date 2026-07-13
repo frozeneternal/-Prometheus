@@ -2,18 +2,38 @@ $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 $StartAll = Join-Path $PSScriptRoot "start-all.cmd"
+$HiddenLauncher = Join-Path $PSScriptRoot "run-hidden.vbs"
 $TaskName = "LocalMonitorStartup"
 
 if (-not (Test-Path $StartAll)) {
   throw "Missing startup script: $StartAll"
 }
+if (-not (Test-Path $HiddenLauncher)) {
+  throw "Missing hidden launcher script: $HiddenLauncher"
+}
 
-$SafeRoot = $Root.Replace("'", "''")
-$SafeStartAll = $StartAll.Replace("'", "''")
-$StartupCommand = "Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '$SafeStartAll') -WorkingDirectory '$SafeRoot' -WindowStyle Hidden -Wait"
+function ConvertTo-HiddenLauncherArguments([string[]]$Arguments) {
+  $quoted = @()
+  foreach ($argument in $Arguments) {
+    $value = [string]$argument
+    $quoted += "`"$($value.Replace('"', '\"'))`""
+  }
+  return ($quoted -join " ")
+}
+
+$startupArguments = ConvertTo-HiddenLauncherArguments @(
+  $HiddenLauncher,
+  "powershell.exe",
+  "-NoProfile",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-Command",
+  "& '$($StartAll.Replace("'", "''"))'; exit `$LASTEXITCODE"
+)
+
 $Action = New-ScheduledTaskAction `
-  -Execute "powershell.exe" `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$StartupCommand`"" `
+  -Execute "wscript.exe" `
+  -Argument "//B $startupArguments" `
   -WorkingDirectory $Root
 
 $Trigger = New-ScheduledTaskTrigger -AtLogOn

@@ -7,13 +7,26 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Watchdog = Join-Path $Root "scripts\watchdog-local-monitor.ps1"
+$HiddenLauncher = Join-Path $Root "scripts\run-hidden.vbs"
 $Logs = Join-Path $Root "logs"
 
 if (-not (Test-Path $Watchdog)) {
   throw "Missing watchdog script: $Watchdog"
 }
+if (-not (Test-Path $HiddenLauncher)) {
+  throw "Missing hidden launcher script: $HiddenLauncher"
+}
 
 New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+
+function ConvertTo-HiddenLauncherArguments([string[]]$Arguments) {
+  $quoted = @()
+  foreach ($argument in $Arguments) {
+    $value = [string]$argument
+    $quoted += "`"$($value.Replace('"', '\"'))`""
+  }
+  return ($quoted -join " ")
+}
 
 $interval = [Math]::Max(1, $IntervalMinutes)
 $startAt = (Get-Date).AddMinutes(1)
@@ -23,9 +36,21 @@ $trigger = New-ScheduledTaskTrigger `
   -RepetitionInterval (New-TimeSpan -Minutes $interval) `
   -RepetitionDuration (New-TimeSpan -Days 3650)
 
+$watchdogArguments = ConvertTo-HiddenLauncherArguments @(
+  $HiddenLauncher,
+  "powershell.exe",
+  "-NoProfile",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-File",
+  $Watchdog,
+  "-Root",
+  $Root
+)
+
 $action = New-ScheduledTaskAction `
-  -Execute "powershell.exe" `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Watchdog`" -Root `"$Root`"" `
+  -Execute "wscript.exe" `
+  -Argument "//B $watchdogArguments" `
   -WorkingDirectory $Root
 
 $settings = New-ScheduledTaskSettingsSet `

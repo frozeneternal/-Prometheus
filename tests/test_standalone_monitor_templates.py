@@ -30,6 +30,7 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
             STANDALONE / "stop-ssh-tunnels.ps1",
             STANDALONE / "watchdog-local-monitor.ps1",
             STANDALONE / "install-watchdog-task.ps1",
+            STANDALONE / "run-hidden.vbs",
             STANDALONE / "ops-overview.dashboard.json",
             STANDALONE / "prometheus.example.yml",
             STANDALONE / "targets.example.json",
@@ -90,12 +91,15 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         installer = (STANDALONE / "install-watchdog-task.ps1").read_text(encoding="utf-8")
 
         self.assertIn("watchdog-local-monitor.ps1", installer)
+        self.assertIn("run-hidden.vbs", installer)
         self.assertIn("New-ScheduledTaskTrigger", installer)
         self.assertIn("-RepetitionInterval", installer)
         self.assertIn("-RepetitionDuration", installer)
         self.assertIn("Register-ScheduledTask", installer)
         self.assertIn("Start-ScheduledTask", installer)
-        self.assertIn("-WindowStyle Hidden", installer)
+        self.assertIn('-Execute "wscript.exe"', installer)
+        self.assertIn("//B", installer)
+        self.assertNotIn('-Execute "powershell.exe"', installer)
         self.assertIn("$settings.Hidden = $true", installer)
         self.assertNotIn("docker", installer.lower())
 
@@ -103,10 +107,21 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         installer = (ROOT / "scripts" / "install-startup.ps1").read_text(encoding="utf-8")
 
         self.assertIn("LocalMonitorStartup", installer)
-        self.assertIn("powershell.exe", installer)
-        self.assertIn("-WindowStyle Hidden", installer)
-        self.assertIn("Start-Process -FilePath 'cmd.exe'", installer)
+        self.assertIn("run-hidden.vbs", installer)
+        self.assertIn('-Execute "wscript.exe"', installer)
+        self.assertIn("//B", installer)
+        self.assertIn("start-all.cmd", installer)
+        self.assertNotIn('-Execute "powershell.exe"', installer)
         self.assertIn("$Settings.Hidden = $true", installer)
+
+    def test_hidden_launcher_uses_wscript_shell_run_without_window(self) -> None:
+        launcher = (STANDALONE / "run-hidden.vbs").read_text(encoding="utf-8")
+
+        self.assertIn("WScript.Shell", launcher)
+        self.assertIn(".Run", launcher)
+        self.assertIn(", 0, True", launcher)
+        self.assertIn("QuoteArg", launcher)
+        self.assertNotIn("docker", launcher.lower())
 
     def test_exporter_diagnostics_script_is_read_only(self) -> None:
         script = (STANDALONE / "diagnose-exporters.ps1").read_text(encoding="utf-8")
