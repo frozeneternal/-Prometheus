@@ -362,6 +362,20 @@ class StandaloneMonitorTemplateTests(unittest.TestCase):
         self.assertEqual(tunnels[0].local_host, "127.0.0.1")
         self.assertEqual(tunnels[0].remote_host, "127.0.0.1")
 
+    def test_ssh_tunnel_recv_treats_connection_reset_as_closed(self) -> None:
+        spec = importlib.util.spec_from_file_location("ssh_metrics_tunnel_reset_test", STANDALONE / "ssh_metrics_tunnel.py")
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        class ResetSocket:
+            def recv(self, _size: int) -> bytes:
+                raise ConnectionResetError("client disconnected")
+
+        self.assertEqual(module.recv_or_empty(ResetSocket()), b"")
+
     def test_powershell_param_block_comes_before_statements(self) -> None:
         for path in STANDALONE.glob("*.ps1"):
             text = path.read_text(encoding="utf-8")

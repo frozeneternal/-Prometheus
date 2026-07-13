@@ -102,13 +102,20 @@ def proxy(local_sock: socket.socket, remote_channel: paramiko.Channel) -> None:
         if not readable:
             continue
         for sock in readable:
-            data = sock.recv(BUFFER_SIZE)
+            data = recv_or_empty(sock)
             if not data:
                 return
             if sock is local_sock:
                 remote_channel.sendall(data)
             else:
                 local_sock.sendall(data)
+
+
+def recv_or_empty(sock: socket.socket | paramiko.Channel) -> bytes:
+    try:
+        return sock.recv(BUFFER_SIZE)
+    except (ConnectionResetError, OSError):
+        return b""
 
 
 def read_tunnels(path: Path) -> list[TunnelConfig]:
