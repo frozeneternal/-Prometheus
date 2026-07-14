@@ -2051,7 +2051,7 @@ class BackendModuleTests(unittest.TestCase):
                 encoding="utf-8",
             )
             local_path.write_text(
-                '{"appName":"local","monitoring":{"recoveryLogLimit":5000,"resourceExpiryWarningDays":2,"resourceExpiryCriticalDays":9},"servers":[{"id":"srv1"}],"websites":[{"id":"site1"}]}',
+                '{"appName":"local","monitoring":{"recoveryLogLimit":5000,"resourceExpiryWarningDays":2,"resourceExpiryCriticalDays":9,"resourceAckMaxDays":30},"servers":[{"id":"srv1"}],"websites":[{"id":"site1"}]}',
                 encoding="utf-8",
             )
 

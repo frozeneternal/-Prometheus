@@ -45,7 +45,7 @@ def monitoring_options(config: dict) -> dict:
     incident_log_limit = max(20, min(1000, safe_int(raw.get("incidentLogLimit"), recovery_log_limit)))
     resource_expiry_warning_days = max(1, safe_int(raw.get("resourceExpiryWarningDays"), 30))
     resource_expiry_critical_days = max(0, safe_int(raw.get("resourceExpiryCriticalDays"), 7))
-    resource_ack_max_days = max(1, safe_int(raw.get("resourceAckMaxDays"), 7))
+    resource_ack_max_days = max(1, min(7, safe_int(raw.get("resourceAckMaxDays"), 7)))
     if resource_expiry_critical_days > resource_expiry_warning_days:
         resource_expiry_critical_days = resource_expiry_warning_days
     return {
