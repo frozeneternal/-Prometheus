@@ -1298,6 +1298,7 @@ function incidentBlock(incident) {
       ${incident.lastLogId ? `<span>日志 ${escapeHtml(incident.lastLogId)}</span>` : ""}
     </div>
     <p class="recovery-message muted">${escapeHtml(incident.summary || incident.reason || "暂无摘要")}</p>
+    ${incident.lastActionMessage ? `<p class="recovery-message muted">最近恢复消息：${escapeHtml(incident.lastActionMessage)}</p>` : ""}
   </div>`;
 }
 

@@ -792,6 +792,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("最近恢复消息", incident_block)
         self.assertIn("无日志 ID", incident_block)
 
+    def test_incident_block_surfaces_last_recovery_message(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        start = app_js.index("function incidentBlock(")
+        end = app_js.index("\nfunction canAcknowledgeResource", start)
+        incident_block = app_js[start:end]
+
+        self.assertIn("incident.lastActionMessage", incident_block)
+        self.assertIn("最近恢复消息", incident_block)
+
     def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         actions_js = (PUBLIC / "js" / "actions.js").read_text(encoding="utf-8")
