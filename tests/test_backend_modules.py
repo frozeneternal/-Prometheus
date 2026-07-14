@@ -1940,6 +1940,37 @@ class BackendModuleTests(unittest.TestCase):
         self.assertIn("ACME", steps)
         self.assertIn("DNS/CDN", steps)
 
+    def test_emergency_module_surfaces_blocked_cert_renewal_without_app_import(self) -> None:
+        from backend.emergency import emergency_items
+
+        items = emergency_items(
+            prometheus={"available": True, "message": "", "error": ""},
+            config_validation={"status": "ok", "issues": []},
+            servers=[],
+            websites=[
+                {
+                    "id": "site1",
+                    "name": "Site 1",
+                    "health": "healthy",
+                    "status": "online",
+                    "certRenewal": {
+                        "enabled": True,
+                        "status": "blocked",
+                        "message": "certificate renewal blocked by config validation",
+                    },
+                }
+            ],
+            resources=[],
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], "website-cert:site1:blocked")
+        self.assertEqual(items[0]["targetType"], "website-cert")
+        steps = " ".join(items[0]["nextSteps"])
+        self.assertIn("allowAuto", steps)
+        self.assertIn("certExpiresIn", steps)
+        self.assertIn("配置", steps)
+
     def test_emergency_module_tolerates_malformed_cert_renewal_object(self) -> None:
         from backend.emergency import emergency_items
 

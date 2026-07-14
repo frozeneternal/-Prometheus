@@ -341,30 +341,43 @@ def _backup_item(server: dict) -> dict | None:
 
 def _cert_renewal_item(website: dict, recovery_log_lookup: dict[str, dict] | None = None) -> dict | None:
     renewal, _invalid_renewal = config_dict_field(website, "certRenewal")
-    if not renewal.get("enabled") or str(renewal.get("status") or "") != "failed":
+    status = str(renewal.get("status") or "")
+    if not renewal.get("enabled") or status not in {"failed", "blocked"}:
         return None
 
     website_id = str(website.get("id") or "")
     name = str(website.get("name") or website_id or "网站")
     last_log_id = str(renewal.get("lastLogId") or "")
-    next_steps = [
-        f"打开证书续期日志 {last_log_id or '未记录'}，检查 returnCode、stdout/stderr、ACME challenge 和命令超时。",
-        "核对证书续期动作使用的账号、DNS/API 凭据、Webroot 路径和 allowAuto 配置，必要时先手动续期验证。",
-        "检查 DNS/CDN 缓存、证书链部署位置和 blackbox exporter 看到的 certExpiresIn 是否已更新。",
-        "暂停自动续期或临时拉长 cooldownSeconds，避免失败命令连续重复执行。",
-    ]
-    log_summary = _action_log_summary((recovery_log_lookup or {}).get(last_log_id))
-    if log_summary:
-        next_steps.insert(1, log_summary)
-    if not last_log_id:
-        next_steps.insert(
-            0,
-            "最近证书续期失败但没有续期日志 ID；优先检查 action runner 是否启动、actionId 是否存在且命令可执行。",
-        )
+    if status == "blocked":
+        next_steps = [
+            "先修正证书续期配置或监控数据，再重新启用自动续期。",
+            "核对 allowAuto、renewBeforeDays、cooldownSeconds 和 certExpiresIn 是否有效。",
+            "确认证书续期动作引用的服务器、actionId 和权限都存在。",
+        ]
+        if not last_log_id:
+            next_steps.insert(
+                0,
+                "证书续期被阻断但没有日志 ID；先检查配置校验、动作引用和证书监控数据。",
+            )
+    else:
+        next_steps = [
+            f"打开证书续期日志 {last_log_id or '未记录'}，检查 returnCode、stdout/stderr、ACME challenge 和命令超时。",
+            "核对证书续期动作使用的账号、DNS/API 凭据、Webroot 路径和 allowAuto 配置，必要时先手动续期验证。",
+            "检查 DNS/CDN 缓存、证书链部署位置和 blackbox exporter 看到的 certExpiresIn 是否已更新。",
+            "暂停自动续期或临时拉长 cooldownSeconds，避免失败命令连续重复执行。",
+        ]
+        log_summary = _action_log_summary((recovery_log_lookup or {}).get(last_log_id))
+        if log_summary:
+            next_steps.insert(1, log_summary)
+        if not last_log_id:
+            next_steps.insert(
+                0,
+                "最近证书续期失败但没有续期日志 ID；优先检查 action runner 是否启动、actionId 是否存在且命令可执行。",
+            )
     return _item(
-        f"website-cert:{website_id}:failed",
+        f"website-cert:{website_id}:{status or 'failed'}",
         "warning",
-        f"{name} 证书续期失败",
+        f"{name} 证书续期{('被阻断' if status == 'blocked' else '失败')}",
         str(renewal.get("message") or "最近一次证书自动续期失败。"),
         next_steps,
         target_type="website-cert",
