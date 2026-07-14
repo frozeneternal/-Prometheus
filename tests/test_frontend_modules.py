@@ -486,6 +486,16 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("accountRuntimeSecurity.recentFailures", notice_block)
         self.assertIn("accountRuntimeSecurity.revokedSessions", notice_block)
 
+    def test_account_runtime_security_summary_is_visible_in_account_management_panel(self) -> None:
+        accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")
+
+        self.assertIn("state.dashboard?.accountRuntimeSecurity", accounts_js)
+        self.assertIn("账号运行态", accounts_js)
+        self.assertIn("lockedUsers", accounts_js)
+        self.assertIn("recentFailures", accounts_js)
+        self.assertIn("revokedSessions", accounts_js)
+        self.assertIn("account-runtime-security", accounts_js)
+
     def test_platform_health_summary_is_visible_in_system_notice(self) -> None:
         notice_block = notice_js()
 

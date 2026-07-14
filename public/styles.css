@@ -642,6 +642,15 @@ select {
   gap: 8px;
 }
 
+.account-runtime-security {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #c9d7ff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #eff4ff;
+}
+
 .account-user-item {
   display: flex;
   align-items: center;

@@ -243,6 +243,7 @@ export function renderAccountManagement() {
 
   const users = state.accountUsers || [];
   const issues = state.accountUserIssues || [];
+  const runtime = state.dashboard?.accountRuntimeSecurity;
   panel.classList.remove("hidden");
   renderAccountPasswordPolicy();
   $("#accountRole").disabled = bootstrapFirstAdmin;
@@ -253,7 +254,21 @@ export function renderAccountManagement() {
   $("#accountUserIssueList").innerHTML = issues.length
     ? issues.map((issue) => `<p>${escapeHtml(issue.message || "账号配置存在风险，请先核查。")}</p>`).join("")
     : "";
-  $("#accountUserList").innerHTML = users.length
+  const runtimePanel = runtime ? `
+    <div class="account-runtime-security ${runtime.status || "ok"}">
+      <div class="account-lockout-head">
+        <strong>账号运行态</strong>
+        <span class="account-security-badge ${runtime.status || "ok"}">${runtime.status === "attention" ? "需处理" : runtime.status === "watch" ? "关注" : "正常"}</span>
+      </div>
+      <div class="account-security-grid">
+        <span>锁定 ${escapeHtml(String(runtime.lockedUsers ?? 0))}</span>
+        <span>失败账号 ${escapeHtml(String(runtime.failedUsers ?? 0))}</span>
+        <span>失败次数 ${escapeHtml(String(runtime.recentFailures ?? 0))}</span>
+        <span>撤销会话 ${escapeHtml(String(runtime.revokedSessions ?? 0))}</span>
+      </div>
+    </div>
+  ` : "";
+  $("#accountUserList").innerHTML = `${runtimePanel}${users.length
     ? users.map((user) => `
       <div class="account-user-item ${user.enabled ? "" : "disabled"}">
         <div>
@@ -268,7 +283,7 @@ export function renderAccountManagement() {
     `).join("")
     : (bootstrapFirstAdmin
       ? '<p class="muted">使用顶部操作口令创建首个管理员账号；创建后请用新账号登录。</p>'
-      : '<p class="muted">暂无账号。</p>');
+      : '<p class="muted">暂无账号。</p>')}`;
 
   $("#accountUserList").querySelectorAll("[data-edit-user]").forEach((button) => {
     button.addEventListener("click", () => editManagedAccount(button.dataset.editUser));
