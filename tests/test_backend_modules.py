@@ -846,6 +846,62 @@ class BackendModuleTests(unittest.TestCase):
         self.assertTrue(reenable_payload["ok"])
         self.assertIsNone(verify_session_token(saved[-1], ops_token, now=1021))
 
+    def test_accounts_admin_module_keeps_old_session_revoked_after_delete_and_recreate_without_app_import(self) -> None:
+        from backend.accounts_admin import AccountsAdminRuntime, delete_account_user_payload, upsert_account_user_payload
+        from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token
+
+        config, raw_config, token = self.account_admin_fixture()
+        raw_config["users"].append(
+            {
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "passwordHash": hash_password("ops-pass-1", salt="ops-salt", iterations=1000),
+            }
+        )
+        config = json.loads(json.dumps(raw_config))
+        ops_user = authenticate_user(config, "ops", "ops-pass-1")
+        ops_token = create_session_token(config, ops_user, now=1000)
+        saved: list[dict] = []
+
+        self.assertEqual(verify_session_token(config, ops_token, now=1005)["username"], "ops")
+
+        delete_runtime = AccountsAdminRuntime(
+            now=lambda: 1010.0,
+            load_config_raw=lambda: raw_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+        delete_status, delete_payload = delete_account_user_payload(
+            config,
+            {"sessionToken": token, "username": "ops"},
+            runtime=delete_runtime,
+        )
+
+        deleted_config = saved[-1]
+        recreate_runtime = AccountsAdminRuntime(
+            now=lambda: 1020.0,
+            load_config_raw=lambda: deleted_config,
+            save_config_raw=lambda config: saved.append(config),
+        )
+        recreate_status, recreate_payload = upsert_account_user_payload(
+            deleted_config,
+            {
+                "sessionToken": token,
+                "username": "ops",
+                "displayName": "Operations",
+                "role": "operator",
+                "password": "ops-pass-2",
+                "enabled": True,
+            },
+            runtime=recreate_runtime,
+        )
+
+        self.assertEqual(delete_status, 200)
+        self.assertTrue(delete_payload["ok"])
+        self.assertEqual(recreate_status, 200)
+        self.assertTrue(recreate_payload["ok"])
+        self.assertIsNone(verify_session_token(saved[-1], ops_token, now=1021))
+
     def test_accounts_admin_module_keeps_old_session_revoked_after_role_restore_without_app_import(self) -> None:
         from backend.accounts_admin import AccountsAdminRuntime, upsert_account_user_payload
         from backend.auth import authenticate_user, create_session_token, hash_password, verify_session_token

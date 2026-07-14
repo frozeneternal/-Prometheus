@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "prometheusUrl": "http://127.0.0.1:9090",
     "actionToken": "",
     "sessionSecret": "",
+    "deletedUserSessionsRevokedBefore": {},
     "authPolicy": {
         "maxLoginFailures": 5,
         "failureWindowSeconds": 300,

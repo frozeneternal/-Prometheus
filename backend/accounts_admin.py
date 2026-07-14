@@ -136,6 +136,28 @@ def _enabled_account_count(users: list[dict]) -> int:
     return count
 
 
+def _deleted_user_sessions_revoked_before_map(raw_config: dict) -> dict[str, float]:
+    raw_map = raw_config.get("deletedUserSessionsRevokedBefore") or {}
+    if not isinstance(raw_map, dict):
+        raw_map = {}
+    normalized: dict[str, float] = {}
+    for key, value in raw_map.items():
+        username = _user_key(key)
+        if not username:
+            continue
+        try:
+            normalized[username] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return normalized
+
+
+def _mark_deleted_user_sessions_revoked_before(raw_config: dict, username: str, now: float) -> None:
+    revoked_map = _deleted_user_sessions_revoked_before_map(raw_config)
+    revoked_map[_user_key(username)] = float(now)
+    raw_config["deletedUserSessionsRevokedBefore"] = revoked_map
+
+
 def _session_secret_needs_bootstrap(secret: object) -> bool:
     value = str(secret or "")
     return not value or value.startswith("replace-with-") or len(value) < 32
@@ -246,6 +268,7 @@ def upsert_account_user_payload(
         return 400, {"ok": False, "message": "至少保留一个启用的管理员账号。"}
 
     _bootstrap_session_secret_if_needed(raw_config, users, next_users)
+    _mark_deleted_user_sessions_revoked_before(raw_config, username, active_runtime.now())
     raw_config["users"] = next_users
     try:
         active_runtime.save_config_raw(raw_config)

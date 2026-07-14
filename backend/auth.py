@@ -317,6 +317,14 @@ def sessions_revoked_before(user: dict) -> float:
         return 0.0
 
 
+def deleted_user_sessions_revoked_before(config: dict, username: str) -> float:
+    revoked_map = config.get("deletedUserSessionsRevokedBefore") or {}
+    try:
+        return float(revoked_map.get(str(username or "").strip().lower()) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def prune_revoked_sessions(now: float) -> None:
     expired = [sid for sid, expires_at in REVOKED_SESSION_IDS.items() if expires_at < now]
     for sid in expired:
@@ -379,12 +387,16 @@ def verify_session_token(config: dict, token: str, now: float | None = None) -> 
     prune_revoked_sessions(current)
     if any(key in REVOKED_SESSION_IDS for key in revocation_lookup_keys(token, payload)):
         return None
-    user = find_user(config, str(payload.get("username") or ""))
-    if not user:
-        return None
+    username = str(payload.get("username") or "")
     try:
         issued_at = float(payload.get("iat") or 0)
     except (TypeError, ValueError):
+        return None
+    deleted_revoked_before = deleted_user_sessions_revoked_before(config, username)
+    if deleted_revoked_before and issued_at <= deleted_revoked_before:
+        return None
+    user = find_user(config, username)
+    if not user:
         return None
     revoked_before = sessions_revoked_before(user)
     if revoked_before and issued_at <= revoked_before:
