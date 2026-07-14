@@ -39,6 +39,8 @@ def sanitize_incident_log_event(event: dict) -> dict:
     for key in ("reason", "summary", "lastStatus"):
         if key in sanitized:
             sanitized[key] = redact_sensitive_text(sanitized.get(key))
+    if "lastActionMessage" in sanitized:
+        sanitized["lastActionMessage"] = redact_sensitive_text(sanitized.get("lastActionMessage"))
     return sanitized
 
 
@@ -91,6 +93,7 @@ def update_incident_state(
         "reason": state.get("incidentReason", ""),
         "summary": "当前未发现中断。",
         "lastLogId": state.get("incidentLastLogId", ""),
+        "lastActionMessage": state.get("incidentLastActionMessage", ""),
     }
 
     is_bad = health in trigger_health
@@ -110,6 +113,7 @@ def update_incident_state(
                     "lastHealth": health,
                     "lastStatus": snapshot.get("status", "unknown"),
                     "lastLogId": state.get("lastLogId", ""),
+                    "lastActionMessage": state.get("incidentLastActionMessage", ""),
                 },
             )
             incident_view.update(
@@ -122,6 +126,7 @@ def update_incident_state(
                     "reason": state.get("incidentReason", blocked_reason),
                     "summary": f"{target_name} 仍在观察中：{blocked_reason}",
                     "lastLogId": state.get("lastLogId", ""),
+                    "lastActionMessage": state.get("incidentLastActionMessage", ""),
                 }
             )
             return incident_view
@@ -154,6 +159,7 @@ def update_incident_state(
                     "lastHealth": health,
                     "lastStatus": snapshot.get("status", "unknown"),
                     "lastLogId": state.get("lastLogId", ""),
+                    "lastActionMessage": state.get("incidentLastActionMessage", ""),
                 },
             )
         else:
@@ -168,6 +174,7 @@ def update_incident_state(
                     "lastHealth": health,
                     "lastStatus": snapshot.get("status", "unknown"),
                     "lastLogId": state.get("lastLogId", ""),
+                    "lastActionMessage": state.get("incidentLastActionMessage", ""),
                 },
             )
 
@@ -181,6 +188,7 @@ def update_incident_state(
                 "reason": state.get("incidentReason", reason),
                 "summary": f"{target_name} 仍处于异常：{state.get('incidentReason', reason)}",
                 "lastLogId": state.get("lastLogId", ""),
+                "lastActionMessage": state.get("incidentLastActionMessage", ""),
             }
         )
         return incident_view
@@ -193,6 +201,7 @@ def update_incident_state(
         state["incidentRecoveredAt"] = now
         state["incidentDurationSeconds"] = duration
         state["incidentLastLogId"] = state.get("lastLogId", "")
+        state["incidentLastActionMessage"] = state.get("lastActionMessage", "")
         active_runtime.upsert_incident_log(
             config,
             {
@@ -210,6 +219,7 @@ def update_incident_state(
                 "lastHealth": health,
                 "lastStatus": snapshot.get("status", "unknown"),
                 "lastLogId": state.get("lastLogId", ""),
+                "lastActionMessage": state.get("incidentLastActionMessage", ""),
             },
         )
         state["activeIncidentId"] = ""
@@ -225,6 +235,7 @@ def update_incident_state(
                 "reason": reason,
                 "summary": f"已恢复，持续 {duration} 秒。",
                 "lastLogId": state.get("lastLogId", ""),
+                "lastActionMessage": state.get("incidentLastActionMessage", ""),
             }
         )
         return incident_view

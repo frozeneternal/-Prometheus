@@ -1519,6 +1519,7 @@ function incidentLogCard(log) {
     `持续: ${formatElapsed(log.durationSeconds || 0)}`,
     log.lastLogId ? `关联恢复日志: ${log.lastLogId}` : "",
     actionResult,
+    log.lastActionMessage ? `最近恢复消息: ${log.lastActionMessage}` : "",
   ].filter(Boolean).join("\n");
 
   return `<article class="log-card incident-log-card">
@@ -1542,7 +1543,8 @@ function incidentActionResultText(log) {
   const result = resultLabels[log.lastActionResult] || log.lastActionResult;
   const actionAt = log.lastActionAt ? `，时间 ${formatTime(log.lastActionAt)}` : "";
   const logText = log.lastLogId ? `，日志 ${log.lastLogId}` : "，无日志 ID";
-  return `最近恢复动作: ${result}${actionAt}${logText}`;
+  const actionMessage = log.lastActionMessage ? `，消息 ${log.lastActionMessage}` : "";
+  return `最近恢复动作: ${result}${actionAt}${logText}${actionMessage}`;
 }
 
 function actionButton(server, action) {

@@ -175,6 +175,9 @@ def record_manual_recovery_result(
     state["lastResult"] = "success" if payload.get("ok") else "failed"
     state["lastReason"] = reason
     state["lastLogId"] = payload.get("logId", "")
+    state["lastActionMessage"] = str(payload.get("message", ""))
+    if state.get("activeIncidentId"):
+        state["incidentLastActionMessage"] = state["lastActionMessage"]
     if payload.get("ok"):
         state["consecutiveFailures"] = 0
     active_runtime.set_state(target_type, target_id, state)
@@ -266,6 +269,7 @@ def maybe_trigger_recovery(
         "lastResult": state.get("lastResult", ""),
         "lastReason": state.get("lastReason", ""),
         "lastLogId": state.get("lastLogId", ""),
+        "lastActionMessage": state.get("lastActionMessage", ""),
         "incident": incident,
         "dataQuality": quality,
     }
@@ -321,6 +325,9 @@ def maybe_trigger_recovery(
     state["lastCompletedAt"] = active_runtime.now()
     state["lastResult"] = "success" if payload.get("ok") else "failed"
     state["lastLogId"] = payload.get("logId", "")
+    state["lastActionMessage"] = str(payload.get("message", ""))
+    if state.get("activeIncidentId"):
+        state["incidentLastActionMessage"] = state["lastActionMessage"]
     if state.get("activeIncidentId"):
         active_runtime.upsert_incident_log(
             config,
@@ -329,6 +336,7 @@ def maybe_trigger_recovery(
                 "lastLogId": state.get("lastLogId", ""),
                 "lastActionAt": state["lastCompletedAt"],
                 "lastActionResult": state["lastResult"],
+                "lastActionMessage": state["lastActionMessage"],
             },
         )
     if payload.get("ok"):
@@ -344,9 +352,11 @@ def maybe_trigger_recovery(
             "lastResult": state["lastResult"],
             "lastReason": reason,
             "lastLogId": state["lastLogId"],
+            "lastActionMessage": state["lastActionMessage"],
             "incident": {
                 **incident,
                 "lastLogId": state["lastLogId"],
+                "lastActionMessage": state["lastActionMessage"],
             },
             "lastHttpStatus": http_status,
         }

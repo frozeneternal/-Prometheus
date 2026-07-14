@@ -787,7 +787,9 @@ class FrontendModuleTests(unittest.TestCase):
 
         self.assertIn("log.lastActionResult", incident_block)
         self.assertIn("log.lastActionAt", incident_block)
+        self.assertIn("log.lastActionMessage", incident_block)
         self.assertIn("最近恢复动作", incident_block)
+        self.assertIn("最近恢复消息", incident_block)
         self.assertIn("无日志 ID", incident_block)
 
     def test_resource_acknowledgement_has_frontend_and_backend_route(self) -> None:

@@ -741,6 +741,7 @@ def entity_public_recovery_state(target_type: str, target_id: str) -> dict:
         "lastResult": state.get("lastResult", ""),
         "lastReason": state.get("lastReason", ""),
         "lastLogId": state.get("lastLogId", ""),
+        "lastActionMessage": state.get("lastActionMessage", ""),
     }
 
 

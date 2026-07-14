@@ -3814,6 +3814,7 @@ class BackendModuleTests(unittest.TestCase):
                 "reason": "Prometheus lastError token=incident-token invalid dns token",
                 "summary": "Site failed with Authorization: Bearer incident-bearer",
                 "lastStatus": "https://ops.example/check?access_token=incident-url-token",
+                "lastActionMessage": "runner failed token=incident-action-token",
             }
         ]
         with app.RUNTIME_LOCK:
@@ -3829,6 +3830,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertNotIn("incident-token", serialized)
         self.assertNotIn("incident-bearer", serialized)
         self.assertNotIn("incident-url-token", serialized)
+        self.assertNotIn("incident-action-token", serialized)
         self.assertIn("[REDACTED]", serialized)
         self.assertIn("invalid dns token", serialized)
 
@@ -4196,10 +4198,12 @@ class BackendModuleTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["lastResult"], "failed")
+        self.assertEqual(result["lastActionMessage"], "runner failed")
         self.assertEqual(incident_action_updates[0]["id"], "incident-1")
         self.assertEqual(incident_action_updates[0]["lastActionResult"], "failed")
         self.assertEqual(incident_action_updates[0]["lastLogId"], "")
         self.assertEqual(incident_action_updates[0]["lastActionAt"], 1000.0)
+        self.assertEqual(incident_action_updates[0]["lastActionMessage"], "runner failed")
 
     def test_recovery_module_blocks_exporter_diagnostics_without_action(self) -> None:
         from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
@@ -4364,6 +4368,7 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(state["lastAttemptAt"], 1000.0)
         self.assertEqual(state["lastCompletedAt"], 1000.0)
         self.assertEqual(state["lastLogId"], "manual-log-1")
+        self.assertEqual(state["lastActionMessage"], "")
         self.assertEqual(state["consecutiveFailures"], 0)
 
         current_time = 1010.0
