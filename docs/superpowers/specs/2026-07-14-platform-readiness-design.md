@@ -1,175 +1,177 @@
-# Platform Readiness Design
+# 平台就绪度设计
 
-## Goal
+## 目标
 
-Build a first-stage platform readiness layer for the local operations console. It must show which automation capabilities are implemented in code but not yet safely connected to the live environment, so operators can fix coverage gaps before enabling broader certificate renewal, resource expiry, account management, emergency response, backup, and recovery automation.
+为当前本地运维控制台增加第一阶段的“平台就绪度”能力。它要明确展示哪些自动化能力已经在代码里具备，但还没有安全接入真实运行环境，帮助运维人员先补齐纳管缺口，再逐步启用证书自动续期、资源到期告警、账号管理、应急处置、自动备份和自动恢复。
 
-## Current Evidence
+这个阶段只做只读评估，不直接执行任何恢复、备份、续期、账号或配置变更。
 
-The current runtime dashboard is available at `http://127.0.0.1:8787/api/dashboard`.
+## 当前证据
 
-Latest observed state before this design:
+当前运行态 dashboard 地址是 `http://127.0.0.1:8787/api/dashboard`。
 
-- Servers: 11
-- Websites: 2
-- Resource expiry records: 0
-- Emergency items: 8 total, 3 critical
-- Auto recovery summary: `attention`
-- Auto backups enabled: 0
-- Certificate renewals enabled: 0
-- Account mode: `token`
-- Target coverage: `degraded`
-- Data quality: `ok`
+设计前最近一次观测到的状态：
 
-The codebase already has domain summaries for many of these areas, but they are scattered across dashboard payload fields, notice text, panels, and Prometheus metrics. Operators need a single readiness view that tells them what is ready, what is incomplete, what is risky, and what to do next.
+- 服务器：11 台
+- 网站：2 个
+- 资源到期记录：0 条
+- 应急项：8 条，其中严重 3 条
+- 自动恢复摘要：`attention`
+- 自动备份启用数：0
+- 证书续期启用数：0
+- 账号模式：`token`
+- Prometheus 目标覆盖：`degraded`
+- 数据可信度：`ok`
 
-## Scope
+代码库已经有多个领域摘要，例如资源到期、证书续期、自动备份、账号安全、采集覆盖、平台健康和应急项。但这些信息分散在仪表盘载荷、通知条、面板和 Prometheus 指标里。运维人员需要一个统一视图，直接看到哪些能力已就绪、哪些能力未纳管、哪些状态有风险，以及下一步该处理什么。
 
-This phase creates a read-only readiness view. It must not execute recovery, backup, certificate renewal, account changes, or config mutations.
+## 范围
 
-In scope:
+本阶段新增一个只读的平台就绪度视图。
 
-- Add a backend readiness domain module.
-- Add readiness data to `/api/dashboard`.
-- Add readiness metrics to `/metrics`.
-- Add a frontend readiness module and visible dashboard panel.
-- Add tests for backend behavior, frontend wiring, metrics, and live payload shape.
-- Keep `app.py` as route/runtime glue only; new readiness logic must live under `backend/` and `public/js/`.
+本阶段包含：
 
-Out of scope for this phase:
+- 新增后端就绪度领域模块。
+- 在 `/api/dashboard` 中输出就绪度数据。
+- 在 `/metrics` 中输出就绪度指标。
+- 新增前端就绪度模块和可见面板。
+- 增加后端行为、前端接线、指标和运行态载荷形状测试。
+- 保持 `app.py` 只承担路由和运行时胶水；新的就绪度业务规则必须放在 `backend/` 和 `public/js/` 的分层模块中。
 
-- Enabling certificate renewal in `config/servers.local.json`.
-- Creating live user accounts.
-- Adding live resource expiry records.
-- Starting, stopping, or restarting monitored services.
-- Changing Prometheus, Grafana, Docker, scheduled tasks, or exporter configuration.
-- Reworking all of `app.py`.
+本阶段不包含：
 
-## Design
+- 在 `config/servers.local.json` 中启用证书续期。
+- 创建真实用户账号。
+- 添加真实资源到期记录。
+- 启动、停止或重启被监控服务。
+- 修改 Prometheus、Grafana、Docker、计划任务或 exporter 配置。
+- 全量重构 `app.py`。
 
-### Backend Domain
+## 设计
 
-Create `backend/readiness.py`.
+### 后端领域模块
 
-Responsibilities:
+新增 `backend/readiness.py`。
 
-- Accept existing dashboard summaries and config state.
-- Produce a stable `platformReadiness` payload.
-- Classify each readiness area as `ready`, `attention`, or `blocked`.
-- Provide concise operator actions for each area.
-- Avoid exposing secrets, command lines, raw private host data, or token values.
+职责：
 
-Readiness areas:
+- 接收现有 dashboard 摘要和配置状态。
+- 生成稳定的 `platformReadiness` 载荷。
+- 将每个就绪度区域分类为 `ready`、`attention` 或 `blocked`。
+- 为每个区域提供简短、可执行的处理建议。
+- 不暴露密钥、命令行、原始私有主机信息或 token 值。
 
-- `resources`: resource expiry tracking is configured and actionable.
-- `certificates`: certificate renewal coverage is configured for applicable HTTPS sites.
-- `accounts`: account mode is user-based and has at least one admin/operator path.
-- `backups`: backup automation or at least manual backup handling exists.
-- `recovery`: automatic recovery is enabled only where data quality and action safety allow it.
-- `collection`: Prometheus target coverage and target health are sufficient for automation decisions.
-- `platform`: platform health has no critical local runtime risks.
-- `emergency`: active emergency items are visible and actionable.
+就绪度区域：
 
-The aggregate status follows the worst area status:
+- `resources`：资源到期跟踪是否已经配置并具备处置路径。
+- `certificates`：适用的 HTTPS 网站是否已经配置证书续期覆盖。
+- `accounts`：账号模式是否已经切换到用户体系，并具备管理员或运维账号路径。
+- `backups`：是否存在自动备份，或至少存在明确的手动备份处置能力。
+- `recovery`：自动恢复是否只在数据可信、动作安全的目标上启用。
+- `collection`：Prometheus 目标覆盖和采集健康是否足以支撑自动化决策。
+- `platform`：本地平台运行状态是否没有严重风险。
+- `emergency`：当前应急项是否可见且具备处置方向。
 
-- `blocked` if any area is blocked.
-- `attention` if no area is blocked but any area needs attention.
-- `ready` only when all areas are ready.
+聚合状态取最差区域状态：
 
-### Dashboard Integration
+- 任一区域为 `blocked` 时，整体为 `blocked`。
+- 没有 `blocked`，但存在需要关注的区域时，整体为 `attention`。
+- 所有区域都是 `ready` 时，整体才是 `ready`。
 
-Update `backend/dashboard.py` to include:
+### 仪表盘集成
+
+修改 `backend/dashboard.py`，在载荷中加入：
 
 ```python
 "platformReadiness": platform_readiness(...),
 ```
 
-The dashboard module should assemble existing summaries and pass them into `backend.readiness`. It should not implement readiness rules inline.
+`backend/dashboard.py` 只负责组装现有摘要并传给 `backend.readiness`。就绪度规则不能写散在 dashboard 模块里。
 
-### Metrics
+### 指标
 
-Update `backend/metrics.py` to export readiness gauges:
+修改 `backend/metrics.py`，导出以下就绪度指标：
 
 - `ops_platform_readiness_status`
 - `ops_platform_readiness_area_status{area="..."}`
 - `ops_platform_readiness_action_required_total`
 
-Status values:
+状态数值：
 
 - `ready` = 0
 - `attention` = 1
 - `blocked` = 2
 
-Metrics should be derived from either the runtime dashboard snapshot or the same backend readiness helper, without exposing per-host private labels.
+指标可以来自运行时仪表盘快照，也可以来自同一个后端 readiness 辅助函数。指标不能暴露私有主机标签或真实配置明细，只输出聚合状态和固定区域标签。
 
-### Frontend
+### 前端
 
-Create `public/js/readiness.js`.
+新增 `public/js/readiness.js`。
 
-Responsibilities:
+职责：
 
-- Render a `platformReadiness` panel from `state.dashboard.platformReadiness`.
-- Show aggregate status, area counts, and the action list.
-- Keep text concise and operational.
-- Avoid adding a marketing-style layout; this is an operations dashboard.
+- 从 `state.dashboard.platformReadiness` 渲染平台就绪度面板。
+- 展示整体状态、区域计数和处置建议清单。
+- 文案保持简洁、偏运维操作，不做营销式说明。
+- 不引入大型首屏、装饰背景、卡片嵌套或无关视觉改动。
 
-Update `public/index.html` with a readiness section near the top of the dashboard, after the system notice and before detailed runbooks.
+修改 `public/index.html`，在页面顶部靠前位置增加就绪度区域，放在系统通知后、详细应急处置手册前。
 
-Update `public/js/app.js` to import and call the readiness renderer during `render()`.
+修改 `public/js/app.js`，导入并在 `render()` 中调用就绪度渲染函数。
 
-Update `public/styles.css` with compact dashboard styling consistent with existing panels. Do not introduce large hero sections, decorative backgrounds, nested cards, or unrelated visual changes.
+修改 `public/styles.css`，添加和现有运维面板一致的紧凑样式。
 
-### System Notice
+### 系统通知
 
-Keep `public/js/notices.js` focused on short global warnings. Add exactly one concise platform readiness line when the aggregate readiness status is not `ready`; the detailed action list belongs in `public/js/readiness.js`.
+`public/js/notices.js` 继续只承担短全局警告。仅当整体就绪度不是 `ready` 时，增加一条简短的平台就绪度提示。详细处置建议清单必须放在 `public/js/readiness.js` 的面板中。
 
-### Validation
+## 验证
 
-Required verification for this phase:
+本阶段必须完成以下验证：
 
-- Focused backend readiness tests.
-- Dashboard payload tests proving `platformReadiness` is present and populated.
-- Metrics tests proving readiness gauges are exported.
-- Frontend module tests proving the panel, renderer, import, and render call exist.
-- Full test suite: `python -m unittest discover -s tests`.
-- Live HTTP check for `/api/dashboard` showing `platformReadiness`.
-- Live HTTP check for `/metrics` showing `ops_platform_readiness_*`.
-- Live UTF-8 fetch for `/` and `/js/readiness.js` to confirm Chinese labels are served correctly.
+- 聚焦后端 readiness 单元测试。
+- 仪表盘载荷测试，证明 `platformReadiness` 存在且字段完整。
+- 指标测试，证明 readiness gauges 已导出。
+- 前端模块测试，证明面板、渲染函数、导入和 render 调用存在。
+- 全量测试：`python -m unittest discover -s tests`。
+- 运行态 HTTP 检查 `/api/dashboard`，确认返回 `platformReadiness`。
+- 运行态 HTTP 检查 `/metrics`，确认返回 `ops_platform_readiness_*`。
+- 运行态 UTF-8 拉取 `/` 和 `/js/readiness.js`，确认中文标签正常输出。
 
-## Acceptance Criteria
+## 验收标准
 
-The phase is complete when:
+本阶段完成的标准：
 
-- `/api/dashboard` contains a `platformReadiness` object with aggregate status, areas, and actions.
-- The readiness panel is visible in the dashboard when data is available.
-- The panel explains current gaps without requiring operators to inspect several unrelated panels.
-- `/metrics` exports aggregate and per-area readiness metrics.
-- No live automation actions are executed as part of rendering readiness.
-- No private config values are newly exposed.
-- `app.py` does not gain readiness business rules.
-- All tests pass.
-- The completed change is committed and pushed to `origin/master`.
+- `/api/dashboard` 包含 `platformReadiness` 对象，且包括整体状态、区域列表和处置建议。
+- 页面中可见平台就绪度面板。
+- 面板能解释当前纳管缺口，不要求运维人员去多个分散面板里拼信息。
+- `/metrics` 输出整体和各区域就绪度指标。
+- 渲染就绪度不会执行任何真实自动化动作。
+- 不新增暴露私有配置值。
+- `app.py` 不增加就绪度业务规则。
+- 所有测试通过。
+- 完成后提交并推送到 `origin/master`。
 
-## Risks And Controls
+## 风险和控制
 
-- Risk: readiness duplicates existing warning text.
-  Control: put detailed guidance only in the readiness panel; keep system notice concise.
+- 风险：就绪度信息和现有通知条重复。
+  控制：详细处置建议只放在就绪度面板，系统通知只保留一条简短摘要。
 
-- Risk: readiness becomes a vague score.
-  Control: report named areas and concrete next actions instead of a percentage.
+- 风险：就绪度变成模糊分数。
+  控制：不使用百分比，直接报告命名区域和具体下一步动作。
 
-- Risk: metrics expose private infrastructure details.
-  Control: use aggregate counts and fixed area labels only.
+- 风险：指标泄露私有基础设施信息。
+  控制：只输出聚合计数和固定区域标签。
 
-- Risk: this phase delays actual automation.
-  Control: keep it read-only and narrow; the output directly drives the next implementation phases.
+- 风险：本阶段拖慢实际自动化接入。
+  控制：保持只读、边界窄；输出结果直接作为下一阶段启用资源、证书、账号、备份和恢复的依据。
 
-## Next Phase After Approval
+## 审批后的下一阶段
 
-After this spec is reviewed, create an implementation plan with small TDD tasks:
+这份设计文档审查通过后，生成一个小步 TDD 实施计划：
 
-1. Backend readiness module.
-2. Dashboard payload integration.
-3. Metrics export.
-4. Frontend readiness module and panel.
-5. Live validation and git sync.
+1. 后端 readiness 模块。
+2. 仪表盘载荷集成。
+3. 指标导出。
+4. 前端 readiness 模块和面板。
+5. 运行态验证和 git 同步。
