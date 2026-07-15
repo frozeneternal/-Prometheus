@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -11,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app  # noqa: E402
+from backend.readiness import READINESS_AREA_IDS  # noqa: E402
 
 
 class PlatformMetricsTests(unittest.TestCase):
@@ -48,6 +50,57 @@ class PlatformMetricsTests(unittest.TestCase):
                 },
             ]
         }
+
+    def _readiness_summary(self, statuses: dict[str, str] | None = None) -> dict:
+        area_statuses = {area_id: "ready" for area_id in READINESS_AREA_IDS}
+        area_statuses.update(statuses or {})
+        areas = [
+            {
+                "id": area_id,
+                "label": f"Private {area_id}",
+                "status": area_statuses[area_id],
+                "summary": "Host 10.0.0.88 at https://private.example.test",
+                "action": "Run secret-action-id",
+            }
+            for area_id in READINESS_AREA_IDS
+        ]
+        counts = {
+            status: sum(1 for area in areas if area["status"] == status)
+            for status in ("ready", "attention", "blocked")
+        }
+        actions = [
+            {
+                "area": area["id"],
+                "status": area["status"],
+                "message": "Investigate 10.0.0.88 via https://private.example.test",
+                "actionId": "secret-action-id",
+            }
+            for area in areas
+            if area["status"] != "ready"
+        ]
+        return {
+            "status": max(area_statuses.values(), key={"ready": 0, "attention": 1, "blocked": 2}.get),
+            "counts": counts,
+            "actionRequired": len(actions),
+            "areas": areas,
+            "actions": actions,
+        }
+
+    def _assert_readiness_unavailable(self, text: str) -> None:
+        self.assertIn("ops_platform_readiness_available 0", text)
+        self.assertIn("ops_platform_readiness_status NaN", text)
+        self.assertIn("ops_platform_readiness_actions_required NaN", text)
+        area_lines = [
+            line
+            for line in text.splitlines()
+            if line.startswith("ops_platform_readiness_area_status{")
+        ]
+        self.assertEqual(len(area_lines), 8)
+        for area_id in READINESS_AREA_IDS:
+            self.assertIn(
+                f'ops_platform_readiness_area_status{{area="{area_id}"}} NaN',
+                area_lines,
+            )
 
     def test_platform_metrics_exports_aggregated_resource_expiry(self) -> None:
         from backend.metrics import platform_metrics_text
@@ -190,6 +243,133 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertIn("ops_platform_dashboard_snapshot_age_seconds 45", text)
         self.assertIn("ops_platform_dashboard_snapshot_fresh 0", text)
 
+    def test_platform_metrics_exports_valid_readiness_without_untrusted_labels(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        summary = self._readiness_summary({"resources": "attention", "backups": "attention"})
+        summary["areas"].insert(
+            3,
+            {
+                "id": "unknown-10.0.0.99",
+                "status": "blocked",
+                "message": "https://unknown.example.test secret-action-id",
+            },
+        )
+
+        text = platform_metrics_text(
+            {"resources": []},
+            now=self.now,
+            platform_readiness_summary=summary,
+            dashboard_generated_at=self.now - 60,
+            dashboard_stale_after_seconds=30,
+        )
+
+        self.assertIn("# HELP ops_platform_readiness_available", text)
+        self.assertIn("# TYPE ops_platform_readiness_available gauge", text)
+        self.assertIn("# TYPE ops_platform_readiness_status gauge", text)
+        self.assertIn("# TYPE ops_platform_readiness_area_status gauge", text)
+        self.assertIn("# TYPE ops_platform_readiness_actions_required gauge", text)
+        self.assertIn("ops_platform_readiness_available 1", text)
+        self.assertIn("ops_platform_readiness_status 1", text)
+        self.assertIn("ops_platform_readiness_actions_required 2", text)
+        self.assertIn("ops_platform_dashboard_snapshot_fresh 0", text)
+        area_lines = [
+            line
+            for line in text.splitlines()
+            if line.startswith("ops_platform_readiness_area_status{")
+        ]
+        self.assertEqual(len(area_lines), 8)
+        for area_id in READINESS_AREA_IDS:
+            expected = 1 if area_id in {"resources", "backups"} else 0
+            self.assertIn(
+                f'ops_platform_readiness_area_status{{area="{area_id}"}} {expected}',
+                area_lines,
+            )
+        self.assertNotIn("ops_platform_readiness_action_required_total", text)
+        self.assertNotIn("unknown-10.0.0.99", text)
+        self.assertNotIn("10.0.0.88", text)
+        self.assertNotIn("private.example.test", text)
+        self.assertNotIn("secret-action-id", text)
+
+    def test_platform_metrics_exports_unavailable_readiness_for_missing_snapshot(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        text = platform_metrics_text({"resources": []}, now=self.now)
+
+        self._assert_readiness_unavailable(text)
+
+    def test_platform_metrics_rejects_inconsistent_readiness_aggregates(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        overall_conflict = self._readiness_summary({"resources": "attention"})
+        overall_conflict["status"] = "ready"
+        counts_conflict = self._readiness_summary({"resources": "attention"})
+        counts_conflict["counts"]["ready"] = 8
+        actions_conflict = self._readiness_summary(
+            {"resources": "attention", "backups": "attention"}
+        )
+        actions_conflict["actionRequired"] = 1
+        duplicate_area = self._readiness_summary({"resources": "attention"})
+        duplicate_area["areas"].insert(1, copy.deepcopy(duplicate_area["areas"][0]))
+
+        for summary in (
+            overall_conflict,
+            counts_conflict,
+            actions_conflict,
+            duplicate_area,
+        ):
+            with self.subTest(summary=summary):
+                text = platform_metrics_text(
+                    {"resources": []},
+                    now=self.now,
+                    platform_readiness_summary=summary,
+                )
+                self._assert_readiness_unavailable(text)
+
+    def test_platform_metrics_rejects_malformed_readiness_contracts(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        areas_not_list = self._readiness_summary()
+        areas_not_list["areas"] = {}
+        missing_area = self._readiness_summary()
+        missing_area["areas"].pop()
+        wrong_order = self._readiness_summary()
+        wrong_order["areas"][0], wrong_order["areas"][1] = (
+            wrong_order["areas"][1],
+            wrong_order["areas"][0],
+        )
+        illegal_status = self._readiness_summary()
+        illegal_status["areas"][0]["status"] = "unknown"
+        boolean_count = self._readiness_summary()
+        boolean_count["counts"]["ready"] = True
+        boolean_action_required = self._readiness_summary()
+        boolean_action_required["actionRequired"] = True
+        unknown_action = self._readiness_summary({"resources": "attention"})
+        unknown_action["actions"][0]["area"] = "unknown"
+        duplicate_action = self._readiness_summary(
+            {"resources": "attention", "backups": "attention"}
+        )
+        duplicate_action["actions"][1] = copy.deepcopy(duplicate_action["actions"][0])
+
+        for summary in (
+            [],
+            areas_not_list,
+            missing_area,
+            wrong_order,
+            illegal_status,
+            boolean_count,
+            boolean_action_required,
+            unknown_action,
+            duplicate_action,
+        ):
+            with self.subTest(summary=summary):
+                text = platform_metrics_text(
+                    {"resources": []},
+                    now=self.now,
+                    platform_readiness_summary=summary,
+                )
+                self._assert_readiness_unavailable(text)
+
     def test_metrics_response_uses_prometheus_text_content_type(self) -> None:
         status, content_type, body = app.metrics_response(self.config, now=self.now)
 
@@ -243,6 +423,36 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("ops_platform_dashboard_snapshot_age_seconds 31", body)
         self.assertIn("ops_platform_dashboard_snapshot_fresh 0", body)
+
+    def test_metrics_response_reuses_runtime_platform_readiness(self) -> None:
+        previous_dashboard = app.get_runtime_dashboard()
+        try:
+            app.set_runtime_dashboard(
+                {
+                    "platformReadiness": self._readiness_summary(
+                        {"resources": "blocked", "accounts": "attention"}
+                    )
+                }
+            )
+
+            status, content_type, body = app.metrics_response({"resources": []}, now=self.now)
+        finally:
+            app.set_runtime_dashboard(previous_dashboard)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/plain; version=0.0.4; charset=utf-8")
+        self.assertIn("ops_platform_readiness_available 1", body)
+        self.assertIn("ops_platform_readiness_status 2", body)
+        self.assertIn("ops_platform_readiness_actions_required 2", body)
+        self.assertIn('ops_platform_readiness_area_status{area="resources"} 2', body)
+        self.assertEqual(
+            sum(
+                line.startswith("ops_platform_readiness_area_status{")
+                for line in body.splitlines()
+            ),
+            8,
+        )
+        self.assertNotIn("ops_platform_readiness_action_required_total", body)
 
 
 if __name__ == "__main__":
