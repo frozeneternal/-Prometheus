@@ -19,6 +19,7 @@ from backend.platform_health import platform_health_summary
 from backend.prometheus import prometheus_ready_status
 from backend.prometheus import prometheus_active_targets, target_diagnostics_for_labels
 from backend.public_view import server_type
+from backend.readiness import platform_readiness
 from backend.snapshots import (
     metric_snapshot as build_metric_snapshot,
     unavailable_metric_snapshot as build_unavailable_metric_snapshot,
@@ -674,6 +675,33 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         recovery_logs=recovery_logs,
         resource_ack_days=monitoring_options(config)["resourceAckMaxDays"],
     )
+    account_security = account_security_summary(config)
+    account_runtime_security = active_runtime.account_runtime_security()
+    action_safety = action_safety_summary(config)
+    target_coverage = _target_coverage([*snapshots, *website_snapshots], prometheus_available, active_targets)
+    target_issue_summary = _target_issue_summary(
+        [*snapshots, *website_snapshots], prometheus_available, active_targets
+    )
+    data_quality = _data_quality_overview([*snapshots, *website_snapshots])
+    recovery = _recovery_summary([*snapshots, *website_snapshots])
+    backup = _backup_summary(snapshots)
+    incident = _incident_summary(snapshots, website_snapshots, incident_logs)
+    cert_renewal = _cert_renewal_summary(website_snapshots)
+    emergency = emergency_summary(runbook_items)
+    readiness = platform_readiness(
+        config,
+        servers=snapshots,
+        websites=website_snapshots,
+        resource_expiry_summary=expiry_summary,
+        cert_renewal_summary=cert_renewal,
+        account_security=account_security,
+        backup_summary=backup,
+        recovery_summary=recovery,
+        target_coverage=target_coverage,
+        data_quality_summary=data_quality,
+        platform_health=platform_health,
+        emergency_summary=emergency,
+    )
 
     payload = {
         "generatedAt": active_runtime.now(),
@@ -681,20 +709,21 @@ def dashboard_payload(config: dict, runtime: DashboardRuntime | None = None) -> 
         "grafana": _grafana_links(config),
         "configSource": active_runtime.config_source(),
         "configValidation": config_validation,
-        "accountSecurity": account_security_summary(config),
-        "accountRuntimeSecurity": active_runtime.account_runtime_security(),
-        "actionSafetySummary": action_safety_summary(config),
+        "accountSecurity": account_security,
+        "accountRuntimeSecurity": account_runtime_security,
+        "actionSafetySummary": action_safety,
         "platformHealth": platform_health,
+        "platformReadiness": readiness,
         "exporterDiagnostics": exporter_diagnostics,
-        "targetCoverage": _target_coverage([*snapshots, *website_snapshots], prometheus_available, active_targets),
-        "targetIssueSummary": _target_issue_summary([*snapshots, *website_snapshots], prometheus_available, active_targets),
+        "targetCoverage": target_coverage,
+        "targetIssueSummary": target_issue_summary,
         "unmanagedTargets": _unmanaged_target_items(active_targets, [*snapshots, *website_snapshots]),
-        "dataQualitySummary": _data_quality_overview([*snapshots, *website_snapshots]),
-        "recoverySummary": _recovery_summary([*snapshots, *website_snapshots]),
-        "backupSummary": _backup_summary(snapshots),
-        "incidentSummary": _incident_summary(snapshots, website_snapshots, incident_logs),
-        "certRenewalSummary": _cert_renewal_summary(website_snapshots),
-        "emergencySummary": emergency_summary(runbook_items),
+        "dataQualitySummary": data_quality,
+        "recoverySummary": recovery,
+        "backupSummary": backup,
+        "incidentSummary": incident,
+        "certRenewalSummary": cert_renewal,
+        "emergencySummary": emergency,
         "emergencyItems": runbook_items,
         "summary": _summary(snapshots),
         "websiteSummary": _summary(website_snapshots),

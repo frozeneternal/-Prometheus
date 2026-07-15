@@ -2492,6 +2492,22 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["configSource"]["configFile"], "servers.local.json")
         self.assertEqual(payload["platformHealth"]["status"], "warning")
         self.assertEqual(payload["platformHealth"]["issues"][0]["id"], "root-volume-warning")
+        readiness = payload["platformReadiness"]
+        self.assertEqual(readiness["status"], "blocked")
+        self.assertEqual(
+            [area["id"] for area in readiness["areas"]],
+            [
+                "resources",
+                "certificates",
+                "accounts",
+                "backups",
+                "recovery",
+                "collection",
+                "platform",
+                "emergency",
+            ],
+        )
+        self.assertEqual(readiness["actionRequired"], len(readiness["actions"]))
         self.assertEqual(payload["summary"]["total"], 1)
         self.assertEqual(payload["summary"]["unknown"], 1)
         self.assertEqual(payload["websiteSummary"]["total"], 1)
@@ -2504,6 +2520,111 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(payload["emergencyItems"][0]["id"], "prometheus-unavailable")
         self.assertEqual(payload["recoveryLogs"], [{"id": "log1"}])
         self.assertEqual(payload["incidentLogs"], [{"id": "incident1"}])
+
+    def test_dashboard_passes_payload_objects_to_platform_readiness(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        captured: dict[str, object] = {}
+        readiness = {"status": "captured-readiness"}
+        platform_health = {"status": "warning", "issues": []}
+        config = {
+            "monitoring": {},
+            "servers": [{"id": "srv1", "name": "Server 1"}],
+            "websites": [{"id": "site1", "name": "Site 1", "url": "https://example.test/"}],
+            "resources": [{"id": "domain", "name": "Domain", "expiresAt": "2026-07-08"}],
+        }
+
+        def capture_readiness(captured_config: dict, **kwargs: object) -> dict:
+            captured["config"] = captured_config
+            captured.update(kwargs)
+            return readiness
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            platform_health=lambda _config: platform_health,
+        )
+
+        with patch("backend.dashboard.platform_readiness", side_effect=capture_readiness):
+            payload = dashboard_payload(config, runtime=runtime)
+
+        self.assertIs(captured["config"], config)
+        self.assertIs(captured["servers"], payload["servers"])
+        self.assertIs(captured["websites"], payload["websites"])
+        self.assertIs(captured["resource_expiry_summary"], payload["resourceExpirySummary"])
+        self.assertIs(captured["cert_renewal_summary"], payload["certRenewalSummary"])
+        self.assertIs(captured["account_security"], payload["accountSecurity"])
+        self.assertIs(captured["backup_summary"], payload["backupSummary"])
+        self.assertIs(captured["recovery_summary"], payload["recoverySummary"])
+        self.assertIs(captured["target_coverage"], payload["targetCoverage"])
+        self.assertIs(captured["data_quality_summary"], payload["dataQualitySummary"])
+        self.assertIs(captured["platform_health"], payload["platformHealth"])
+        self.assertIs(captured["emergency_summary"], payload["emergencySummary"])
+        self.assertIs(payload["platformReadiness"], readiness)
+
+    def test_dashboard_readiness_reuses_trigger_snapshots_without_retriggering(self) -> None:
+        from backend.dashboard import DashboardRuntime, dashboard_payload
+
+        recovery_calls: dict[str, int] = {}
+        backup_calls: dict[str, int] = {}
+        cert_renewal_calls: dict[str, int] = {}
+
+        def trigger_recovery(_config: dict, target_type: str, entity: dict, _snapshot: dict) -> dict:
+            key = f"{target_type}:{entity['id']}"
+            recovery_calls[key] = recovery_calls.get(key, 0) + 1
+            return {"enabled": False, "status": "idle"}
+
+        def trigger_backup(_config: dict, server: dict, _snapshot: dict) -> dict:
+            server_id = server["id"]
+            backup_calls[server_id] = backup_calls.get(server_id, 0) + 1
+            return {"enabled": False, "status": "idle"}
+
+        def trigger_cert_renewal(_config: dict, website: dict, _snapshot: dict) -> dict:
+            website_id = website["id"]
+            cert_renewal_calls[website_id] = cert_renewal_calls.get(website_id, 0) + 1
+            return {
+                "tlsEnabled": True,
+                "notApplicable": False,
+                "enabled": False,
+                "status": "idle",
+            }
+
+        runtime = DashboardRuntime(
+            now=lambda: 1234.0,
+            ready_status=lambda _config, timeout=1.5: (False, "collector unavailable"),
+            platform_health=lambda _config: {"status": "ok", "issues": []},
+            trigger_recovery=trigger_recovery,
+            trigger_backup=trigger_backup,
+            trigger_cert_renewal=trigger_cert_renewal,
+        )
+
+        payload = dashboard_payload(
+            {
+                "monitoring": {},
+                "servers": [
+                    {"id": "srv1", "name": "Server 1"},
+                    {"id": "srv2", "name": "Server 2"},
+                ],
+                "websites": [
+                    {"id": "site1", "name": "Site 1", "url": "https://one.example.test/"},
+                    {"id": "site2", "name": "Site 2", "url": "https://two.example.test/"},
+                ],
+            },
+            runtime=runtime,
+        )
+
+        self.assertIn("platformReadiness", payload)
+        self.assertEqual(
+            recovery_calls,
+            {
+                "server:srv1": 1,
+                "server:srv2": 1,
+                "website:site1": 1,
+                "website:site2": 1,
+            },
+        )
+        self.assertEqual(backup_calls, {"srv1": 1, "srv2": 1})
+        self.assertEqual(cert_renewal_calls, {"site1": 1, "site2": 1})
 
     def test_dashboard_payload_tolerates_malformed_server_and_website_entries(self) -> None:
         from backend.dashboard import DashboardRuntime, dashboard_payload
