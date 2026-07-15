@@ -1,5 +1,6 @@
 import { $, escapeHtml } from "./dom.js";
 import { targetDiagnosticLabels } from "./format.js";
+import { isConsistentReadiness } from "./readiness.js";
 import { state } from "./state.js";
 
 export function renderSystemNotice() {
@@ -120,10 +121,10 @@ export function renderSystemNotice() {
     messages.push(`动作安全：动作 ${actionSafetySummary.total ?? 0}，自动 ${actionSafetySummary.allowAuto ?? 0}，高危 ${actionSafetySummary.highDanger ?? 0}，需处理 ${actionSafetySummary.actionRequired ?? 0}。`);
   }
 
-  if (platformReadiness
-      && Array.isArray(platformReadiness.areas)
-      && platformReadiness.areas.length === 8
-      && platformReadiness.status !== "ready") {
+  const hasCompletePlatformReadiness = isConsistentReadiness(platformReadiness);
+  if (state.dashboard && !hasCompletePlatformReadiness) {
+    messages.push("平台就绪度：数据缺失或不完整，自动化必须保持阻断；请刷新数据并检查平台就绪度接口。");
+  } else if (hasCompletePlatformReadiness && platformReadiness.status !== "ready") {
     messages.push(`平台就绪度：${platformReadiness.actionRequired ?? 0} 个领域需要处理，详情见平台就绪度面板。`);
   }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import sys
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -20,11 +21,28 @@ from backend.readiness import (  # noqa: E402
 
 def ready_inputs() -> dict:
     return {
-        "config": {"servers": [{"id": "srv1", "autoBackup": {"enabled": True}}]},
+        "config": {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "autoBackup": {
+                        "enabled": True,
+                        "actionServerId": "srv1",
+                        "actionId": "backup",
+                    },
+                    "actions": [{"id": "backup", "command": ["backup-now"]}],
+                }
+            ]
+        },
         "servers": [
             {
                 "id": "srv1",
-                "autoBackup": {"enabled": True, "status": "idle"},
+                "autoBackup": {
+                    "enabled": True,
+                    "status": "idle",
+                    "actionServerId": "srv1",
+                    "actionId": "backup",
+                },
                 "autoRecovery": {"enabled": True, "status": "idle"},
                 "dataQuality": {"trusted": True},
             }
@@ -210,6 +228,24 @@ class PlatformReadinessTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertNotIn(secret, repr(result))
 
+        class InvalidMapping(Mapping):
+            def __getitem__(self, key: object) -> object:
+                raise ValueError(key)
+
+            def __iter__(self):
+                raise ValueError("invalid mapping")
+
+            def __len__(self) -> int:
+                return 1
+
+        inputs = ready_inputs()
+        inputs["servers"][0]["autoBackup"] = InvalidMapping()
+        inputs["config"] = {"servers": [{"id": "srv1", "actions": []}]}
+
+        invalid_mapping_result = platform_readiness(**inputs)
+
+        self.assertEqual(area(invalid_mapping_result, "backups")["status"], "blocked")
+
     def test_enabled_http_renewal_cannot_hide_uncovered_https_site(self) -> None:
         inputs = ready_inputs()
         inputs.update(
@@ -296,6 +332,94 @@ class PlatformReadinessTests(unittest.TestCase):
                 server_config["actions"] = [action]
                 invalid = platform_readiness(**inputs)
                 self.assertEqual(area(invalid, "backups")["status"], "blocked")
+
+    def test_auto_backup_requires_action_reference_to_resolve(self) -> None:
+        for auto_backup, actions in (
+            (
+                {"enabled": True, "actionServerId": "srv1"},
+                [{"id": "job", "command": ["run"]}],
+            ),
+            (
+                {"enabled": True, "actionServerId": "srv1", "actionId": "missing"},
+                [],
+            ),
+        ):
+            with self.subTest(auto_backup=auto_backup):
+                inputs = ready_inputs()
+                inputs["servers"][0]["autoBackup"] = auto_backup
+                inputs["config"]["servers"][0]["autoBackup"] = auto_backup
+                inputs["config"]["servers"][0]["actions"] = actions
+                result = platform_readiness(**inputs)
+                self.assertEqual(area(result, "backups")["status"], "blocked")
+
+    def test_auto_backup_action_requires_command(self) -> None:
+        inputs = ready_inputs()
+        inputs["config"]["servers"][0]["actions"] = [{"id": "backup"}]
+
+        result = platform_readiness(**inputs)
+
+        self.assertEqual(area(result, "backups")["status"], "blocked")
+
+    def test_auto_backup_action_cannot_be_disabled(self) -> None:
+        inputs = ready_inputs()
+        inputs["config"]["servers"][0]["actions"] = [
+            {"id": "backup", "enabled": False, "command": ["backup-now"]}
+        ]
+
+        result = platform_readiness(**inputs)
+
+        self.assertEqual(area(result, "backups")["status"], "blocked")
+
+    def test_auto_backup_command_must_be_nonempty_string_list(self) -> None:
+        for command in ("backup-now", (), [], [None], [""], ["backup-now", " "]):
+            with self.subTest(command=command):
+                inputs = ready_inputs()
+                inputs["config"]["servers"][0]["actions"] = [
+                    {"id": "backup", "command": command}
+                ]
+                result = platform_readiness(**inputs)
+                self.assertEqual(area(result, "backups")["status"], "blocked")
+
+    def test_auto_backup_action_can_resolve_on_another_server(self) -> None:
+        inputs = ready_inputs()
+        inputs["servers"][0]["autoBackup"].update(
+            {"actionServerId": "ops", "actionId": "remote-backup"}
+        )
+        inputs["config"] = {
+            "servers": [
+                {"id": "srv1", "actions": []},
+                {
+                    "id": "ops",
+                    "actions": [
+                        {"id": "remote-backup", "command": ["backup", "srv1"]}
+                    ],
+                },
+            ]
+        }
+
+        result = platform_readiness(**inputs)
+
+        self.assertEqual(area(result, "backups")["status"], "ready")
+
+    def test_auto_backup_defaults_action_server_to_current_server(self) -> None:
+        inputs = ready_inputs()
+        inputs["servers"][0]["autoBackup"] = {
+            "enabled": True,
+            "status": "idle",
+            "actionId": "scheduled-task",
+        }
+        inputs["config"] = {
+            "servers": [
+                {
+                    "id": "srv1",
+                    "actions": [{"id": "scheduled-task", "command": ["perform"]}],
+                }
+            ]
+        }
+
+        result = platform_readiness(**inputs)
+
+        self.assertEqual(area(result, "backups")["status"], "ready")
 
     def test_enabled_untrusted_recovery_blocks_but_disabled_untrusted_is_attention(self) -> None:
         inputs = ready_inputs()

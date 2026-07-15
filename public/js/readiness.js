@@ -41,11 +41,15 @@ function renderCounts(counts) {
     .join("");
 }
 
-function isConsistentReadiness(readiness, actions) {
-  if (readiness.areas.length !== readinessAreaOrder.length) {
+export function isConsistentReadiness(readiness) {
+  if (!readiness
+      || !Array.isArray(readiness.areas)
+      || !Array.isArray(readiness.actions)
+      || readiness.areas.length !== readinessAreaOrder.length) {
     return false;
   }
 
+  const actions = readiness.actions;
   const computedCounts = { ready: 0, attention: 0, blocked: 0 };
   const expectedActions = [];
   let overallStatus = "ready";
@@ -82,7 +86,6 @@ function isConsistentReadiness(readiness, actions) {
   }
   if (!isValidCount(readiness.actionRequired)
       || readiness.actionRequired !== expectedActions.length
-      || !Array.isArray(readiness.actions)
       || actions.length !== expectedActions.length) {
     return false;
   }
@@ -117,21 +120,12 @@ function renderIncompleteReadiness(panel) {
 
 export function renderPlatformReadiness(readiness) {
   const panel = $("#platformReadinessPanel");
-  if (!readiness || !Array.isArray(readiness.areas)) {
-    panel.className = "platform-readiness-panel hidden";
-    $("#platformReadinessSummary").textContent = "";
-    $("#platformReadinessStatus").textContent = "";
-    $("#platformReadinessCounts").innerHTML = "";
-    $("#platformReadinessActions").innerHTML = "";
-    return;
-  }
-
-  const actions = Array.isArray(readiness.actions) ? readiness.actions : [];
-  if (!isConsistentReadiness(readiness, actions)) {
+  if (!isConsistentReadiness(readiness)) {
     renderIncompleteReadiness(panel);
     return;
   }
 
+  const actions = readiness.actions;
   const status = safeReadinessStatus(readiness.status);
   panel.className = `platform-readiness-panel ${status}`;
   $("#platformReadinessStatus").className = `platform-readiness-status ${status}`;

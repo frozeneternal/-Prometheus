@@ -4,7 +4,7 @@
 
 **Goal:** 新增一个只读、可审计的平台就绪度汇总，把资源到期、证书、账号、备份、恢复、采集、平台健康和应急状态统一输出到 Dashboard、Prometheus 和前端面板。
 
-**Architecture:** 新建纯函数领域模块 `backend/readiness.py`，只消费现有聚合摘要，不读取文件、不访问网络、不执行自动化动作。`backend/dashboard.py` 负责组装摘要，`backend/metrics.py` 只把同一份就绪度快照转换为固定低基数指标，`public/js/readiness.js` 只负责渲染；`app.py` 仅传递运行态快照。
+**Architecture:** 新建纯函数领域模块 `backend/readiness.py`，只消费现有聚合摘要，不读取文件、不访问网络、不执行自动化动作。`backend/dashboard.py` 负责组装摘要，`backend/metrics.py` 只把同一份就绪度快照转换为固定低基数指标，`public/js/readiness.js` 负责纯一致性校验和渲染；`app.py` 仅传递运行态快照。
 
 **Tech Stack:** Python 3 标准库、`unittest`、原生 ES Modules、HTML/CSS、Prometheus text exposition format、Git。
 
@@ -16,7 +16,7 @@
 - 修改 `backend/dashboard.py`：复用现有摘要并组装 `platformReadiness`，不放置就绪度规则。
 - 修改 `backend/metrics.py`：把 `platformReadiness` 转为固定区域的 gauge。
 - 修改 `app.py`：把运行态 Dashboard 中的 `platformReadiness` 传给指标层。
-- 新建 `public/js/readiness.js`：只接收就绪度载荷，渲染整体状态、区域计数和处置清单；不读取全局 state。
+- 新建 `public/js/readiness.js`：只接收就绪度载荷，提供纯一致性校验并渲染整体状态、区域计数和处置清单；不读取全局 state。
 - 修改 `public/index.html`：增加独立、无卡片嵌套的就绪度区域。
 - 修改 `public/js/app.js`：导入并调用就绪度渲染函数。
 - 修改 `public/js/notices.js`：整体未就绪时只增加一条短提示。
@@ -392,6 +392,18 @@ def _manual_backup_available(config: dict, server_id: str) -> bool:
     return _command_available(action)
 
 
+def _automatic_backup_available(config: dict, server_id: str) -> bool:
+    server = find_server(config, server_id)
+    if not isinstance(server, dict):
+        return False
+    automatic = _mapping(server.get("autoBackup"))
+    if automatic.get("enabled") is not True:
+        return False
+    action_server = find_server(config, str(automatic.get("actionServerId") or server_id))
+    action = find_action(action_server or {}, str(automatic.get("actionId") or ""))
+    return _command_available(action)
+
+
 def _backup_area(config: dict, servers: list[dict], valid: bool, summary: object) -> dict:
     if not valid:
         return _area("backups", "备份", "blocked", "服务器备份数据不可用。", "修复服务器配置后重新评估备份覆盖。")
@@ -399,8 +411,8 @@ def _backup_area(config: dict, servers: list[dict], valid: bool, summary: object
         return _area("backups", "备份", "ready", "当前没有需要评估的服务器。", "新增服务器时同步配置自动或手动备份。")
     uncovered = 0
     for server in servers:
-        automatic = _mapping(server.get("autoBackup")).get("enabled") is True
         server_id = str(server.get("id") or "")
+        automatic = _automatic_backup_available(config, server_id)
         if not automatic and not _manual_backup_available(config, server_id):
             uncovered += 1
     if uncovered:
@@ -728,12 +740,14 @@ from backend.readiness import READINESS_AREA_IDS, READINESS_STATUS_VALUES, readi
 platform_readiness_summary: dict | None = None,
 ```
 
-在 `platform_metrics_text()` 前增加快照一致性校验；未知区域忽略，固定区域重复、缺失、非法状态、整体状态矛盾或待办数矛盾都判为不可用：
+在 `platform_metrics_text()` 前增加快照一致性校验；区域列表必须恰好包含按固定顺序排列的 8 个区域。未知、额外、重复、缺失、非法状态、整体状态矛盾或待办数矛盾都判为不可用：
 
 ```python
 def _readiness_metrics_values(summary: object) -> tuple[int, int | float, dict[str, int | float], int | float]:
     unavailable = (0, math.nan, {area_id: math.nan for area_id in READINESS_AREA_IDS}, math.nan)
     if not isinstance(summary, dict) or not isinstance(summary.get("areas"), list):
+        return unavailable
+    if len(summary["areas"]) != len(READINESS_AREA_IDS):
         return unavailable
 
     area_values: dict[str, int | float] = {}
@@ -742,7 +756,7 @@ def _readiness_metrics_values(summary: object) -> tuple[int, int | float, dict[s
             return unavailable
         area_id = str(area.get("id") or "")
         if area_id not in READINESS_AREA_IDS:
-            continue
+            return unavailable
         if area_id in area_values:
             return unavailable
         value = readiness_status_value(area.get("status"))
@@ -852,6 +866,7 @@ def test_platform_readiness_has_layered_frontend_panel(self) -> None:
     self.assertIn('from "./readiness.js"', app_js)
     self.assertIn("renderPlatformReadiness(state.dashboard?.platformReadiness);", app_js)
     self.assertIn("renderPlatformReadiness(null);", app_js)
+    self.assertIn("export function isConsistentReadiness(readiness)", readiness_js)
     self.assertIn("export function renderPlatformReadiness(readiness)", readiness_js)
     self.assertNotIn("./state.js", readiness_js)
     self.assertIn("state.dashboard?.platformReadiness", notices_js)
@@ -876,6 +891,9 @@ Expected: `ERROR`，包含 `FileNotFoundError` 和 `public/js/readiness.js`。
 
 在 `public/js/readiness.js` 实现：
 
+- 导出纯函数 `isConsistentReadiness(readiness)`，完整验证固定区域顺序、状态、计数、整体状态和待办一致性。
+- `renderPlatformReadiness()` 与 `public/js/notices.js` 必须复用同一个校验函数，禁止各自维护不同强度的判断。
+
 ```javascript
 import { $, escapeHtml } from "./dom.js";
 const statusLabels = { ready: "已就绪", attention: "需关注", blocked: "有阻断" };
@@ -883,11 +901,7 @@ const statusLabels = { ready: "已就绪", attention: "需关注", blocked: "有
 export function renderPlatformReadiness(readiness) {
   const panel = $("#platformReadinessPanel");
   if (!readiness || !Array.isArray(readiness.areas)) {
-    panel.className = "platform-readiness-panel hidden";
-    $("#platformReadinessSummary").textContent = "";
-    $("#platformReadinessStatus").textContent = "";
-    $("#platformReadinessCounts").innerHTML = "";
-    $("#platformReadinessActions").innerHTML = "";
+    renderIncompleteReadiness(panel);
     return;
   }
 
@@ -953,7 +967,7 @@ renderPlatformReadiness(state.dashboard?.platformReadiness);
 renderPlatformReadiness(null);
 ```
 
-确保 Dashboard 请求失败后不会保留上一轮就绪度快照。
+确保 Dashboard 请求失败后不会保留上一轮就绪度快照，并立即显示失败闭合的阻断状态。
 
 在 `public/js/notices.js` 读取：
 
@@ -961,10 +975,13 @@ renderPlatformReadiness(null);
 const platformReadiness = state.dashboard?.platformReadiness;
 ```
 
-并在整体未就绪时追加一条短消息：
+Dashboard 已存在但就绪度缺失或区域列表不完整时，通知条必须显示“数据缺失或不完整”的阻断告警；完整载荷整体未就绪时追加一条短消息：
 
 ```javascript
-if (platformReadiness && platformReadiness.status !== "ready") {
+const complete = isConsistentReadiness(platformReadiness);
+if (state.dashboard && !complete) {
+  messages.push("平台就绪度：数据缺失或不完整，自动化必须保持阻断。");
+} else if (complete && platformReadiness.status !== "ready") {
   messages.push(`平台就绪度：${platformReadiness.actionRequired ?? 0} 个领域需要处理，详情见平台就绪度面板。`);
 }
 ```
@@ -977,7 +994,7 @@ if (platformReadiness && platformReadiness.status !== "ready") {
 .platform-readiness-panel.blocked { border-color: #f3b0b0; background: var(--bad-bg); }
 .platform-readiness-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .platform-readiness-head h2, .platform-readiness-head p { margin: 0; }
-.platform-readiness-status { min-width: 64px; border-radius: 999px; padding: 5px 9px; text-align: center; font-size: 12px; font-weight: 900; white-space: nowrap; }
+.platform-readiness-status { min-width: 64px; border-radius: 8px; padding: 5px 9px; text-align: center; font-size: 12px; font-weight: 900; white-space: nowrap; }
 .platform-readiness-status.ready { color: var(--good); background: #dff5e5; }
 .platform-readiness-status.attention { color: #7a5700; background: #fff2bf; }
 .platform-readiness-status.blocked { color: var(--bad); background: #ffe0e0; }

@@ -326,6 +326,33 @@ def _command_available(action: object) -> bool:
     )
 
 
+def _referenced_action_available(
+    config: dict,
+    reference: object,
+    default_action_server_id: str = "",
+) -> bool:
+    try:
+        data = _mapping(reference)
+        action_server_id = data.get("actionServerId") or default_action_server_id
+        action_server = find_server(config, str(action_server_id or ""))
+        action = find_action(action_server or {}, str(data.get("actionId") or ""))
+        return _command_available(action)
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _auto_backup_available(config: dict, server: dict) -> bool:
+    try:
+        automatic = _mapping(server.get("autoBackup"))
+        return automatic.get("enabled") is True and _referenced_action_available(
+            config,
+            automatic,
+            str(server.get("id") or ""),
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def _manual_backup_available(config: dict, server_id: str) -> bool:
     try:
         server = find_server(config, server_id)
@@ -334,9 +361,7 @@ def _manual_backup_available(config: dict, server_id: str) -> bool:
         manual = public_manual_backup(server, server_id)
         if not manual.get("available"):
             return False
-        action_server = find_server(config, str(manual.get("actionServerId") or ""))
-        action = find_action(action_server or {}, str(manual.get("actionId") or ""))
-        return _command_available(action)
+        return _referenced_action_available(config, manual)
     except (AttributeError, TypeError, ValueError):
         return False
 
@@ -380,9 +405,11 @@ def _backup_area(config: dict, servers: list[dict], valid: bool, summary: object
         )
     uncovered = 0
     for server in servers:
-        automatic = _mapping(server.get("autoBackup")).get("enabled") is True
         server_id = str(server.get("id") or "")
-        if not automatic and not _manual_backup_available(config, server_id):
+        if not _auto_backup_available(config, server) and not _manual_backup_available(
+            config,
+            server_id,
+        ):
             uncovered += 1
     if uncovered:
         return _area(

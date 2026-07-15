@@ -243,18 +243,13 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertIn("ops_platform_dashboard_snapshot_age_seconds 45", text)
         self.assertIn("ops_platform_dashboard_snapshot_fresh 0", text)
 
-    def test_platform_metrics_exports_valid_readiness_without_untrusted_labels(self) -> None:
+    def test_platform_metrics_rejects_unknown_readiness_area_without_leaking_label(self) -> None:
         from backend.metrics import platform_metrics_text
 
         summary = self._readiness_summary({"resources": "attention", "backups": "attention"})
-        summary["areas"].insert(
-            3,
-            {
-                "id": "unknown-10.0.0.99",
-                "status": "blocked",
-                "message": "https://unknown.example.test secret-action-id",
-            },
-        )
+        summary["areas"][3]["id"] = "unknown-10.0.0.99"
+        summary["areas"][3]["message"] = "https://unknown.example.test secret-action-id"
+        self.assertEqual(len(summary["areas"]), len(READINESS_AREA_IDS))
 
         text = platform_metrics_text(
             {"resources": []},
@@ -264,15 +259,27 @@ class PlatformMetricsTests(unittest.TestCase):
             dashboard_stale_after_seconds=30,
         )
 
-        self.assertIn("# HELP ops_platform_readiness_available", text)
-        self.assertIn("# TYPE ops_platform_readiness_available gauge", text)
-        self.assertIn("# TYPE ops_platform_readiness_status gauge", text)
-        self.assertIn("# TYPE ops_platform_readiness_area_status gauge", text)
-        self.assertIn("# TYPE ops_platform_readiness_actions_required gauge", text)
+        self._assert_readiness_unavailable(text)
+        self.assertIn("ops_platform_dashboard_snapshot_fresh 0", text)
+        self.assertNotIn("unknown-10.0.0.99", text)
+        self.assertNotIn("10.0.0.88", text)
+        self.assertNotIn("private.example.test", text)
+        self.assertNotIn("secret-action-id", text)
+
+    def test_platform_metrics_exports_valid_readiness_without_untrusted_labels(self) -> None:
+        from backend.metrics import platform_metrics_text
+
+        summary = self._readiness_summary({"resources": "attention", "backups": "attention"})
+
+        text = platform_metrics_text(
+            {"resources": []},
+            now=self.now,
+            platform_readiness_summary=summary,
+        )
+
         self.assertIn("ops_platform_readiness_available 1", text)
         self.assertIn("ops_platform_readiness_status 1", text)
         self.assertIn("ops_platform_readiness_actions_required 2", text)
-        self.assertIn("ops_platform_dashboard_snapshot_fresh 0", text)
         area_lines = [
             line
             for line in text.splitlines()
@@ -286,7 +293,6 @@ class PlatformMetricsTests(unittest.TestCase):
                 area_lines,
             )
         self.assertNotIn("ops_platform_readiness_action_required_total", text)
-        self.assertNotIn("unknown-10.0.0.99", text)
         self.assertNotIn("10.0.0.88", text)
         self.assertNotIn("private.example.test", text)
         self.assertNotIn("secret-action-id", text)

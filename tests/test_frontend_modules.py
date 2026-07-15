@@ -121,6 +121,7 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("export function renderSystemNotice()", notices_js)
         self.assertIn("from \"./dom.js\"", notices_js)
         self.assertIn("from \"./format.js\"", notices_js)
+        self.assertIn('import { isConsistentReadiness } from "./readiness.js";', notices_js)
         self.assertIn("from \"./state.js\"", notices_js)
 
     def test_platform_readiness_module_is_layered_and_wired(self) -> None:
@@ -133,8 +134,9 @@ class FrontendModuleTests(unittest.TestCase):
             if line.lstrip().startswith("import ")
         ]
         self.assertEqual(import_lines, ['import { $, escapeHtml } from "./dom.js";'])
+        self.assertIn("export function isConsistentReadiness(readiness)", readiness_js)
         self.assertIn("export function renderPlatformReadiness(readiness)", readiness_js)
-        self.assertEqual(readiness_js.count("export "), 1)
+        self.assertEqual(readiness_js.count("export "), 2)
         self.assertNotIn("./state.js", readiness_js)
         self.assertNotIn("state.", readiness_js)
 
@@ -196,19 +198,20 @@ class FrontendModuleTests(unittest.TestCase):
     def test_platform_readiness_renderer_validates_and_escapes_payload(self) -> None:
         readiness_js = (PUBLIC / "js" / "readiness.js").read_text(encoding="utf-8")
 
-        self.assertIn("if (!readiness || !Array.isArray(readiness.areas))", readiness_js)
-        self.assertIn('panel.className = "platform-readiness-panel hidden";', readiness_js)
-        for selector in (
-            "#platformReadinessSummary",
-            "#platformReadinessStatus",
-            "#platformReadinessCounts",
-            "#platformReadinessActions",
-        ):
-            with self.subTest(selector=selector):
-                self.assertRegex(
-                    readiness_js,
-                    rf'\$\("{re.escape(selector)}"\)\.(?:textContent|innerHTML) = "";',
-                )
+        self.assertNotIn('panel.className = "platform-readiness-panel hidden";', readiness_js)
+        validator_start = readiness_js.index(
+            "export function isConsistentReadiness(readiness)"
+        )
+        renderer_start = readiness_js.index(
+            "export function renderPlatformReadiness(readiness)"
+        )
+        validator_block = readiness_js[validator_start:renderer_start]
+        renderer_block = readiness_js[renderer_start:]
+        self.assertIn("if (!readiness", validator_block)
+        self.assertIn("!Array.isArray(readiness.areas)", validator_block)
+        self.assertIn("!Array.isArray(readiness.actions)", validator_block)
+        self.assertIn("if (!isConsistentReadiness(readiness))", renderer_block)
+        self.assertIn("renderIncompleteReadiness(panel);", renderer_block)
 
         self.assertIn(
             'const readinessStatuses = ["ready", "attention", "blocked"];',
@@ -227,7 +230,7 @@ class FrontendModuleTests(unittest.TestCase):
             with self.subTest(area_id=area_id):
                 self.assertIn(f'"{area_id}"', readiness_js)
         self.assertIn("readinessStatuses.includes(value)", readiness_js)
-        self.assertIn('const actions = Array.isArray(readiness.actions) ? readiness.actions : [];', readiness_js)
+        self.assertIn("const actions = readiness.actions;", validator_block)
         self.assertIn("Number.isFinite(value) && value >= 0", readiness_js)
         self.assertIn("Number.isInteger(value)", readiness_js)
         self.assertIn("数据不完整，不能据此启用自动化", readiness_js)
@@ -242,14 +245,15 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertNotIn("readiness.areas.filter", readiness_js)
         self.assertNotIn("readiness.areas.reduce", readiness_js)
 
-    def test_platform_readiness_notice_uses_only_overall_fields(self) -> None:
+    def test_platform_readiness_notice_uses_shared_consistency_validator(self) -> None:
         notices_js = notice_js()
 
         self.assertIn("const platformReadiness = state.dashboard?.platformReadiness;", notices_js)
-        self.assertIn("Array.isArray(platformReadiness.areas)", notices_js)
-        self.assertIn("platformReadiness.areas.length === 8", notices_js)
+        self.assertIn("state.dashboard &&", notices_js)
+        self.assertIn("isConsistentReadiness(platformReadiness)", notices_js)
         self.assertIn('platformReadiness.status !== "ready"', notices_js)
         self.assertIn("platformReadiness.actionRequired ?? 0", notices_js)
+        self.assertIn("平台就绪度：数据缺失或不完整", notices_js)
         self.assertIn(
             "平台就绪度：${platformReadiness.actionRequired ?? 0} 个领域需要处理，"
             "详情见平台就绪度面板。",
@@ -387,6 +391,7 @@ class FrontendModuleTests(unittest.TestCase):
                     page.goto(f"{base_url}/__readiness_test__")
                     page.evaluate("""() => {
                       document.body.innerHTML = `
+                        <aside id="systemNotice" class="notice hidden"></aside>
                         <section id="platformReadinessPanel" class="platform-readiness-panel hidden">
                           <p id="platformReadinessSummary"></p>
                           <span id="platformReadinessStatus"></span>
@@ -397,8 +402,21 @@ class FrontendModuleTests(unittest.TestCase):
                     }""")
                     page.evaluate("""async () => {
                       const readinessModule = await import("/js/readiness.js");
+                      const noticeModule = await import("/js/notices.js");
+                      const stateModule = await import("/js/state.js");
                       window.renderPlatformReadiness = readinessModule.renderPlatformReadiness;
+                      window.renderSystemNotice = noticeModule.renderSystemNotice;
+                      window.frontendState = stateModule.state;
                     }""")
+
+                    self.assertIn(
+                        "hidden",
+                        page.locator("#platformReadinessPanel").get_attribute("class") or "",
+                    )
+                    self.assertIn(
+                        "hidden",
+                        page.locator("#systemNotice").get_attribute("class") or "",
+                    )
 
                     non_ready = readiness_payload({
                         "resources": "attention",
@@ -455,11 +473,14 @@ class FrontendModuleTests(unittest.TestCase):
                         wrong_order["areas"][0],
                     )
                     malformed_payloads["area order"] = wrong_order
+                    unknown_area = deepcopy(ready)
+                    unknown_area["areas"][0]["id"] = "unknown"
+                    malformed_payloads["unknown area"] = unknown_area
                     bad_area_status = deepcopy(ready)
                     bad_area_status["areas"][0]["status"] = "unknown"
                     malformed_payloads["area status"] = bad_area_status
                     bad_overall = readiness_payload({"resources": "blocked"})
-                    bad_overall["status"] = "attention"
+                    bad_overall["status"] = "ready"
                     malformed_payloads["overall"] = bad_overall
                     bad_counts = deepcopy(ready)
                     bad_counts["counts"]["ready"] = 7
@@ -511,14 +532,60 @@ class FrontendModuleTests(unittest.TestCase):
                                 page.locator("#platformReadinessPanel").get_attribute("class")
                                 or ""
                             )
-                            self.assertIn("hidden", panel_class)
-                            for selector in (
-                                "#platformReadinessSummary",
-                                "#platformReadinessStatus",
-                                "#platformReadinessCounts",
-                                "#platformReadinessActions",
-                            ):
-                                self.assertEqual(page.locator(selector).inner_html(), "")
+                            summary = page.locator("#platformReadinessSummary").inner_text()
+                            actions_text = page.locator("#platformReadinessActions").inner_text()
+                            self.assertIn("blocked", panel_class)
+                            self.assertNotIn("hidden", panel_class)
+                            self.assertIn("数据不完整，不能据此启用自动化", summary)
+                            self.assertIn("数据校验失败", actions_text)
+
+                    notice_cases = {
+                        "missing readiness": {},
+                        "null readiness": {"platformReadiness": None},
+                        "empty readiness": {"platformReadiness": {}},
+                        "non-array areas": {"platformReadiness": {"areas": {}}},
+                    }
+                    for case, dashboard in notice_cases.items():
+                        with self.subTest(notice_case=case):
+                            page.evaluate("""dashboard => {
+                              window.frontendState.dashboard = dashboard;
+                              window.renderSystemNotice();
+                            }""", dashboard)
+                            notice_class = page.locator("#systemNotice").get_attribute("class") or ""
+                            notice_text = page.locator("#systemNotice").inner_text()
+                            self.assertNotIn("hidden", notice_class)
+                            self.assertIn("平台就绪度：数据缺失或不完整", notice_text)
+
+                    page.evaluate("""payload => {
+                      window.frontendState.dashboard = { platformReadiness: payload };
+                      window.renderSystemNotice();
+                    }""", ready)
+                    ready_notice_text = page.locator("#systemNotice").inner_text()
+                    self.assertNotIn("平台就绪度：", ready_notice_text)
+
+                    page.evaluate("""payload => {
+                      window.frontendState.dashboard = { platformReadiness: payload };
+                      window.renderSystemNotice();
+                    }""", non_ready)
+                    non_ready_notice_text = page.locator("#systemNotice").inner_text()
+                    self.assertNotIn("平台就绪度：数据缺失或不完整", non_ready_notice_text)
+                    self.assertIn("平台就绪度：2 个领域需要处理", non_ready_notice_text)
+
+                    malformed_notice_cases = (
+                        "area order",
+                        "unknown area",
+                        "area status",
+                        "counts mismatch",
+                        "overall",
+                    )
+                    for case in malformed_notice_cases:
+                        with self.subTest(malformed_notice_case=case):
+                            page.evaluate("""payload => {
+                              window.frontendState.dashboard = { platformReadiness: payload };
+                              window.renderSystemNotice();
+                            }""", malformed_payloads[case])
+                            notice_text = page.locator("#systemNotice").inner_text()
+                            self.assertIn("平台就绪度：数据缺失或不完整", notice_text)
                 finally:
                     browser.close()
         finally:

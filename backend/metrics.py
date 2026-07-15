@@ -65,19 +65,18 @@ def _platform_readiness_metric_values(summary: object) -> dict:
     areas = summary.get("areas")
     if not isinstance(areas, list):
         return unavailable()
+    if len(areas) != len(READINESS_AREA_IDS):
+        return unavailable()
 
     fixed_area_ids = set(READINESS_AREA_IDS)
     fixed_areas: list[dict] = []
-    for area in areas:
+    for expected_area_id, area in zip(READINESS_AREA_IDS, areas):
         if not isinstance(area, dict):
             return unavailable()
         area_id = area.get("id")
-        if not isinstance(area_id, str) or area_id not in fixed_area_ids:
-            continue
+        if area_id != expected_area_id:
+            return unavailable()
         fixed_areas.append(area)
-
-    if tuple(area.get("id") for area in fixed_areas) != READINESS_AREA_IDS:
-        return unavailable()
 
     area_statuses: dict[str, str] = {}
     area_values: dict[str, int | float] = {}
