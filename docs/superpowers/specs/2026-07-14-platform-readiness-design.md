@@ -55,11 +55,14 @@
 
 职责：
 
-- 接收现有 dashboard 摘要和配置状态。
+- 接收现有 dashboard 摘要、经过校验的配置状态和已经生成的目标快照。
 - 生成稳定的 `platformReadiness` 载荷。
 - 将每个就绪度区域分类为 `ready`、`attention` 或 `blocked`。
 - 为每个区域提供简短、可执行的处理建议。
 - 不暴露密钥、命令行、原始私有主机信息或 token 值。
+- 不重新调用恢复、备份或证书续期触发器；目标快照只用于判断已启用能力的数据可信度和运行态阻断。
+- 证书覆盖按适用的 HTTPS 站点逐站计算，不能用包含 HTTP 站点的总启用数推断。
+- 备份覆盖按每台服务器的自动备份或可解析手动备份动作计算；禁用、缺命令或无法解析的动作不计入覆盖。
 
 就绪度区域：
 
@@ -94,7 +97,8 @@
 
 - `ops_platform_readiness_status`
 - `ops_platform_readiness_area_status{area="..."}`
-- `ops_platform_readiness_action_required_total`
+- `ops_platform_readiness_actions_required`
+- `ops_platform_readiness_available`
 
 状态数值：
 
@@ -102,7 +106,9 @@
 - `attention` = 1
 - `blocked` = 2
 
-指标可以来自运行时仪表盘快照，也可以来自同一个后端 readiness 辅助函数。指标不能暴露私有主机标签或真实配置明细，只输出聚合状态和固定区域标签。
+当运行态就绪度快照缺失、畸形或内部不一致时，`ops_platform_readiness_available` 为 `0`，状态、区域和待办 gauge 输出 `NaN`，不能伪装成 `ready` 或真实 `blocked`。待办数量是可升可降的 gauge，因此不使用 Prometheus 为累计 counter 保留的 `_total` 后缀。
+
+指标来自运行时仪表盘快照，并验证整体状态等于八个区域中的最差状态。指标不能暴露私有主机标签或真实配置明细，只输出聚合状态、可用性和固定区域标签。
 
 ### 前端
 
@@ -131,7 +137,7 @@
 
 - 聚焦后端 readiness 单元测试。
 - 仪表盘载荷测试，证明 `platformReadiness` 存在且字段完整。
-- 指标测试，证明 readiness gauges 已导出。
+- 指标测试，证明 readiness availability、整体、八个固定区域和待办 gauges 已导出；缺失或矛盾快照输出不可用和 `NaN`。
 - 前端模块测试，证明面板、渲染函数、导入和 render 调用存在。
 - 全量测试：`python -m unittest discover -s tests`。
 - 运行态 HTTP 检查 `/api/dashboard`，确认返回 `platformReadiness`。
@@ -145,7 +151,7 @@
 - `/api/dashboard` 包含 `platformReadiness` 对象，且包括整体状态、区域列表和处置建议。
 - 页面中可见平台就绪度面板。
 - 面板能解释当前纳管缺口，不要求运维人员去多个分散面板里拼信息。
-- `/metrics` 输出整体和各区域就绪度指标。
+- `/metrics` 输出可用性、整体、八个固定区域和待办就绪度指标，且标签集合保持固定低基数。
 - 渲染就绪度不会执行任何真实自动化动作。
 - 不新增暴露私有配置值。
 - `app.py` 不增加就绪度业务规则。
