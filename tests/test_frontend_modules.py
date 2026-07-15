@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import re
+import threading
 import unittest
 from pathlib import Path
 
@@ -31,6 +36,7 @@ class FrontendModuleTests(unittest.TestCase):
             PUBLIC / "js" / "format.js",
             PUBLIC / "js" / "notices.js",
             PUBLIC / "js" / "prometheus.js",
+            PUBLIC / "js" / "readiness.js",
             PUBLIC / "js" / "state.js",
         ]
         for module_path in expected_modules:
@@ -46,6 +52,7 @@ class FrontendModuleTests(unittest.TestCase):
             "./format.js",
             "./notices.js",
             "./prometheus.js",
+            "./readiness.js",
             "./state.js",
         ):
             self.assertIn(import_path, app_js)
@@ -116,6 +123,416 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn("from \"./format.js\"", notices_js)
         self.assertIn("from \"./state.js\"", notices_js)
 
+    def test_platform_readiness_module_is_layered_and_wired(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        readiness_js = (PUBLIC / "js" / "readiness.js").read_text(encoding="utf-8")
+
+        import_lines = [
+            line.strip()
+            for line in readiness_js.splitlines()
+            if line.lstrip().startswith("import ")
+        ]
+        self.assertEqual(import_lines, ['import { $, escapeHtml } from "./dom.js";'])
+        self.assertIn("export function renderPlatformReadiness(readiness)", readiness_js)
+        self.assertEqual(readiness_js.count("export "), 1)
+        self.assertNotIn("./state.js", readiness_js)
+        self.assertNotIn("state.", readiness_js)
+
+        owned_selectors = set(re.findall(r'\$\("([^"]+)"\)', readiness_js))
+        self.assertEqual(
+            owned_selectors,
+            {
+                "#platformReadinessPanel",
+                "#platformReadinessSummary",
+                "#platformReadinessStatus",
+                "#platformReadinessCounts",
+                "#platformReadinessActions",
+            },
+        )
+
+        self.assertIn('import { renderPlatformReadiness } from "./readiness.js";', app_js)
+        self.assertNotIn("function renderPlatformReadiness(", app_js)
+        render_error = app_js[app_js.index("function renderError("):app_js.index("function render()")]
+        self.assertIn("renderPlatformReadiness(null);", render_error)
+        render_block = app_js[app_js.index("function render()"):]
+        notice_call = render_block.index("renderSystemNotice();")
+        readiness_call = render_block.index(
+            "renderPlatformReadiness(state.dashboard?.platformReadiness);"
+        )
+        self.assertLess(notice_call, readiness_call)
+
+    def test_platform_readiness_panel_dom_is_accessible_and_ordered(self) -> None:
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+
+        notice_index = index_html.index('id="systemNotice"')
+        readiness_index = index_html.index('id="platformReadinessPanel"')
+        config_index = index_html.index('id="configValidationPanel"')
+        runbook_index = index_html.index('id="emergencyRunbookPanel"')
+        self.assertLess(notice_index, readiness_index)
+        self.assertLess(readiness_index, config_index)
+        self.assertLess(readiness_index, runbook_index)
+
+        panel_end = index_html.index("</section>", readiness_index)
+        panel_html = index_html[readiness_index:panel_end]
+        panel_open = panel_html[:panel_html.index(">")]
+        self.assertIn('class="platform-readiness-panel hidden"', panel_open)
+        self.assertIn('aria-labelledby="platformReadinessTitle"', panel_open)
+        self.assertIn('<h2 id="platformReadinessTitle">平台就绪度</h2>', panel_html)
+
+        summary_index = panel_html.index('id="platformReadinessSummary"')
+        summary_open = panel_html[summary_index:panel_html.index(">", summary_index)]
+        self.assertIn('role="status"', summary_open)
+        self.assertIn('aria-live="polite"', summary_open)
+        self.assertIn('aria-atomic="true"', summary_open)
+        self.assertIn('id="platformReadinessStatus"', panel_html)
+        self.assertIn(
+            'id="platformReadinessCounts" class="platform-readiness-counts" '
+            'aria-label="就绪度区域计数"',
+            panel_html,
+        )
+        self.assertIn('<ul id="platformReadinessActions"', panel_html)
+        self.assertNotIn("<button", panel_html)
+
+    def test_platform_readiness_renderer_validates_and_escapes_payload(self) -> None:
+        readiness_js = (PUBLIC / "js" / "readiness.js").read_text(encoding="utf-8")
+
+        self.assertIn("if (!readiness || !Array.isArray(readiness.areas))", readiness_js)
+        self.assertIn('panel.className = "platform-readiness-panel hidden";', readiness_js)
+        for selector in (
+            "#platformReadinessSummary",
+            "#platformReadinessStatus",
+            "#platformReadinessCounts",
+            "#platformReadinessActions",
+        ):
+            with self.subTest(selector=selector):
+                self.assertRegex(
+                    readiness_js,
+                    rf'\$\("{re.escape(selector)}"\)\.(?:textContent|innerHTML) = "";',
+                )
+
+        self.assertIn(
+            'const readinessStatuses = ["ready", "attention", "blocked"];',
+            readiness_js,
+        )
+        for area_id in (
+            "resources",
+            "certificates",
+            "accounts",
+            "backups",
+            "recovery",
+            "collection",
+            "platform",
+            "emergency",
+        ):
+            with self.subTest(area_id=area_id):
+                self.assertIn(f'"{area_id}"', readiness_js)
+        self.assertIn("readinessStatuses.includes(value)", readiness_js)
+        self.assertIn('const actions = Array.isArray(readiness.actions) ? readiness.actions : [];', readiness_js)
+        self.assertIn("Number.isFinite(value) && value >= 0", readiness_js)
+        self.assertIn("Number.isInteger(value)", readiness_js)
+        self.assertIn("数据不完整，不能据此启用自动化", readiness_js)
+        for key in ("ready", "attention", "blocked"):
+            with self.subTest(key=key):
+                self.assertIn(f'["{key}",', readiness_js)
+        self.assertIn("escapeHtml(item.label", readiness_js)
+        self.assertIn("escapeHtml(item.message", readiness_js)
+        self.assertIn("platform-readiness-action-status", readiness_js)
+        self.assertIn("当前无待办", readiness_js)
+        self.assertNotIn("readiness.areas.map", readiness_js)
+        self.assertNotIn("readiness.areas.filter", readiness_js)
+        self.assertNotIn("readiness.areas.reduce", readiness_js)
+
+    def test_platform_readiness_notice_uses_only_overall_fields(self) -> None:
+        notices_js = notice_js()
+
+        self.assertIn("const platformReadiness = state.dashboard?.platformReadiness;", notices_js)
+        self.assertIn("Array.isArray(platformReadiness.areas)", notices_js)
+        self.assertIn("platformReadiness.areas.length === 8", notices_js)
+        self.assertIn('platformReadiness.status !== "ready"', notices_js)
+        self.assertIn("platformReadiness.actionRequired ?? 0", notices_js)
+        self.assertIn(
+            "平台就绪度：${platformReadiness.actionRequired ?? 0} 个领域需要处理，"
+            "详情见平台就绪度面板。",
+            notices_js,
+        )
+        self.assertNotIn("platformReadiness.actions", notices_js)
+
+    def test_platform_readiness_styles_are_compact_responsive_and_textual(self) -> None:
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        readiness_start = styles_css.index(".platform-readiness-panel")
+        responsive_start = styles_css.index("@media (max-width: 520px)", readiness_start)
+        readiness_css = styles_css[readiness_start:responsive_start]
+        responsive_css = styles_css[responsive_start:]
+
+        for status in ("ready", "attention", "blocked"):
+            with self.subTest(status=status):
+                self.assertIn(f".platform-readiness-panel.{status}", readiness_css)
+                self.assertIn(f".platform-readiness-status.{status}", readiness_css)
+        for status in ("attention", "blocked"):
+            with self.subTest(action_status=status):
+                self.assertIn(
+                    f".platform-readiness-action-status.{status}",
+                    readiness_css,
+                )
+        self.assertIn("border-radius: 8px;", readiness_css)
+        self.assertNotIn("border-radius: 999px", readiness_css)
+        self.assertNotIn("gradient", readiness_css)
+        self.assertNotIn("vw", readiness_css)
+        self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr));", readiness_css)
+        self.assertIn("min-width: 0;", readiness_css)
+        self.assertIn("overflow-wrap: anywhere;", readiness_css)
+        ready_desktop_rule = re.search(
+            r"\.platform-readiness-actions li\.ready\s*\{([^}]*)\}",
+            readiness_css,
+        )
+        self.assertIsNotNone(ready_desktop_rule)
+        self.assertIn(
+            "grid-template-columns: minmax(96px, 140px) minmax(0, 1fr);",
+            ready_desktop_rule.group(1),
+        )
+        self.assertIn(".platform-readiness-head", responsive_css)
+        self.assertIn("flex-direction: column;", responsive_css)
+        self.assertIn(".platform-readiness-counts,", responsive_css)
+        self.assertIn(".platform-readiness-actions li", responsive_css)
+        self.assertIn("grid-template-columns: 1fr;", responsive_css)
+        ready_mobile_rule = re.search(
+            r"\.platform-readiness-actions li\.ready\s*\{([^}]*)\}",
+            responsive_css,
+        )
+        self.assertIsNotNone(ready_mobile_rule)
+        self.assertIn("grid-template-columns: 1fr;", ready_mobile_rule.group(1))
+
+    def test_platform_readiness_renderer_handles_real_dom_contracts(self) -> None:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as error:
+            self.skipTest(f"playwright package unavailable: {error}")
+
+        area_ids = (
+            "resources",
+            "certificates",
+            "accounts",
+            "backups",
+            "recovery",
+            "collection",
+            "platform",
+            "emergency",
+        )
+        status_values = {"ready": 0, "attention": 1, "blocked": 2}
+
+        def readiness_payload(statuses: dict[str, str]) -> dict:
+            areas = []
+            counts = {"ready": 0, "attention": 0, "blocked": 0}
+            actions = []
+            for area_id in area_ids:
+                status = statuses.get(area_id, "ready")
+                area = {
+                    "id": area_id,
+                    "label": area_id,
+                    "status": status,
+                    "summary": f"{area_id} summary",
+                    "action": f"{area_id} action",
+                }
+                areas.append(area)
+                counts[status] += 1
+                if status != "ready":
+                    actions.append({
+                        "area": area_id,
+                        "label": area_id,
+                        "status": status,
+                        "message": area["action"],
+                    })
+            overall = max(
+                (area["status"] for area in areas),
+                key=status_values.__getitem__,
+            )
+            return {
+                "status": overall,
+                "counts": counts,
+                "actionRequired": len(actions),
+                "areas": areas,
+                "actions": actions,
+            }
+
+        class QuietHandler(SimpleHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if self.path == "/__readiness_test__":
+                    body = b"<!doctype html><html><body></body></html>"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                super().do_GET()
+
+            def log_message(self, _format: str, *args: object) -> None:
+                return
+
+        handler = partial(QuietHandler, directory=str(PUBLIC))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        base_url = f"http://127.0.0.1:{server.server_port}"
+
+        try:
+            with sync_playwright() as playwright:
+                try:
+                    browser = playwright.chromium.launch(headless=True)
+                except Exception as error:
+                    self.skipTest(f"playwright chromium unavailable: {error}")
+                try:
+                    page = browser.new_page()
+                    page.goto(f"{base_url}/__readiness_test__")
+                    page.evaluate("""() => {
+                      document.body.innerHTML = `
+                        <section id="platformReadinessPanel" class="platform-readiness-panel hidden">
+                          <p id="platformReadinessSummary"></p>
+                          <span id="platformReadinessStatus"></span>
+                          <div id="platformReadinessCounts"></div>
+                          <ul id="platformReadinessActions"></ul>
+                        </section>
+                      `;
+                    }""")
+                    page.evaluate("""async () => {
+                      const readinessModule = await import("/js/readiness.js");
+                      window.renderPlatformReadiness = readinessModule.renderPlatformReadiness;
+                    }""")
+
+                    non_ready = readiness_payload({
+                        "resources": "attention",
+                        "certificates": "blocked",
+                    })
+                    non_ready["actions"][0]["label"] = (
+                        '<img id="readinessXssLabel" src="x" onerror="window.xssRan=true">'
+                    )
+                    non_ready["actions"][0]["message"] = (
+                        '<script id="readinessXssMessage">window.xssRan=true</script>'
+                    )
+                    page.evaluate(
+                        "payload => window.renderPlatformReadiness(payload)",
+                        non_ready,
+                    )
+
+                    panel_class = page.locator("#platformReadinessPanel").get_attribute("class") or ""
+                    self.assertIn("blocked", panel_class)
+                    self.assertNotIn("hidden", panel_class)
+                    self.assertEqual(
+                        page.locator("#platformReadinessCounts b").all_text_contents(),
+                        ["6", "1", "1"],
+                    )
+                    self.assertEqual(
+                        page.locator(".platform-readiness-action-status").all_text_contents(),
+                        ["需关注", "有阻断"],
+                    )
+                    self.assertEqual(page.locator("#readinessXssLabel").count(), 0)
+                    self.assertEqual(page.locator("#readinessXssMessage").count(), 0)
+                    self.assertFalse(page.evaluate("Boolean(window.xssRan)"))
+
+                    ready = readiness_payload({})
+                    page.evaluate(
+                        "payload => window.renderPlatformReadiness(payload)",
+                        ready,
+                    )
+                    self.assertEqual(
+                        page.locator("#platformReadinessActions li").count(),
+                        1,
+                    )
+                    self.assertIn(
+                        "当前无待办",
+                        page.locator("#platformReadinessActions").inner_text(),
+                    )
+                    self.assertNotIn(
+                        "readinessXssLabel",
+                        page.locator("#platformReadinessActions").inner_text(),
+                    )
+
+                    malformed_payloads = {}
+                    wrong_order = deepcopy(ready)
+                    wrong_order["areas"][0], wrong_order["areas"][1] = (
+                        wrong_order["areas"][1],
+                        wrong_order["areas"][0],
+                    )
+                    malformed_payloads["area order"] = wrong_order
+                    bad_area_status = deepcopy(ready)
+                    bad_area_status["areas"][0]["status"] = "unknown"
+                    malformed_payloads["area status"] = bad_area_status
+                    bad_overall = readiness_payload({"resources": "blocked"})
+                    bad_overall["status"] = "attention"
+                    malformed_payloads["overall"] = bad_overall
+                    bad_counts = deepcopy(ready)
+                    bad_counts["counts"]["ready"] = 7
+                    malformed_payloads["counts mismatch"] = bad_counts
+                    fractional_counts = deepcopy(ready)
+                    fractional_counts["counts"]["ready"] = 7.5
+                    malformed_payloads["counts integer"] = fractional_counts
+                    bad_action_required = deepcopy(non_ready)
+                    bad_action_required["actionRequired"] = 1
+                    malformed_payloads["actionRequired"] = bad_action_required
+                    missing_action = deepcopy(non_ready)
+                    missing_action["actions"].pop()
+                    malformed_payloads["actions length"] = missing_action
+                    wrong_action_area = deepcopy(non_ready)
+                    wrong_action_area["actions"][0]["area"] = "accounts"
+                    malformed_payloads["action area"] = wrong_action_area
+                    wrong_action_status = deepcopy(non_ready)
+                    wrong_action_status["actions"][0]["status"] = "blocked"
+                    malformed_payloads["action status"] = wrong_action_status
+                    wrong_action_order = deepcopy(non_ready)
+                    wrong_action_order["actions"].reverse()
+                    malformed_payloads["action order"] = wrong_action_order
+
+                    for case, payload in malformed_payloads.items():
+                        with self.subTest(case=case):
+                            page.evaluate(
+                                "value => window.renderPlatformReadiness(value)",
+                                payload,
+                            )
+                            panel_class = (
+                                page.locator("#platformReadinessPanel").get_attribute("class")
+                                or ""
+                            )
+                            summary = page.locator("#platformReadinessSummary").inner_text()
+                            actions_text = page.locator("#platformReadinessActions").inner_text()
+                            self.assertIn("blocked", panel_class)
+                            self.assertNotIn("hidden", panel_class)
+                            self.assertIn("数据不完整，不能据此启用自动化", summary)
+                            self.assertNotIn("均已满足", summary)
+                            self.assertNotIn("当前无待办", actions_text)
+
+                    for missing in (None, {}, {"areas": {}}):
+                        with self.subTest(missing=missing):
+                            page.evaluate(
+                                "value => window.renderPlatformReadiness(value)",
+                                missing,
+                            )
+                            panel_class = (
+                                page.locator("#platformReadinessPanel").get_attribute("class")
+                                or ""
+                            )
+                            self.assertIn("hidden", panel_class)
+                            for selector in (
+                                "#platformReadinessSummary",
+                                "#platformReadinessStatus",
+                                "#platformReadinessCounts",
+                                "#platformReadinessActions",
+                            ):
+                                self.assertEqual(page.locator(selector).inner_html(), "")
+                finally:
+                    browser.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=5)
+
+    def test_dashboard_error_clears_system_notice(self) -> None:
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        render_error = app_js[app_js.index("function renderError("):app_js.index("function render()")]
+
+        self.assertIn('$("#systemNotice").innerHTML = "";', render_error)
+        self.assertIn('$("#systemNotice").classList.add("hidden");', render_error)
+
     def test_app_uses_frontend_client_for_backend_routes(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
@@ -134,15 +551,18 @@ class FrontendModuleTests(unittest.TestCase):
     def test_frontend_modules_keep_utf8_labels(self) -> None:
         app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
         format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
+        readiness_js = (PUBLIC / "js" / "readiness.js").read_text(encoding="utf-8")
         state_js = (PUBLIC / "js" / "state.js").read_text(encoding="utf-8")
 
         for expected in ("\u670d\u52a1\u5668", "\u7c7b\u578b", "\u5730\u5740", "\u5bbf\u4e3b\u673a"):
             self.assertIn(expected, app_js)
         for expected in ("\u5185\u5b58", "\u78c1\u76d8", "\u6b63\u5e38", "\u5df2\u8fc7\u671f"):
             self.assertIn(expected, format_js)
+        for expected in ("平台就绪度", "已就绪", "需关注", "有阻断", "当前无待办"):
+            self.assertIn(expected, readiness_js)
         self.assertIn("\u5168\u90e8", state_js)
 
-        for module_text in (app_js, format_js, state_js):
+        for module_text in (app_js, format_js, readiness_js, state_js):
             for bad_marker in ("\u93c8", "\u934f", "\u95b0", "\ufffd"):
                 self.assertNotIn(bad_marker, module_text)
 

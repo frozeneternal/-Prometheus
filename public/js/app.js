@@ -50,6 +50,7 @@ import {
 } from "./format.js";
 import { renderSystemNotice } from "./notices.js";
 import { canFetchSeries } from "./prometheus.js";
+import { renderPlatformReadiness } from "./readiness.js";
 import { resourceAckLabel } from "./resource-expiry.js";
 import { state } from "./state.js";
 function serverAddress(server) {
@@ -175,6 +176,9 @@ async function refreshDashboard() {
 }
 
 function renderError(error) {
+  renderPlatformReadiness(null);
+  $("#systemNotice").innerHTML = "";
+  $("#systemNotice").classList.add("hidden");
   $("#serverGrid").innerHTML = "";
   $("#websiteGrid").innerHTML = "";
   $("#resourceExpiryList").innerHTML = "";
@@ -235,6 +239,7 @@ function render() {
 
   renderMonitoringLinks();
   renderSystemNotice();
+  renderPlatformReadiness(state.dashboard?.platformReadiness);
   renderConfigValidation();
   renderPlatformHealth();
   renderAuthControls();

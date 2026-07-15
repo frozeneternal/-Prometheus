@@ -43,6 +43,17 @@
 
       <main>
         <section id="systemNotice" class="system-notice hidden" aria-live="polite"></section>
+        <section id="platformReadinessPanel" class="platform-readiness-panel hidden" aria-labelledby="platformReadinessTitle">
+          <div class="platform-readiness-head">
+            <div>
+              <h2 id="platformReadinessTitle">平台就绪度</h2>
+              <p id="platformReadinessSummary" class="muted" role="status" aria-live="polite" aria-atomic="true"></p>
+            </div>
+            <span id="platformReadinessStatus" class="platform-readiness-status"></span>
+          </div>
+          <div id="platformReadinessCounts" class="platform-readiness-counts" aria-label="就绪度区域计数"></div>
+          <ul id="platformReadinessActions" class="platform-readiness-actions"></ul>
+        </section>
         <section id="configValidationPanel" class="config-validation-panel hidden" aria-live="polite"></section>
         <section id="platformHealthPanel" class="platform-health-panel hidden" aria-live="polite"></section>
         <section id="accountSecurityPanel" class="account-security-panel hidden" aria-live="polite"></section>

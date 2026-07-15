@@ -11,6 +11,7 @@ export function renderSystemNotice() {
   const dataQualitySummary = state.dashboard?.dataQualitySummary;
   const exporterDiagnostics = state.dashboard?.exporterDiagnostics;
   const platformHealth = state.dashboard?.platformHealth;
+  const platformReadiness = state.dashboard?.platformReadiness;
   const emergencySummary = state.dashboard?.emergencySummary;
   const recoverySummary = state.dashboard?.recoverySummary;
   const backupSummary = state.dashboard?.backupSummary;
@@ -117,6 +118,13 @@ export function renderSystemNotice() {
 
   if (actionSafetySummary && actionSafetySummary.status !== "ok") {
     messages.push(`动作安全：动作 ${actionSafetySummary.total ?? 0}，自动 ${actionSafetySummary.allowAuto ?? 0}，高危 ${actionSafetySummary.highDanger ?? 0}，需处理 ${actionSafetySummary.actionRequired ?? 0}。`);
+  }
+
+  if (platformReadiness
+      && Array.isArray(platformReadiness.areas)
+      && platformReadiness.areas.length === 8
+      && platformReadiness.status !== "ready") {
+    messages.push(`平台就绪度：${platformReadiness.actionRequired ?? 0} 个领域需要处理，详情见平台就绪度面板。`);
   }
 
   if (!configSource.usingLocalConfig) {
