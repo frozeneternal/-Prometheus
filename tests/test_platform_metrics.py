@@ -117,7 +117,8 @@ class PlatformMetricsTests(unittest.TestCase):
         self.assertIn("ops_platform_resource_expiry_acknowledged_total 1", text)
         self.assertIn("ops_platform_resource_expiry_handling_missing_total 5", text)
         self.assertIn("ops_platform_resource_expiry_action_required_without_handling_total 3", text)
-        self.assertIn("ops_platform_resource_expiry_nearest_days -2", text)
+        self.assertNotIn("ops_platform_resource_expiry_nearest_known", text)
+        self.assertNotIn("ops_platform_resource_expiry_nearest_days", text)
 
         self.assertNotIn("secret-domain", text)
         self.assertNotIn("10.0.0.10", text)

@@ -164,6 +164,24 @@ Copy-Item .\config\servers.local.template.json .\config\servers.local.json
 
 真实账号、域名、供应商入口和备注建议只写入 `config/servers.local.json`，不要提交到公开仓库。
 
+资源详情属于受保护的运维数据。公开接口只提供无标识的风险汇总：
+
+- `GET /api/config` 的 `resources` 固定为空，并通过 `resourceDetailsProtected` 表示详情已受保护。
+- `GET /api/dashboard` 保留 `resourceExpirySummary`，但不返回资源明细、资源应急项、资源配置问题或资源操作日志。
+- `GET /api/recovery-logs` 不返回资源新增、修改、删除和确认记录。
+- Prometheus `/metrics` 只暴露资源总数和状态数量等匿名聚合指标，不包含精确到期值、资源名称、负责人或续费入口。
+
+完整资源详情通过 `GET /api/resources` 读取，并固定要求资源管理权限：
+
+- 账号模式只接受 `Authorization: Bearer <session-token>`，角色必须是 `operator` 或 `admin`；`viewer` 只能查看公开汇总。
+- 操作口令模式只接受 `X-Action-Token: <action-token>`。
+- 凭据只允许放在当前模式对应的请求头中，查询参数和 JSON 请求体中的 `token`、`sessionToken` 或 `_sessionToken` 都不能授权资源读写。
+- 私有响应使用 `Cache-Control: private, no-store`，并且不会回显会话令牌或操作口令。
+
+前端在账号模式下会为已登录的 operator/admin 自动加载详情；操作口令模式需要在资源区域临时解锁。操作口令只保存在页面模块内存中，不写入 URL、`localStorage` 或 `sessionStorage`。退出登录、会话失效、认证模式变化、权限拒绝或页面错误时，资源详情、表单内容和对应 DOM 会立即清空；较早返回的并发请求不能恢复已清理的数据。
+
+资源表单会完整保存 `linkedTarget`、`warningDays` 和 `criticalDays`。续费地址只允许有效的 HTTP/HTTPS 绝对地址，并拒绝 URL 用户信息以及 `token`、`secret`、`password` 等敏感查询参数。
+
 ## 应急处置面板
 
 页面顶部的“应急处置”会根据当前 dashboard 数据自动生成 runbook 项，不会直接执行任何命令：
@@ -225,6 +243,7 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - `backend/emergency.py`：只读应急处置建议和 dashboard runbook 汇总。
 - `backend/config.py`：公开/私有配置选择、默认配置合并、监控参数规范化和目标查找。
 - `backend/expiry.py`：资源到期日期解析、风险分级、汇总统计。
+- `backend/resource_access.py`：资源详情请求头鉴权、字段白名单、公开 Dashboard 投影、资源日志过滤和私有响应头。
 - `backend/prometheus.py`：Prometheus ready 检查、查询封装、PromQL 构造、数据质量分级和趋势数据接口载荷。
 - `backend/public_view.py`：前端可见配置裁剪、动作视图推断、账号公开字段过滤。
 - `backend/validation.py`：配置风险校验，包括重复 ID、失效引用、自动动作安全约束和资源到期字段缺失。
@@ -237,6 +256,7 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 - `public/js/dom.js`：DOM 查询和 HTML 转义等浏览器基础工具。
 - `public/js/format.js`：状态标签、指标标签、时间和数值格式化。
 - `public/js/state.js`：前端运行时状态。
+- `public/js/resource-access.js`：资源详情的非持久化凭据、访问状态、并发代次和敏感数据清理。
 
 迁移规则：纯业务逻辑优先放到 `backend/`，`app.py` 只做编排和兼容入口；前端共享工具放到 `public/js/`，`app.js` 只保留页面流程和渲染代码。
 
@@ -691,6 +711,7 @@ python .\scripts\render_prometheus_config.py --check
 ## 安全建议
 
 - 默认只监听 `127.0.0.1`，不要直接暴露到公网。
+- 如需跨主机访问，必须在前面部署受信任的 HTTPS 反向代理、限制来源网络并关闭直接 HTTP 入口；Bearer 会话和操作口令不能在明文网络上传输。
 - 把 `config/servers.json` 里的 `actionToken` 换成强口令。
 - SSH 建议使用密钥登录，并为网页操作单独创建低权限账号。
 - 高风险操作一定配置 `confirm`，例如重启服务器。

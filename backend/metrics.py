@@ -174,12 +174,6 @@ def platform_metrics_text(
     snapshot_available = 1 if generated_at is not None else 0
     snapshot_age = max(0.0, current - generated_at) if generated_at is not None else 0
     snapshot_fresh = 1 if snapshot_available and (stale_after_seconds == 0 or snapshot_age <= stale_after_seconds) else 0
-    known_days = [
-        item["daysRemaining"]
-        for item in items
-        if isinstance(item.get("daysRemaining"), int) and not isinstance(item.get("daysRemaining"), bool)
-    ]
-
     lines = [
         "# HELP ops_platform_scrape_timestamp_seconds Unix timestamp when the platform metrics were generated.",
         "# TYPE ops_platform_scrape_timestamp_seconds gauge",
@@ -199,7 +193,6 @@ def platform_metrics_text(
             )
         )
 
-    nearest_days = min(known_days) if known_days else 0
     lines.extend(
         [
             "# HELP ops_platform_resource_expiry_action_required_total Resource expiry records requiring action.",
@@ -217,12 +210,6 @@ def platform_metrics_text(
                 "ops_platform_resource_expiry_action_required_without_handling_total",
                 summary.get("actionRequiredWithoutHandling", 0),
             ),
-            "# HELP ops_platform_resource_expiry_nearest_known Whether any resource has a valid expiry date.",
-            "# TYPE ops_platform_resource_expiry_nearest_known gauge",
-            _metric_line("ops_platform_resource_expiry_nearest_known", 1 if known_days else 0),
-            "# HELP ops_platform_resource_expiry_nearest_days Days until the nearest configured resource expiry.",
-            "# TYPE ops_platform_resource_expiry_nearest_days gauge",
-            _metric_line("ops_platform_resource_expiry_nearest_days", nearest_days),
             "# HELP ops_platform_action_safety_total Total configured operational actions.",
             "# TYPE ops_platform_action_safety_total gauge",
             _metric_line("ops_platform_action_safety_total", action_summary.get("total", 0)),

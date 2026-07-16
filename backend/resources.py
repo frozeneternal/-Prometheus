@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import time
 import re
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Callable
 
 from backend.auth import public_user
@@ -29,6 +31,18 @@ class ResourceRuntime:
 
 
 _runtime = ResourceRuntime()
+_resource_transaction_lock = threading.RLock()
+
+
+def _serialize_resource_transaction(
+    operation: Callable[..., tuple[int, dict]],
+) -> Callable[..., tuple[int, dict]]:
+    @wraps(operation)
+    def synchronized(*args: object, **kwargs: object) -> tuple[int, dict]:
+        with _resource_transaction_lock:
+            return operation(*args, **kwargs)
+
+    return synchronized
 
 
 def configure_resource_runtime(runtime: ResourceRuntime) -> None:
@@ -174,6 +188,7 @@ def normalize_resource_record(resource: dict) -> tuple[dict | None, str]:
     return cleaned, ""
 
 
+@_serialize_resource_transaction
 def persist_resource_record(
     resource: dict,
     *,
@@ -220,6 +235,7 @@ def persist_resource_record(
     return 200, {"ok": True, "message": "资源到期记录已保存。", "logId": log_event["id"]}
 
 
+@_serialize_resource_transaction
 def persist_resource_deletion(
     resource_id: str,
     *,
@@ -253,6 +269,7 @@ def persist_resource_deletion(
     return 200, {"ok": True, "message": "资源到期记录已删除。", "logId": log_event["id"]}
 
 
+@_serialize_resource_transaction
 def persist_resource_acknowledgement(
     resource_id: str,
     *,

@@ -480,6 +480,14 @@ from backend.public_view import (  # noqa: E402 - transitional re-export while a
     renew_action_label,
     server_type,
 )
+from backend.resource_access import (  # noqa: E402 - resource detail security boundary.
+    RESOURCE_PRIVATE_HEADERS,
+    authorize_resource_request,
+    public_dashboard_view,
+    public_incident_logs,
+    public_recovery_logs,
+    resource_details_response,
+)
 from backend.recovery import (  # noqa: E402 - transitional re-export while app.py is split.
     RecoveryRuntime,
     can_trigger_recovery,
@@ -578,11 +586,49 @@ def persist_dashboard_settings(config: dict) -> dict:
     return {"ok": True, **dashboard}
 
 
-def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
+PRIVATE_NO_STORE_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+}
+PRIVATE_API_PATHS = frozenset(
+    {
+        "/api/resources",
+        "/api/auth/login",
+        "/api/auth/session",
+        "/api/auth/logout",
+        "/api/auth/password",
+        "/api/auth/users",
+        "/api/auth/users/upsert",
+        "/api/auth/users/delete",
+        "/api/auth/lockouts",
+        "/api/auth/audit",
+        "/api/auth/unlock",
+        "/api/actions/run",
+        "/api/settings/auto-recovery",
+        "/api/settings/auto-backup",
+        "/api/settings/cert-renewal",
+        "/api/settings/resource-upsert",
+        "/api/settings/resource-delete",
+        "/api/settings/resource-ack",
+    }
+)
+
+
+def json_response(
+    handler: BaseHTTPRequestHandler,
+    status: int,
+    payload: dict,
+    headers: dict[str, str] | None = None,
+) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
+    path = urllib.parse.urlparse(str(getattr(handler, "path", "") or "")).path
+    response_headers = dict(PRIVATE_NO_STORE_HEADERS if path in PRIVATE_API_PATHS else {})
+    response_headers.update(headers or {})
+    for name, value in response_headers.items():
+        handler.send_header(name, value)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -632,7 +678,12 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
 def settings_response(message: str, extra: dict | None = None) -> tuple[int, dict]:
     config = load_config()
     dashboard = dashboard_payload(config)
-    return 200, {"ok": True, "message": message, **dashboard, **(extra or {})}
+    return 200, {
+        "ok": True,
+        "message": message,
+        **public_dashboard_view(dashboard),
+        **(extra or {}),
+    }
 
 
 def monitor_loop() -> None:
@@ -766,8 +817,38 @@ configure_dashboard_runtime(
 )
 
 
+RESOURCE_API_PATHS = frozenset(
+    {
+        "/api/resources",
+        "/api/settings/resource-upsert",
+        "/api/settings/resource-delete",
+        "/api/settings/resource-ack",
+    }
+)
+RESOURCE_WRITE_PATHS = RESOURCE_API_PATHS - {"/api/resources"}
+
+
+def redacted_access_request_line(request_line: object) -> str:
+    parts = str(request_line or "").split(" ", 2)
+    if len(parts) != 3:
+        return str(request_line or "")
+    method, target, version = parts
+    parsed = urllib.parse.urlsplit(target)
+    if parsed.path not in RESOURCE_API_PATHS or not parsed.query:
+        return str(request_line or "")
+    return f"{method} {parsed.path}?[query-redacted] {version}"
+
+
 class MonitorHandler(BaseHTTPRequestHandler):
     server_version = "LocalPrometheusConsole/1.0"
+
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        self.log_message(
+            '"%s" %s %s',
+            redacted_access_request_line(getattr(self, "requestline", "")),
+            str(code),
+            str(size),
+        )
 
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {self.address_string()} {fmt % args}")
@@ -792,17 +873,25 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 dashboard = current_dashboard_payload()
                 if dashboard is None:
                     dashboard = dashboard_payload(config)
-                json_response(self, 200, {"ok": True, **dashboard})
-            except Exception as exc:  # noqa: BLE001
-                json_response(self, 502, {"ok": False, "message": str(exc)})
+                json_response(self, 200, {"ok": True, **public_dashboard_view(dashboard)})
+            except Exception:  # noqa: BLE001 - public responses must not expose internals.
+                json_response(self, 502, {"ok": False, "message": "监控数据暂时不可用。"})
             return
 
         if path == "/api/recovery-logs":
-            json_response(self, 200, {"ok": True, "logs": get_recent_recovery_logs()})
+            json_response(self, 200, {"ok": True, "logs": public_recovery_logs(get_recent_recovery_logs())})
+            return
+
+        if path == "/api/resources":
+            try:
+                status, payload = resource_details_response(config, getattr(self, "headers", {}))
+            except Exception:  # noqa: BLE001 - never expose private resource failure details.
+                status, payload = 500, {"ok": False, "message": "资源详情暂时不可用。"}
+            json_response(self, status, payload, RESOURCE_PRIVATE_HEADERS)
             return
 
         if path == "/api/incident-logs":
-            json_response(self, 200, {"ok": True, "logs": get_recent_incident_logs()})
+            json_response(self, 200, {"ok": True, "logs": public_incident_logs(get_recent_incident_logs())})
             return
 
         if path == "/api/series":
@@ -835,9 +924,80 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
         self.serve_static(path)
 
+    def handle_resource_write(self, path: str, config: dict) -> None:
+        def respond(status: int, payload: dict) -> None:
+            json_response(self, status, payload, RESOURCE_PRIVATE_HEADERS)
+
+        allowed, auth_status, auth_payload = authorize_resource_request(config, getattr(self, "headers", {}))
+        if not allowed:
+            respond(auth_status, auth_payload)
+            return
+
+        try:
+            body = read_json_body(self)
+        except json.JSONDecodeError:
+            respond(400, {"ok": False, "message": "JSON 格式不正确。"})
+            return
+
+        try:
+            if path == "/api/settings/resource-upsert":
+                resource = body.get("resource")
+                if not isinstance(resource, dict):
+                    respond(400, {"ok": False, "message": "资源保存参数不正确。"})
+                    return
+                status, payload = persist_resource_record(
+                    resource,
+                    actor=auth_payload.get("user"),
+                    source_ip=request_source_ip(self),
+                )
+            elif path == "/api/settings/resource-delete":
+                resource_id = str(body.get("resourceId") or "")
+                if not resource_id:
+                    respond(400, {"ok": False, "message": "资源删除参数不正确。"})
+                    return
+                status, payload = persist_resource_deletion(
+                    resource_id,
+                    actor=auth_payload.get("user"),
+                    source_ip=request_source_ip(self),
+                )
+            elif path == "/api/settings/resource-ack":
+                resource_id = str(body.get("resourceId") or "")
+                acknowledged_until = str(body.get("acknowledgedUntil") or "")
+                if not resource_id or not acknowledged_until:
+                    respond(400, {"ok": False, "message": "资源确认参数不正确。"})
+                    return
+                status, payload = persist_resource_acknowledgement(
+                    resource_id,
+                    acknowledged_until=acknowledged_until,
+                    actor=auth_payload.get("user"),
+                    source_ip=request_source_ip(self),
+                )
+            else:
+                respond(404, {"ok": False, "message": "接口不存在。"})
+                return
+        except Exception:  # noqa: BLE001 - keep private persistence details out of responses.
+            respond(500, {"ok": False, "message": "资源操作失败。"})
+            return
+
+        if status != 200:
+            respond(status, payload)
+            return
+        respond(
+            200,
+            {
+                "ok": True,
+                "message": str(payload.get("message") or ""),
+                "logId": str(payload.get("logId") or ""),
+            },
+        )
+
     def do_POST(self) -> None:  # noqa: N802 - http.server hook.
         parsed = urllib.parse.urlparse(self.path)
         config = load_config()
+
+        if parsed.path in RESOURCE_WRITE_PATHS:
+            MonitorHandler.handle_resource_write(self, parsed.path, config)
+            return
 
         if parsed.path == "/api/auth/login":
             try:
@@ -1044,91 +1204,6 @@ class MonitorHandler(BaseHTTPRequestHandler):
             status, payload = persist_cert_renewal_enabled(
                 website_id,
                 enabled,
-                actor=auth_payload.get("user"),
-                source_ip=request_source_ip(self),
-            )
-            if status != 200:
-                json_response(self, status, payload)
-                return
-            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
-            json_response(self, status, payload)
-            return
-
-        if parsed.path == "/api/settings/resource-upsert":
-            try:
-                body = read_json_body(self)
-            except json.JSONDecodeError:
-                json_response(self, 400, {"ok": False, "message": "JSON 鏍煎紡涓嶆纭€?"})
-                return
-
-            resource = body.get("resource") if isinstance(body.get("resource"), dict) else body
-            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
-            if not allowed:
-                json_response(self, auth_status, auth_payload)
-                return
-
-            status, payload = persist_resource_record(
-                resource,
-                actor=auth_payload.get("user"),
-                source_ip=request_source_ip(self),
-            )
-            if status != 200:
-                json_response(self, status, payload)
-                return
-            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
-            json_response(self, status, payload)
-            return
-
-        if parsed.path == "/api/settings/resource-delete":
-            try:
-                body = read_json_body(self)
-            except json.JSONDecodeError:
-                json_response(self, 400, {"ok": False, "message": "JSON 鏍煎紡涓嶆纭€?"})
-                return
-
-            resource_id = str(body.get("resourceId") or "")
-            if not resource_id:
-                json_response(self, 400, {"ok": False, "message": "资源删除参数不正确。"})
-                return
-
-            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
-            if not allowed:
-                json_response(self, auth_status, auth_payload)
-                return
-
-            status, payload = persist_resource_deletion(
-                resource_id,
-                actor=auth_payload.get("user"),
-                source_ip=request_source_ip(self),
-            )
-            if status != 200:
-                json_response(self, status, payload)
-                return
-            status, payload = settings_response(payload["message"], {"logId": payload.get("logId", "")})
-            json_response(self, status, payload)
-            return
-
-        if parsed.path == "/api/settings/resource-ack":
-            try:
-                body = read_json_body(self)
-            except json.JSONDecodeError:
-                json_response(self, 400, {"ok": False, "message": "JSON 格式不正确。"})
-                return
-
-            resource_id = str(body.get("resourceId") or "")
-            acknowledged_until = str(body.get("acknowledgedUntil") or "")
-            if not resource_id or not acknowledged_until:
-                json_response(self, 400, {"ok": False, "message": "资源确认参数不正确。"})
-                return
-
-            allowed, auth_status, auth_payload = authorize_operation(config, body, "operator")
-            if not allowed:
-                json_response(self, auth_status, auth_payload)
-                return
-
-            status, payload = persist_resource_acknowledgement(
-                resource_id,
-                acknowledged_until=acknowledged_until,
                 actor=auth_payload.get("user"),
                 source_ip=request_source_ip(self),
             )

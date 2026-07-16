@@ -5,6 +5,28 @@ import urllib.parse
 from datetime import datetime, timezone
 
 
+SENSITIVE_RENEW_QUERY_KEYS = frozenset(
+    {
+        "token",
+        "access_token",
+        "api_key",
+        "apikey",
+        "key",
+        "secret",
+        "password",
+        "passwd",
+        "auth",
+        "authorization",
+        "sig",
+        "signature",
+        "credential",
+        "jwt",
+        "session",
+        "code",
+    }
+)
+
+
 def parse_expiry_datetime(value: object) -> datetime | None:
     if value in (None, ""):
         return None
@@ -154,13 +176,37 @@ def invalid_resource_expiry_item(entry: dict) -> dict:
 
 
 def safe_resource_renew_url(value: object) -> str:
-    text = str(value or "").strip()
+    if not isinstance(value, str):
+        return ""
+    raw_text = value
+    if any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in raw_text):
+        return ""
+    text = raw_text.strip()
     if not text:
         return ""
-    parsed = urllib.parse.urlparse(text)
+    try:
+        parsed = urllib.parse.urlparse(text)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return ""
     if parsed.scheme.lower() not in {"http", "https"}:
         return ""
-    if not parsed.netloc:
+    if not parsed.netloc or not hostname or any(character.isspace() for character in hostname):
+        return ""
+    if parsed.username is not None or parsed.password is not None:
+        return ""
+    if "#" in text:
+        return ""
+    if parsed.netloc.rsplit("@", 1)[-1].endswith(":") or (port is not None and not 1 <= port <= 65535):
+        return ""
+    query_keys = {
+        key.strip().casefold()
+        for key, _value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    }
+    if query_keys & SENSITIVE_RENEW_QUERY_KEYS or any(
+        key.startswith(("x-amz-", "x-goog-")) for key in query_keys
+    ):
         return ""
     return text
 

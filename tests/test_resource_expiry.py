@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sys
+import threading
 import unittest
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -392,6 +394,162 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(log_event["sourceIp"], "10.0.0.11")
         self.assertIn("2026-07-10T00:00:00Z", log_event["message"])
 
+    def test_concurrent_resource_upserts_preserve_both_records(self) -> None:
+        stored_config = {"resources": []}
+        storage_lock = threading.Lock()
+        first_save_entered = threading.Event()
+        release_first_save = threading.Event()
+        second_load_entered = threading.Event()
+        second_start = threading.Barrier(2)
+        results: dict[str, tuple[int, dict]] = {}
+        failures: list[BaseException] = []
+        logs: list[dict] = []
+
+        def load_config_raw() -> dict:
+            with storage_lock:
+                snapshot = deepcopy(stored_config)
+            if threading.current_thread().name == "resource-upsert-second":
+                second_load_entered.set()
+            return snapshot
+
+        def save_config_raw(config: dict) -> None:
+            if threading.current_thread().name == "resource-upsert-first":
+                first_save_entered.set()
+                if not release_first_save.wait(5):
+                    raise AssertionError("first resource save was not released")
+            with storage_lock:
+                stored_config.clear()
+                stored_config.update(deepcopy(config))
+
+        runtime = app.ResourceRuntime(
+            now=lambda: datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp(),
+            load_config_raw=load_config_raw,
+            save_config_raw=save_config_raw,
+            append_recovery_log=lambda _config, event: logs.append(deepcopy(event)),
+        )
+
+        def upsert(name: str, resource_id: str) -> None:
+            try:
+                if name == "second":
+                    second_start.wait(5)
+                results[name] = app.persist_resource_record(
+                    {
+                        "id": resource_id,
+                        "name": resource_id,
+                        "expiresAt": "2026-08-01",
+                    },
+                    runtime=runtime,
+                )
+            except BaseException as exc:  # noqa: BLE001 - relay worker failures to the test thread.
+                failures.append(exc)
+
+        first = threading.Thread(
+            target=upsert,
+            args=("first", "resource-first"),
+            name="resource-upsert-first",
+        )
+        second = threading.Thread(
+            target=upsert,
+            args=("second", "resource-second"),
+            name="resource-upsert-second",
+        )
+
+        first.start()
+        self.assertTrue(first_save_entered.wait(5))
+        second.start()
+        second_start.wait(5)
+        second_load_entered.wait(1)
+        release_first_save.set()
+        first.join(5)
+        second.join(5)
+
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        if failures:
+            raise failures[0]
+        self.assertEqual(results["first"][0], 200)
+        self.assertEqual(results["second"][0], 200)
+        self.assertEqual(
+            {resource["id"] for resource in stored_config["resources"]},
+            {"resource-first", "resource-second"},
+        )
+        self.assertEqual(len(logs), 2)
+
+    def test_resource_transaction_holds_lock_through_log_before_delete(self) -> None:
+        stored_config = {
+            "resources": [
+                {"id": "remove-me", "name": "Remove Me", "expiresAt": "2026-08-01"},
+            ]
+        }
+        storage_lock = threading.Lock()
+        upsert_log_entered = threading.Event()
+        release_upsert_log = threading.Event()
+        delete_load_entered = threading.Event()
+        delete_start = threading.Barrier(2)
+        results: dict[str, tuple[int, dict]] = {}
+        failures: list[BaseException] = []
+
+        def load_config_raw() -> dict:
+            if threading.current_thread().name == "resource-delete-second":
+                delete_load_entered.set()
+            with storage_lock:
+                return deepcopy(stored_config)
+
+        def save_config_raw(config: dict) -> None:
+            with storage_lock:
+                stored_config.clear()
+                stored_config.update(deepcopy(config))
+
+        def append_recovery_log(_config: dict, event: dict) -> None:
+            if event["invocation"] == "resource-upsert":
+                upsert_log_entered.set()
+                if not release_upsert_log.wait(5):
+                    raise AssertionError("resource upsert log was not released")
+
+        runtime = app.ResourceRuntime(
+            now=lambda: datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc).timestamp(),
+            load_config_raw=load_config_raw,
+            save_config_raw=save_config_raw,
+            append_recovery_log=append_recovery_log,
+        )
+
+        def upsert() -> None:
+            try:
+                results["upsert"] = app.persist_resource_record(
+                    {"id": "added", "name": "Added", "expiresAt": "2026-09-01"},
+                    runtime=runtime,
+                )
+            except BaseException as exc:  # noqa: BLE001 - relay worker failures to the test thread.
+                failures.append(exc)
+
+        def delete() -> None:
+            try:
+                delete_start.wait(5)
+                results["delete"] = app.persist_resource_deletion("remove-me", runtime=runtime)
+            except BaseException as exc:  # noqa: BLE001 - relay worker failures to the test thread.
+                failures.append(exc)
+
+        upsert_thread = threading.Thread(target=upsert, name="resource-upsert-first")
+        delete_thread = threading.Thread(target=delete, name="resource-delete-second")
+
+        upsert_thread.start()
+        self.assertTrue(upsert_log_entered.wait(5))
+        delete_thread.start()
+        delete_start.wait(5)
+        delete_loaded_while_upsert_log_pending = delete_load_entered.wait(1)
+        release_upsert_log.set()
+        upsert_thread.join(5)
+        delete_thread.join(5)
+
+        self.assertFalse(upsert_thread.is_alive())
+        self.assertFalse(delete_thread.is_alive())
+        if failures:
+            raise failures[0]
+        self.assertFalse(delete_loaded_while_upsert_log_pending)
+        self.assertEqual(results["upsert"][0], 200)
+        self.assertEqual(results["delete"][0], 200)
+        self.assertEqual([resource["id"] for resource in stored_config["resources"]], ["added"])
+
     def test_settings_response_preserves_resource_ack_log_id(self) -> None:
         with (
             patch.object(app, "load_config", return_value={"resources": []}),
@@ -407,8 +565,8 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(payload["logId"], "resource-log-1")
         self.assertTrue(payload["dashboard"])
 
-    def test_resource_ack_route_returns_operation_log_id(self) -> None:
-        responses: list[tuple[int, dict]] = []
+    def test_resource_ack_route_uses_action_token_and_returns_minimal_private_response(self) -> None:
+        responses: list[tuple[int, dict, dict[str, str]]] = []
         body = {"resourceId": "license-warning", "acknowledgedUntil": "2026-07-10T00:00:00Z"}
         handler = type(
             "RouteHarness",
@@ -416,17 +574,17 @@ class ResourceExpiryTests(unittest.TestCase):
             {
                 "path": "/api/settings/resource-ack",
                 "client_address": ("10.0.0.30", 52100),
+                "headers": {"X-Action-Token": "resource-action-token"},
             },
         )()
 
         with (
-            patch.object(app, "load_config", return_value={"resources": []}),
-            patch.object(app, "read_json_body", return_value=body),
             patch.object(
                 app,
-                "authorize_operation",
-                return_value=(True, 200, {"user": {"username": "ops"}}),
+                "load_config",
+                return_value={"resources": [], "actionToken": "resource-action-token"},
             ),
+            patch.object(app, "read_json_body", return_value=body),
             patch.object(
                 app,
                 "persist_resource_acknowledgement",
@@ -435,11 +593,12 @@ class ResourceExpiryTests(unittest.TestCase):
                     {"ok": True, "message": "资源到期告警已确认。", "logId": "resource-log-1"},
                 ),
             ),
-            patch.object(app, "dashboard_payload", return_value={"dashboard": True}),
             patch.object(
                 app,
                 "json_response",
-                side_effect=lambda _handler, status, payload: responses.append((status, payload)),
+                side_effect=lambda _handler, status, payload, headers=None: responses.append(
+                    (status, payload, dict(headers or {}))
+                ),
             ),
         ):
             app.MonitorHandler.do_POST(handler)
@@ -447,10 +606,9 @@ class ResourceExpiryTests(unittest.TestCase):
         expected_payload = {
             "ok": True,
             "message": "资源到期告警已确认。",
-            "dashboard": True,
             "logId": "resource-log-1",
         }
-        self.assertEqual(responses, [(200, expected_payload)])
+        self.assertEqual(responses, [(200, expected_payload, app.RESOURCE_PRIVATE_HEADERS)])
 
     def test_persist_resource_record_creates_resource_and_logs_actor(self) -> None:
         raw_config = {"resources": []}
@@ -611,8 +769,8 @@ class ResourceExpiryTests(unittest.TestCase):
         self.assertEqual(saved["resources"], ["not-a-resource-object", None])
         self.assertEqual(log_event["targetId"], "domain-main")
 
-    def test_resource_upsert_route_returns_dashboard_and_log_id(self) -> None:
-        responses: list[tuple[int, dict]] = []
+    def test_resource_upsert_route_uses_action_token_and_returns_minimal_private_response(self) -> None:
+        responses: list[tuple[int, dict, dict[str, str]]] = []
         body = {"resource": {"id": "domain-main", "name": "Main Domain", "expiresAt": "2026-08-01"}}
         handler = type(
             "RouteHarness",
@@ -620,34 +778,41 @@ class ResourceExpiryTests(unittest.TestCase):
             {
                 "path": "/api/settings/resource-upsert",
                 "client_address": ("10.0.0.30", 52100),
+                "headers": {"X-Action-Token": "resource-action-token"},
             },
         )()
 
         with (
-            patch.object(app, "load_config", return_value={"resources": []}),
-            patch.object(app, "read_json_body", return_value=body),
             patch.object(
                 app,
-                "authorize_operation",
-                return_value=(True, 200, {"user": {"username": "ops"}}),
+                "load_config",
+                return_value={"resources": [], "actionToken": "resource-action-token"},
             ),
+            patch.object(app, "read_json_body", return_value=body),
             patch.object(
                 app,
                 "persist_resource_record",
                 return_value=(200, {"ok": True, "message": "资源到期记录已保存。", "logId": "resource-log-1"}),
             ),
-            patch.object(app, "dashboard_payload", return_value={"dashboard": True}),
             patch.object(
                 app,
                 "json_response",
-                side_effect=lambda _handler, status, payload: responses.append((status, payload)),
+                side_effect=lambda _handler, status, payload, headers=None: responses.append(
+                    (status, payload, dict(headers or {}))
+                ),
             ),
         ):
             app.MonitorHandler.do_POST(handler)
 
         self.assertEqual(
             responses,
-            [(200, {"ok": True, "message": "资源到期记录已保存。", "dashboard": True, "logId": "resource-log-1"})],
+            [
+                (
+                    200,
+                    {"ok": True, "message": "资源到期记录已保存。", "logId": "resource-log-1"},
+                    app.RESOURCE_PRIVATE_HEADERS,
+                )
+            ],
         )
 
     def test_persist_resource_acknowledgement_rejects_missing_resource(self) -> None:

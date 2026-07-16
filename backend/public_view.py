@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from backend.auth import auth_policy, configured_users, public_user, users_enabled
 from backend.config import DEFAULT_CONFIG, config_source_info, monitoring_options
-from backend.expiry import resource_config_records, safe_resource_renew_url
 from backend.inventory import config_dict_field, config_list_records
 
 
@@ -219,7 +218,6 @@ def public_config(config: dict) -> dict:
     servers = []
     server_records, _invalid_servers = config_list_records(config, "servers")
     website_records, _invalid_websites = config_list_records(config, "websites")
-    resource_records, _invalid_resources = resource_config_records(config)
     auth_mode = "users" if users_enabled(config) else ("token" if config.get("actionToken") else "unconfigured")
     manual_actions_enabled = auth_mode in {"users", "token"}
     for server in server_records:
@@ -263,22 +261,8 @@ def public_config(config: dict) -> dict:
         },
         "monitoring": monitoring_options(config),
         "servers": servers,
-        "resources": [
-            {
-                "id": resource.get("id"),
-                "name": resource.get("name"),
-                "type": resource.get("type", "resource"),
-                "provider": resource.get("provider", ""),
-                "owner": resource.get("owner", ""),
-                "linkedTarget": resource.get("linkedTarget", ""),
-                "expiresAt": resource.get("expiresAt") or resource.get("expiresOn") or resource.get("expiryDate") or "",
-                "warningDays": resource.get("warningDays", ""),
-                "criticalDays": resource.get("criticalDays", ""),
-                "renewUrl": safe_resource_renew_url(resource.get("renewUrl", "")),
-                "notes": resource.get("notes", ""),
-            }
-            for resource in resource_records
-        ],
+        "resources": [],
+        "resourceDetailsProtected": True,
         "websites": [
             {
                 "id": website.get("id"),
