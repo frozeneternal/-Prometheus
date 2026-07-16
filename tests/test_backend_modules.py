@@ -4547,6 +4547,99 @@ class BackendModuleTests(unittest.TestCase):
         self.assertEqual(result["consecutiveFailures"], 0)
         self.assertEqual(states["server:srv1"]["lastReason"], "no series")
 
+    def test_recovery_module_normalizes_malformed_data_quality_before_real_incident_path(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+        from backend.recovery import RecoveryRuntime, maybe_trigger_recovery
+
+        normalized_quality = {
+            "trusted": False,
+            "level": "invalid",
+            "message": "监控数据质量结构无效，禁止执行自动恢复。",
+        }
+        config = {
+            "servers": [
+                {
+                    "id": "ops-host",
+                    "actions": [{"id": "restart", "command": ["restart"], "allowAuto": True}],
+                }
+            ]
+        }
+        entity = {
+            "id": "srv1",
+            "name": "Server 1",
+            "autoRecovery": {
+                "enabled": True,
+                "actionServerId": "ops-host",
+                "actionId": "restart",
+                "triggerHealth": ["down"],
+                "minimumConsecutiveFailures": 1,
+                "cooldownSeconds": 30,
+            },
+        }
+
+        for raw_quality in ("token=string-secret", ["access_token=list-secret"], 42):
+            for health in ("down", "unknown"):
+                with self.subTest(raw_quality=raw_quality, health=health):
+                    state_key = "server:srv1"
+                    states = {
+                        state_key: {
+                            "activeIncidentId": "incident-srv1",
+                            "incidentStartedAt": 1000.0,
+                            "incidentReason": "original outage reason",
+                        }
+                    }
+                    incident_upserts: list[dict] = []
+                    incident_runtime = IncidentRuntime(
+                        now=lambda: 1045.0,
+                        upsert_incident_log=lambda _config, event: incident_upserts.append(event),
+                    )
+                    runtime = RecoveryRuntime(
+                        now=lambda: 1045.0,
+                        get_state=lambda target_type, target_id: states.get(f"{target_type}:{target_id}", {}).copy(),
+                        set_state=lambda target_type, target_id, state: states.__setitem__(
+                            f"{target_type}:{target_id}", state.copy()
+                        ),
+                        update_incident_state=lambda current_config, target_type, current_entity, snapshot, state: (
+                            update_incident_state(
+                                current_config,
+                                target_type,
+                                current_entity,
+                                snapshot,
+                                state,
+                                runtime=incident_runtime,
+                            )
+                        ),
+                        execute_server_action=lambda *_args, **_kwargs: self.fail(
+                            "malformed data quality must not execute auto recovery"
+                        ),
+                    )
+                    snapshot = {
+                        "id": "srv1",
+                        "name": "Server 1",
+                        "status": "offline" if health == "down" else "unknown",
+                        "health": health,
+                        "issues": ["target unavailable"],
+                        "dataQuality": raw_quality,
+                    }
+
+                    try:
+                        result = maybe_trigger_recovery(config, "server", entity, snapshot, runtime=runtime)
+                    except Exception as exc:
+                        self.fail(f"malformed dataQuality raised {type(exc).__name__}: {exc}")
+
+                    self.assertEqual(result["dataQuality"], normalized_quality)
+                    self.assertTrue(result["incident"]["active"])
+                    self.assertEqual(result["incident"]["id"], "incident-srv1")
+                    self.assertEqual(result["incident"]["recoveredAt"], 0.0)
+                    self.assertEqual(states[state_key]["activeIncidentId"], "incident-srv1")
+                    self.assertEqual(states[state_key]["incidentReason"], "original outage reason")
+                    self.assertNotIn("incidentRecoveredAt", states[state_key])
+                    self.assertEqual(len(incident_upserts), 1)
+                    self.assertEqual(incident_upserts[0]["status"], "active")
+                    if health == "down":
+                        self.assertEqual(result["status"], "blocked")
+                        self.assertEqual(result["message"], normalized_quality["message"])
+
     def test_recovery_module_records_manual_success_as_cooldown_without_app_import(self) -> None:
         from backend.recovery import RecoveryRuntime, maybe_trigger_recovery, record_manual_recovery_result
 
@@ -5268,6 +5361,229 @@ class BackendModuleTests(unittest.TestCase):
         self.assertFalse(view["active"])
         self.assertIn("No Prometheus series.", view["summary"])
         self.assertEqual(upserts, [])
+
+    def test_incidents_module_keeps_active_incident_when_non_trigger_health_is_untrusted(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+
+        for target_type, target_id, target_name in (
+            ("server", "srv1", "Server 1"),
+            ("website", "site1", "Site 1"),
+        ):
+            with self.subTest(target_type=target_type):
+                upserts: list[dict] = []
+                incident_id = f"incident-{target_id}"
+                state = {
+                    "activeIncidentId": incident_id,
+                    "incidentStartedAt": 1000.0,
+                    "incidentReason": "original outage reason",
+                }
+                runtime = IncidentRuntime(
+                    now=lambda: 1045.0,
+                    upsert_incident_log=lambda _config, event: upserts.append(event),
+                )
+
+                view = update_incident_state(
+                    {},
+                    target_type,
+                    {
+                        "id": target_id,
+                        "name": target_name,
+                        "autoRecovery": {"triggerHealth": ["down"]},
+                    },
+                    {
+                        "id": target_id,
+                        "name": target_name,
+                        "status": "unknown",
+                        "health": "unknown",
+                        "dataQuality": {"trusted": False},
+                    },
+                    state,
+                    runtime=runtime,
+                )
+
+                self.assertTrue(view["active"])
+                self.assertEqual(view["id"], incident_id)
+                self.assertEqual(view["startedAt"], 1000.0)
+                self.assertEqual(view["reason"], "original outage reason")
+                self.assertEqual(view["recoveredAt"], 0.0)
+                self.assertEqual(state["activeIncidentId"], incident_id)
+                self.assertEqual(state["incidentStartedAt"], 1000.0)
+                self.assertEqual(state["incidentReason"], "original outage reason")
+                self.assertNotIn("incidentRecoveredAt", state)
+                self.assertEqual(len(upserts), 1)
+                self.assertEqual(upserts[0]["status"], "active")
+                self.assertNotIn("recoveredAt", upserts[0])
+                self.assertIn("监控数据不可信", upserts[0]["summary"])
+                self.assertIn("仍在观察", view["summary"])
+
+    def test_incidents_module_does_not_create_incident_for_untrusted_non_trigger_health(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+
+        for target_type, target_id, target_name in (
+            ("server", "srv1", "Server 1"),
+            ("website", "site1", "Site 1"),
+        ):
+            with self.subTest(target_type=target_type):
+                upserts: list[dict] = []
+                state: dict = {}
+                runtime = IncidentRuntime(
+                    now=lambda: 1000.0,
+                    upsert_incident_log=lambda _config, event: upserts.append(event),
+                )
+
+                view = update_incident_state(
+                    {},
+                    target_type,
+                    {
+                        "id": target_id,
+                        "name": target_name,
+                        "autoRecovery": {"triggerHealth": ["down"]},
+                    },
+                    {
+                        "id": target_id,
+                        "name": target_name,
+                        "status": "unknown",
+                        "health": "unknown",
+                        "dataQuality": {"trusted": False},
+                    },
+                    state,
+                    runtime=runtime,
+                )
+
+                self.assertFalse(view["active"])
+                self.assertEqual(state, {})
+                self.assertEqual(upserts, [])
+
+    def test_incidents_module_treats_malformed_data_quality_as_untrusted(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+
+        malformed_values = ("invalid", ["invalid"], 42, "", [], 0, False)
+        for target_type, target_id, target_name in (
+            ("server", "srv1", "Server 1"),
+            ("website", "site1", "Site 1"),
+        ):
+            for raw_quality in malformed_values:
+                with self.subTest(target_type=target_type, raw_quality=raw_quality):
+                    upserts: list[dict] = []
+                    incident_id = f"incident-{target_id}"
+                    state = {
+                        "activeIncidentId": incident_id,
+                        "incidentStartedAt": 1000.0,
+                        "incidentReason": "original outage reason",
+                    }
+                    runtime = IncidentRuntime(
+                        now=lambda: 1045.0,
+                        upsert_incident_log=lambda _config, event: upserts.append(event),
+                    )
+
+                    try:
+                        view = update_incident_state(
+                            {},
+                            target_type,
+                            {
+                                "id": target_id,
+                                "name": target_name,
+                                "autoRecovery": {"triggerHealth": ["down"]},
+                            },
+                            {
+                                "id": target_id,
+                                "name": target_name,
+                                "status": "unknown",
+                                "health": "unknown",
+                                "dataQuality": raw_quality,
+                            },
+                            state,
+                            runtime=runtime,
+                        )
+                    except Exception as exc:
+                        self.fail(f"malformed dataQuality raised {type(exc).__name__}: {exc}")
+
+                    self.assertTrue(view["active"])
+                    self.assertEqual(view["id"], incident_id)
+                    self.assertEqual(view["startedAt"], 1000.0)
+                    self.assertEqual(view["reason"], "original outage reason")
+                    self.assertEqual(view["recoveredAt"], 0.0)
+                    self.assertEqual(state["activeIncidentId"], incident_id)
+                    self.assertNotIn("incidentRecoveredAt", state)
+                    self.assertEqual(len(upserts), 1)
+                    self.assertEqual(upserts[0]["status"], "active")
+
+    def test_incidents_module_preserves_missing_or_none_data_quality_compatibility(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+
+        for include_quality in (False, True):
+            with self.subTest(data_quality="none" if include_quality else "missing"):
+                upserts: list[dict] = []
+                state = {
+                    "activeIncidentId": "incident-srv1",
+                    "incidentStartedAt": 1000.0,
+                    "incidentReason": "original outage reason",
+                }
+                snapshot = {
+                    "id": "srv1",
+                    "name": "Server 1",
+                    "status": "online",
+                    "health": "ok",
+                }
+                if include_quality:
+                    snapshot["dataQuality"] = None
+                runtime = IncidentRuntime(
+                    now=lambda: 1045.0,
+                    upsert_incident_log=lambda _config, event: upserts.append(event),
+                )
+
+                view = update_incident_state(
+                    {},
+                    "server",
+                    {"id": "srv1", "name": "Server 1", "autoRecovery": {"triggerHealth": ["down"]}},
+                    snapshot,
+                    state,
+                    runtime=runtime,
+                )
+
+                self.assertFalse(view["active"])
+                self.assertEqual(view["id"], "incident-srv1")
+                self.assertEqual(view["recoveredAt"], 1045.0)
+                self.assertEqual(state["activeIncidentId"], "")
+                self.assertEqual(upserts[0]["status"], "recovered")
+
+    def test_incidents_module_redacts_untrusted_data_quality_message_before_summary(self) -> None:
+        from backend.incidents import IncidentRuntime, update_incident_state
+
+        upserts: list[dict] = []
+        runtime = IncidentRuntime(now=lambda: 1045.0, upsert_incident_log=lambda _config, event: upserts.append(event))
+        state = {
+            "activeIncidentId": "incident-srv1",
+            "incidentStartedAt": 1000.0,
+            "incidentReason": "original outage reason",
+        }
+        secrets = ("secret", "secret2", "secret3")
+
+        view = update_incident_state(
+            {},
+            "server",
+            {"id": "srv1", "name": "Server 1", "autoRecovery": {"triggerHealth": ["down"]}},
+            {
+                "id": "srv1",
+                "name": "Server 1",
+                "status": "unknown",
+                "health": "unknown",
+                "dataQuality": {
+                    "trusted": False,
+                    "message": "probe failed token=secret access_token=secret2 Authorization: Bearer secret3",
+                },
+            },
+            state,
+            runtime=runtime,
+        )
+
+        self.assertTrue(view["active"])
+        self.assertEqual(upserts[0]["status"], "active")
+        for summary in (view["summary"], upserts[0]["summary"]):
+            with self.subTest(summary=summary):
+                self.assertIn("[REDACTED]", summary)
+                for secret in secrets:
+                    self.assertNotIn(secret, summary)
 
     def test_public_view_module_filters_secret_config_fields(self) -> None:
         from backend import public_view

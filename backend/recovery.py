@@ -240,12 +240,23 @@ def maybe_trigger_recovery(
     active_runtime = runtime or _runtime
     target_id = str(entity.get("id") or "")
     state = active_runtime.get_state(target_type, target_id)
+    raw_quality = snapshot.get("dataQuality")
+    if raw_quality is None:
+        quality = {}
+    elif isinstance(raw_quality, dict):
+        quality = raw_quality
+    else:
+        quality = {
+            "trusted": False,
+            "level": "invalid",
+            "message": "监控数据质量结构无效，禁止执行自动恢复。",
+        }
+    snapshot = {**snapshot, "dataQuality": quality}
     health = snapshot.get("health", "unknown")
     reason = _recovery_reason(snapshot)
     recovery_config = entity.get("autoRecovery") or {}
     enabled = bool(recovery_config.get("enabled"))
     trigger_health = recovery_config.get("triggerHealth") or ["down"]
-    quality = snapshot.get("dataQuality") or {}
     data_trusted = quality.get("trusted") is not False
     diagnostics_block_message = _target_diagnostics_recovery_block(snapshot)
     incident = active_runtime.update_incident_state(config, target_type, entity, snapshot, state)

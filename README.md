@@ -256,6 +256,8 @@ python -c "import app; print(app.hash_password('replace-this-password'))"
 
 如果 Prometheus 本身不可用，页面顶部会显示采集层故障说明，趋势图只显示“暂无趋势数据”，不会继续对每台服务器刷新 `/api/series` 并制造 502 噪声。此时不要把“未知”直接当成服务器全部掉线。
 
+当目标的 `dataQuality.trusted` 明确为 `false`，或数据质量结构畸形时，平台不会执行自动恢复，也不会据此创建或关闭中断事件。已有活动中断会保持“持续观察”，只有后续可信数据明确恢复后才会写入恢复时间；数据质量错误文本在进入 Dashboard 和中断日志前会先脱敏。
+
 ## 加操作按钮
 
 在某台服务器的 `actions` 里写白名单命令：

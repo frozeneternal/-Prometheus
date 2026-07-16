@@ -81,8 +81,9 @@ def update_incident_state(
     health = snapshot.get("health", "unknown")
     trigger_health = (entity.get("autoRecovery") or {}).get("triggerHealth") or ["down"]
     now = active_runtime.now()
-    quality = snapshot.get("dataQuality") or {}
-    data_trusted = quality.get("trusted") is not False
+    raw_quality = snapshot.get("dataQuality")
+    quality = raw_quality if isinstance(raw_quality, dict) else {}
+    data_trusted = raw_quality is None or (isinstance(raw_quality, dict) and quality.get("trusted") is not False)
 
     incident_view = {
         "active": False,
@@ -97,8 +98,10 @@ def update_incident_state(
     }
 
     is_bad = health in trigger_health
-    if is_bad and not data_trusted:
-        blocked_reason = quality.get("message") or "监控数据不可信，不能确认目标是否真实中断。"
+    if not data_trusted:
+        blocked_reason = redact_sensitive_text(
+            quality.get("message") or "监控数据不可信，不能确认目标是否真实中断。"
+        )
         if state.get("activeIncidentId"):
             started_at = float(state.get("incidentStartedAt", now) or now)
             duration = int(now - started_at)
