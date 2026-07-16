@@ -2,10 +2,10 @@ import { getJson } from "./api.js";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-function postJson(url, body) {
+function postJson(url, body, headers = {}) {
   return getJson(url, {
     method: "POST",
-    headers: JSON_HEADERS,
+    headers: { ...JSON_HEADERS, ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -16,6 +16,10 @@ export function fetchConfig() {
 
 export function fetchDashboard() {
   return getJson("/api/dashboard");
+}
+
+export function fetchResourceDetails(headers) {
+  return getJson("/api/resources", { headers });
 }
 
 export function fetchPrometheusAlerts() {
@@ -87,16 +91,16 @@ export function updateCertRenewal({ websiteId, enabled, auth }) {
   return postJson("/api/settings/cert-renewal", { websiteId, enabled, ...auth });
 }
 
-export function acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, auth }) {
-  return postJson("/api/settings/resource-ack", { resourceId, acknowledgedUntil, ...auth });
+export function acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, headers }) {
+  return postJson("/api/settings/resource-ack", { resourceId, acknowledgedUntil }, headers);
 }
 
-export function upsertResourceExpiryRecord({ resource, auth }) {
-  return postJson("/api/settings/resource-upsert", { resource, ...auth });
+export function upsertResourceExpiryRecord({ resource, headers }) {
+  return postJson("/api/settings/resource-upsert", { resource }, headers);
 }
 
-export function removeResourceExpiryRecord({ resourceId, auth }) {
-  return postJson("/api/settings/resource-delete", { resourceId, ...auth });
+export function removeResourceExpiryRecord({ resourceId, headers }) {
+  return postJson("/api/settings/resource-delete", { resourceId }, headers);
 }
 
 export function runServerAction(payload) {

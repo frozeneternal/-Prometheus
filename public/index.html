@@ -252,7 +252,20 @@
             <div id="websiteGrid" class="website-grid"></div>
 
             <h2 class="section-title section-gap">资源到期</h2>
-            <div id="resourceManagementPanel" class="resource-management-panel">
+            <section id="resourceAccessPanel" class="resource-access-panel locked" aria-labelledby="resourceAccessTitle">
+              <div class="resource-access-summary">
+                <div>
+                  <h3 id="resourceAccessTitle">资源详情</h3>
+                  <p id="resourceAccessMessage" role="status" aria-live="polite">资源详情需要单独授权。</p>
+                </div>
+                <span id="resourceAccessStatus" class="resource-access-status locked">待授权</span>
+              </div>
+              <form id="resourceAccessForm" class="resource-access-form hidden" autocomplete="off">
+                <input id="resourceAccessToken" name="resourceAccessToken" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="操作口令">
+                <button id="resourceAccessButton" type="submit">解锁</button>
+              </form>
+            </section>
+            <div id="resourceManagementPanel" class="resource-management-panel hidden">
               <form id="resourceExpiryForm" class="resource-expiry-form" autocomplete="off">
                 <input id="resourceId" name="resourceId" autocomplete="off" placeholder="资源 ID">
                 <input id="resourceName" name="resourceName" autocomplete="off" placeholder="名称">
@@ -264,7 +277,10 @@
                   <option value="license">授权</option>
                   <option value="contract">合同</option>
                 </select>
+                <input id="resourceLinkedTarget" name="resourceLinkedTarget" autocomplete="off" placeholder="关联目标">
                 <input id="resourceExpiresAt" name="resourceExpiresAt" type="date">
+                <input id="resourceWarningDays" name="resourceWarningDays" type="number" min="1" step="1" placeholder="预警天数">
+                <input id="resourceCriticalDays" name="resourceCriticalDays" type="number" min="0" step="1" placeholder="临界天数">
                 <input id="resourceProvider" name="resourceProvider" autocomplete="off" placeholder="供应商">
                 <input id="resourceOwner" name="resourceOwner" autocomplete="off" placeholder="负责人">
                 <input id="resourceRenewUrl" name="resourceRenewUrl" autocomplete="off" placeholder="续费入口">

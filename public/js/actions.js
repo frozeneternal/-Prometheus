@@ -9,6 +9,7 @@ import {
   updateCertRenewal,
 } from "./client.js";
 import { $ } from "./dom.js";
+import { purgeResourceDetails, resourceAuthHeaders } from "./resource-access.js";
 import { resourceAcknowledgedUntil } from "./resource-expiry.js";
 import { state } from "./state.js";
 
@@ -136,25 +137,28 @@ export async function toggleCertRenewal(websiteId, enabled) {
 export async function acknowledgeResourceExpiry(resourceId) {
   const acknowledgedUntil = resourceAcknowledgedUntil(state.config);
   try {
-    const payload = await acknowledgeResourceExpiryRisk({ resourceId, acknowledgedUntil, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await runtime.loadConfig();
-    runtime.render();
+    await acknowledgeResourceExpiryRisk({
+      resourceId,
+      acknowledgedUntil,
+      headers: resourceAuthHeaders(),
+    });
+    await runtime.refreshDashboard();
   } catch (error) {
+    if ([401, 403].includes(error.status)) purgeResourceDetails(error.message);
     await runtime.refreshDashboard();
   }
 }
 
 export async function saveResourceExpiryRecord(resource) {
   try {
-    const payload = await upsertResourceExpiryRecord({ resource, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await runtime.loadConfig();
-    runtime.render();
+    const payload = await upsertResourceExpiryRecord({
+      resource,
+      headers: resourceAuthHeaders(),
+    });
+    await runtime.refreshDashboard();
     return payload;
   } catch (error) {
+    if ([401, 403].includes(error.status)) purgeResourceDetails(error.message);
     await runtime.refreshDashboard();
     throw error;
   }
@@ -163,13 +167,14 @@ export async function saveResourceExpiryRecord(resource) {
 export async function deleteResourceExpiryRecord(resourceId) {
   if (!resourceId || !window.confirm("确认删除这条资源到期记录？")) return null;
   try {
-    const payload = await removeResourceExpiryRecord({ resourceId, auth: authPayload() });
-    state.dashboard = payload;
-    state.dashboard.ok = true;
-    await runtime.loadConfig();
-    runtime.render();
+    const payload = await removeResourceExpiryRecord({
+      resourceId,
+      headers: resourceAuthHeaders(),
+    });
+    await runtime.refreshDashboard();
     return payload;
   } catch (error) {
+    if ([401, 403].includes(error.status)) purgeResourceDetails(error.message);
     await runtime.refreshDashboard();
     throw error;
   }

@@ -1,6 +1,8 @@
 export const state = {
   config: null,
   dashboard: null,
+  resourceDetails: [],
+  resourceAccess: { status: "locked", authMode: "", capabilities: {}, message: "" },
   prometheusAlerts: null,
   prometheusRules: null,
   selectedGroup: "全部",

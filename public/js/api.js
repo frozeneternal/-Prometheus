@@ -4,6 +4,7 @@ export async function getJson(url, options) {
   if (!response.ok || payload.ok === false) {
     const error = new Error(payload.message || `HTTP ${response.status}`);
     error.payload = payload;
+    error.status = response.status;
     throw error;
   }
   return payload;

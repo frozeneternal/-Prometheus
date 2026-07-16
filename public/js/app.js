@@ -51,6 +51,13 @@ import {
 import { renderSystemNotice } from "./notices.js";
 import { canFetchSeries } from "./prometheus.js";
 import { renderPlatformReadiness } from "./readiness.js";
+import {
+  loadResourceDetails,
+  purgeResourceDetails,
+  renderResourceAccess,
+  setResourceActionToken,
+  syncResourceAuthMode,
+} from "./resource-access.js";
 import { resourceAckLabel } from "./resource-expiry.js";
 import { state } from "./state.js";
 function serverAddress(server) {
@@ -100,6 +107,7 @@ function filteredWebsites() {
 async function loadConfig() {
   const payload = await fetchConfig();
   state.config = payload.config;
+  syncResourceAuthMode();
   await refreshSession();
   await loadAccountUsers();
   await loadAccountLockouts();
@@ -109,6 +117,7 @@ async function loadConfig() {
   $("#prometheusUrl").textContent = state.config.prometheusUrl || "";
   $("#tokenInput").classList.toggle("hidden", !state.config.actionsRequireToken);
   document.querySelector(".token-field span").classList.toggle("hidden", !state.config.actionsRequireToken);
+  renderResourceAccess();
 }
 
 function unavailableAlertsPayload(error) {
@@ -168,6 +177,8 @@ async function refreshDashboard() {
     state.prometheusAlerts = prometheusAlerts;
     state.prometheusRules = prometheusRules;
     render();
+    await loadResourceDetails();
+    render();
   } catch (error) {
     renderError(error);
   } finally {
@@ -176,6 +187,7 @@ async function refreshDashboard() {
 }
 
 function renderError(error) {
+  purgeResourceDetails("页面数据读取失败，资源详情已锁定。");
   renderPlatformReadiness(null);
   $("#systemNotice").innerHTML = "";
   $("#systemNotice").classList.add("hidden");
@@ -243,6 +255,7 @@ function render() {
   renderConfigValidation();
   renderPlatformHealth();
   renderAuthControls();
+  renderResourceAccess();
   renderActionSafety();
   renderExporterDiagnostics();
   renderTargetIssues();
@@ -904,7 +917,7 @@ function emergencyActionButton(item) {
     }
   }
   if (item.targetType === "resource") {
-    const resource = (state.dashboard?.resourceExpiryItems || []).find((candidate) => candidate.id === item.targetId);
+    const resource = state.resourceDetails.find((candidate) => candidate.id === item.targetId);
     if (!resource) return "";
 
     const actions = [];
@@ -1085,8 +1098,9 @@ function renderWebsites() {
 }
 
 function renderResourceExpiry() {
-  const items = state.dashboard?.resourceExpiryItems || [];
-  $("#resourceExpiryEmptyState").classList.toggle("hidden", items.length !== 0);
+  const items = state.resourceDetails;
+  const ready = state.resourceAccess.status === "ready";
+  $("#resourceExpiryEmptyState").classList.toggle("hidden", !ready || items.length !== 0);
   $("#resourceExpiryList").innerHTML = items.map(resourceExpiryCard).join("");
   $("#resourceExpiryList").querySelectorAll("[data-resource-ack]").forEach((button) => {
     button.addEventListener("click", () => acknowledgeResourceExpiry(button.dataset.resourceId));
@@ -1110,13 +1124,16 @@ function resetResourceForm() {
 }
 
 function populateResourceForm(resourceId) {
-  const item = (state.dashboard?.resourceExpiryItems || []).find((candidate) => candidate.id === resourceId);
+  const item = state.resourceDetails.find((candidate) => candidate.id === resourceId);
   if (!item) return;
   $("#resourceId").value = item.id || "";
   $("#resourceId").readOnly = true;
   $("#resourceName").value = item.name || "";
   $("#resourceType").value = item.type || "resource";
+  $("#resourceLinkedTarget").value = item.linkedTarget || "";
   $("#resourceExpiresAt").value = resourceDateInputValue(item.expiresAt);
+  $("#resourceWarningDays").value = item.warningDays ?? "";
+  $("#resourceCriticalDays").value = item.criticalDays ?? "";
   $("#resourceProvider").value = item.provider || "";
   $("#resourceOwner").value = item.owner || "";
   $("#resourceRenewUrl").value = item.renewUrl || "";
@@ -1125,16 +1142,37 @@ function populateResourceForm(resourceId) {
 }
 
 function resourceFormPayload() {
-  return {
+  const payload = {
     id: $("#resourceId").value.trim(),
     name: $("#resourceName").value.trim(),
     type: $("#resourceType").value,
+    linkedTarget: $("#resourceLinkedTarget").value.trim(),
     expiresAt: $("#resourceExpiresAt").value,
     provider: $("#resourceProvider").value.trim(),
     owner: $("#resourceOwner").value.trim(),
     renewUrl: $("#resourceRenewUrl").value.trim(),
     notes: $("#resourceNotes").value.trim(),
   };
+  const warningDays = $("#resourceWarningDays").value;
+  const criticalDays = $("#resourceCriticalDays").value;
+  if (warningDays !== "") payload.warningDays = Number(warningDays);
+  if (criticalDays !== "") payload.criticalDays = Number(criticalDays);
+  return payload;
+}
+
+async function unlockResourceDetails(event) {
+  event.preventDefault();
+  const input = $("#resourceAccessToken");
+  const button = $("#resourceAccessButton");
+  setResourceActionToken(input.value);
+  input.value = "";
+  button.disabled = true;
+  try {
+    await loadResourceDetails();
+    render();
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function submitResourceForm(event) {
@@ -1309,7 +1347,10 @@ function incidentBlock(incident) {
 
 function canAcknowledgeResource(item) {
   const status = item.status || "";
-  return item.actionRequired && item.handlingReady !== false && ["critical", "warning"].includes(status);
+  return state.resourceAccess.capabilities?.acknowledgeResourceExpiry === true
+    && item.actionRequired
+    && item.handlingReady !== false
+    && ["critical", "warning"].includes(status);
 }
 
 function resourceExpiryCard(item) {
@@ -1342,10 +1383,12 @@ function resourceExpiryCard(item) {
   const ackButton = canAcknowledge
     ? `<button type="button" class="secondary recovery-trigger compact" data-resource-ack="true" data-resource-id="${escapeHtml(item.id)}">${escapeHtml(resourceAckLabel(state.config))}</button>`
     : "";
-  const manageButtons = `
-    <button type="button" class="secondary recovery-trigger compact" data-resource-edit="true" data-resource-id="${escapeHtml(item.id)}">编辑</button>
-    <button type="button" class="secondary recovery-trigger compact high" data-resource-delete="true" data-resource-id="${escapeHtml(item.id)}">删除</button>
-  `;
+  const manageButtons = state.resourceAccess.capabilities?.manageResources === true
+    ? `
+      <button type="button" class="secondary recovery-trigger compact" data-resource-edit="true" data-resource-id="${escapeHtml(item.id)}">编辑</button>
+      <button type="button" class="secondary recovery-trigger compact high" data-resource-delete="true" data-resource-id="${escapeHtml(item.id)}">删除</button>
+    `
+    : "";
   return `<article class="expiry-card ${escapeHtml(status)}">
     <div class="expiry-head">
       <div>
@@ -1645,8 +1688,17 @@ configureActionRuntime({ loadConfig, refreshDashboard, render });
 $("#refreshButton").addEventListener("click", refreshDashboard);
 $("#loginForm").addEventListener("submit", (event) => loginCurrentUser(event, { refreshDashboard }));
 $("#logoutButton").addEventListener("click", logoutCurrentUser);
+$("#resourceAccessForm").addEventListener("submit", unlockResourceDetails);
 $("#resourceExpiryForm").addEventListener("submit", submitResourceForm);
 $("#resourceResetButton").addEventListener("click", resetResourceForm);
+window.addEventListener("pagehide", () => {
+  purgeResourceDetails("页面已离开，资源详情已锁定。");
+});
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  purgeResourceDetails("页面已从缓存恢复，请重新授权资源详情。");
+  refreshDashboard();
+});
 $("#actionForm").addEventListener("submit", async (event) => {
   if (event.submitter?.value !== "run") return;
   event.preventDefault();

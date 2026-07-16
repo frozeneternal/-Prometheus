@@ -3,10 +3,12 @@ from __future__ import annotations
 from copy import deepcopy
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import json
 import re
 import threading
 import unittest
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -620,6 +622,7 @@ class FrontendModuleTests(unittest.TestCase):
         format_js = (PUBLIC / "js" / "format.js").read_text(encoding="utf-8")
         readiness_js = (PUBLIC / "js" / "readiness.js").read_text(encoding="utf-8")
         state_js = (PUBLIC / "js" / "state.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
 
         for expected in ("\u670d\u52a1\u5668", "\u7c7b\u578b", "\u5730\u5740", "\u5bbf\u4e3b\u673a"):
             self.assertIn(expected, app_js)
@@ -1076,7 +1079,7 @@ class FrontendModuleTests(unittest.TestCase):
         runbook_block = app_js[start:end]
 
         self.assertIn('item.targetType === "resource"', runbook_block)
-        self.assertIn("state.dashboard?.resourceExpiryItems", runbook_block)
+        self.assertIn("state.resourceDetails", runbook_block)
         self.assertIn('data-emergency-resource-ack="true"', runbook_block)
         self.assertIn("acknowledgeResourceExpiry(button.dataset.resourceId)", runbook_block)
         self.assertIn("resource.renewUrl", runbook_block)
@@ -1307,9 +1310,10 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('data-resource-ack="true"', app_js)
         self.assertIn("acknowledgeResourceExpiryRisk", actions_js)
         self.assertIn('"/api/settings/resource-ack"', client_js)
-        self.assertIn('parsed.path == "/api/settings/resource-ack"', backend_py)
+        self.assertIn('"/api/settings/resource-ack"', backend_py)
+        self.assertIn("parsed.path in RESOURCE_WRITE_PATHS", backend_py)
         self.assertIn("persist_resource_acknowledgement", backend_py)
-        self.assertIn('authorize_operation(config, body, "operator")', backend_py)
+        self.assertIn("authorize_resource_request", backend_py)
 
     def test_resource_management_has_frontend_and_backend_routes(self) -> None:
         index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
@@ -1330,8 +1334,481 @@ class FrontendModuleTests(unittest.TestCase):
         self.assertIn('data-resource-edit="true"', app_js)
         self.assertIn('data-resource-delete="true"', app_js)
         self.assertIn("populateResourceForm", app_js)
-        self.assertIn('parsed.path == "/api/settings/resource-upsert"', backend_py)
-        self.assertIn('parsed.path == "/api/settings/resource-delete"', backend_py)
+        self.assertIn('"/api/settings/resource-upsert"', backend_py)
+        self.assertIn('"/api/settings/resource-delete"', backend_py)
+        self.assertIn("parsed.path in RESOURCE_WRITE_PATHS", backend_py)
+        self.assertIn("MonitorHandler.handle_resource_write", backend_py)
+
+    def test_resource_access_has_layered_frontend_gate(self) -> None:
+        resource_access_path = PUBLIC / "js" / "resource-access.js"
+        index_html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+        app_js = (PUBLIC / "js" / "app.js").read_text(encoding="utf-8")
+        api_js = (PUBLIC / "js" / "api.js").read_text(encoding="utf-8")
+        client_js = (PUBLIC / "js" / "client.js").read_text(encoding="utf-8")
+        state_js = (PUBLIC / "js" / "state.js").read_text(encoding="utf-8")
+        styles_css = (PUBLIC / "styles.css").read_text(encoding="utf-8")
+
+        self.assertTrue(resource_access_path.exists())
+        self.assertIn('id="resourceAccessPanel"', index_html)
+        self.assertIn('id="resourceAccessForm"', index_html)
+        self.assertIn('id="resourceAccessToken"', index_html)
+        access_form_start = index_html.index('id="resourceAccessForm"')
+        access_form_end = index_html.index("</form>", access_form_start)
+        resource_access_form = index_html[access_form_start:access_form_end]
+        self.assertIn('type="password"', resource_access_form)
+        self.assertIn('autocomplete="off"', resource_access_form)
+        self.assertNotIn('autocomplete="new-password"', resource_access_form)
+        self.assertIn('id="resourceLinkedTarget"', index_html)
+        self.assertIn('id="resourceWarningDays"', index_html)
+        self.assertIn('id="resourceCriticalDays"', index_html)
+        self.assertIn('from "./resource-access.js"', app_js)
+        self.assertIn('getJson("/api/resources", { headers })', client_js)
+        self.assertIn("error.status = response.status", api_js)
+        self.assertIn("resourceDetails: []", state_js)
+        self.assertIn("resourceAccess:", state_js)
+        self.assertIn(".resource-access-form button", styles_css)
+        self.assertIn("white-space: nowrap", styles_css)
+
+        resource_access_js = resource_access_path.read_text(encoding="utf-8")
+        self.assertIn('let actionToken = ""', resource_access_js)
+        self.assertIn("let requestGeneration = 0", resource_access_js)
+        for export_name in (
+            "setResourceActionToken",
+            "resourceAuthHeaders",
+            "syncResourceAuthMode",
+            "purgeResourceDetails",
+            "loadResourceDetails",
+            "renderResourceAccess",
+        ):
+            self.assertRegex(
+                resource_access_js,
+                rf"export (?:async )?function {export_name}\(",
+            )
+
+        self.assertIn("headers: { ...JSON_HEADERS, ...headers }", client_js)
+        self.assertNotIn("{ resourceId, acknowledgedUntil, ...auth }", client_js)
+        self.assertNotIn("{ resource, ...auth }", client_js)
+        self.assertNotIn("{ resourceId, ...auth }", client_js)
+
+    def test_resource_access_runtime_purges_sensitive_state_and_stale_responses(self) -> None:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as error:
+            self.skipTest(f"playwright package unavailable: {error}")
+
+        resource_requests: list[dict[str, object]] = []
+        dashboard_requests: list[dict[str, object]] = []
+        resource_response = {
+            "ok": True,
+            "resourceDetailsProtected": True,
+            "items": [
+                {
+                    "id": "domain-main",
+                    "name": "主域名",
+                    "type": "domain",
+                    "linkedTarget": "website-main",
+                    "expiresAt": "2026-08-20",
+                    "warningDays": 45,
+                    "criticalDays": 10,
+                    "provider": "域名供应商",
+                    "owner": "运维负责人",
+                    "renewUrl": "https://example.test/renew?product=domain",
+                    "notes": "受保护备注",
+                    "status": "warning",
+                    "message": "即将到期",
+                    "actionRequired": True,
+                    "handlingReady": True,
+                    "missingHandlingFields": [],
+                    "acknowledged": False,
+                }
+            ],
+            "capabilities": {
+                "viewResourceDetails": True,
+                "manageResources": True,
+                "acknowledgeResourceExpiry": True,
+            },
+            "auth": {"mode": "legacy-token", "user": None},
+        }
+
+        config_response = {
+            "ok": True,
+            "config": {
+                "appName": "资源门禁测试",
+                "prometheusUrl": "",
+                "actionsRequireToken": True,
+                "auth": {"mode": "token", "users": []},
+                "servers": [],
+                "websites": [],
+                "resourceAckDays": 7,
+                "resourceAckMaxDays": 30,
+                "resources": [],
+                "resourceDetailsProtected": True,
+            },
+        }
+        dashboard_response = {
+            "ok": True,
+            "generatedAt": 1_750_000_000,
+            "summary": {"total": 0, "online": 0, "offline": 0, "unknown": 0},
+            "websiteSummary": {"total": 0, "online": 0, "offline": 0, "unknown": 0},
+            "resourceExpirySummary": {
+                "total": 1,
+                "expired": 0,
+                "critical": 0,
+                "warning": 1,
+                "unknown": 0,
+                "actionRequired": 1,
+                "actionRequiredWithoutHandling": 0,
+            },
+            "resourceExpiryItems": [],
+            "resourceDetailsProtected": True,
+            "servers": [],
+            "websites": [],
+            "incidentLogs": [],
+            "recoveryLogs": [],
+            "emergencyItems": [],
+        }
+        alerts_response = {
+            "ok": True,
+            "available": False,
+            "message": "",
+            "summary": {
+                "total": 0,
+                "firing": 0,
+                "pending": 0,
+                "severityCounts": {},
+                "stateCounts": {},
+                "actionRequired": False,
+            },
+            "alerts": [],
+        }
+        rules_response = {
+            "ok": True,
+            "available": False,
+            "status": "unavailable",
+            "message": "",
+            "summary": {
+                "expected": 0,
+                "loaded": 0,
+                "missing": 0,
+                "unhealthy": 0,
+                "missingRules": [],
+                "unhealthyRules": [],
+                "actionRequired": False,
+            },
+            "rules": [],
+        }
+
+        class QuietHandler(SimpleHTTPRequestHandler):
+            def log_message(self, _format: str, *args: object) -> None:
+                return
+
+        handler = partial(QuietHandler, directory=str(PUBLIC))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        base_url = f"http://127.0.0.1:{server.server_port}"
+
+        def route_api(route: object) -> None:
+            request = route.request
+            path = urlparse(request.url).path
+            payload = {
+                "/api/config": config_response,
+                "/api/dashboard": dashboard_response,
+                "/api/prometheus/alerts": alerts_response,
+                "/api/prometheus/rules": rules_response,
+            }.get(path)
+            if path == "/api/resources":
+                resource_requests.append({
+                    "headers": dict(request.headers),
+                    "method": request.method,
+                })
+                payload = deepcopy(resource_response)
+            if path == "/api/dashboard":
+                dashboard_requests.append({"method": request.method})
+            if payload is None:
+                payload = {"ok": True}
+            route.fulfill(
+                status=200,
+                content_type="application/json; charset=utf-8",
+                body=json.dumps(payload, ensure_ascii=False),
+            )
+
+        try:
+            with sync_playwright() as playwright:
+                try:
+                    browser = playwright.chromium.launch(headless=True)
+                except Exception as error:
+                    self.skipTest(f"playwright chromium unavailable: {error}")
+                try:
+                    page = browser.new_page(viewport={"width": 1440, "height": 900})
+                    page.route(f"{base_url}/api/**", route_api)
+                    page.goto(f"{base_url}/index.html?view=public")
+                    page.wait_for_function(
+                        "document.querySelector('#refreshButton') && "
+                        "!document.querySelector('#refreshButton').disabled"
+                    )
+                    page.evaluate("""async () => {
+                      const access = await import('/js/resource-access.js');
+                      const stateModule = await import('/js/state.js');
+                      window.resourceAccessTest = access;
+                      window.frontendState = stateModule.state;
+                    }""")
+
+                    token = "token-only-in-memory"
+                    page.locator("#resourceAccessToken").fill(token)
+                    submit_prevented = page.evaluate("""() => {
+                      const event = new Event('submit', { bubbles: true, cancelable: true });
+                      document.querySelector('#resourceAccessForm').dispatchEvent(event);
+                      return event.defaultPrevented;
+                    }""")
+                    self.assertTrue(submit_prevented)
+                    page.wait_for_function(
+                        "window.frontendState.resourceAccess.status === 'ready'"
+                    )
+                    self.assertEqual(page.locator("#resourceAccessToken").input_value(), "")
+                    self.assertEqual(page.locator("#resourceExpiryList .expiry-card").count(), 1)
+                    self.assertEqual(page.locator("[data-resource-edit]").count(), 1)
+                    self.assertEqual(page.locator("[data-resource-delete]").count(), 1)
+                    self.assertEqual(page.locator("[data-resource-ack]").count(), 1)
+                    self.assertEqual(
+                        resource_requests[-1]["headers"].get("x-action-token"),
+                        token,
+                    )
+                    self.assertTrue(page.evaluate("""secret => {
+                      const localValues = Object.entries(localStorage).flat().join(' ');
+                      const sessionValues = Object.entries(sessionStorage).flat().join(' ');
+                      return !location.href.includes(secret)
+                        && !localValues.includes(secret)
+                        && !sessionValues.includes(secret);
+                    }""", token))
+                    self.assertTrue(page.locator("#resourceAccessButton").evaluate(
+                        "element => element.scrollWidth <= element.clientWidth"
+                    ))
+
+                    page.evaluate("""async () => {
+                      const accounts = await import('/js/accounts.js');
+                      await accounts.refreshSession();
+                    }""")
+                    self.assertEqual(
+                        page.evaluate("window.frontendState.resourceAccess.status"),
+                        "ready",
+                    )
+                    self.assertEqual(
+                        page.evaluate(
+                            "window.resourceAccessTest.resourceAuthHeaders()['X-Action-Token']"
+                        ),
+                        token,
+                    )
+
+                    dashboard_count = len(dashboard_requests)
+                    resource_count = len(resource_requests)
+                    with page.expect_request("**/api/settings/resource-ack") as ack_info:
+                        with page.expect_response("**/api/dashboard"):
+                            with page.expect_response("**/api/resources"):
+                                page.locator("[data-resource-ack]").click()
+                    ack_request = ack_info.value
+                    self.assertEqual(ack_request.method, "POST")
+                    self.assertEqual(
+                        ack_request.headers.get("x-action-token"),
+                        token,
+                    )
+                    self.assertEqual(
+                        set(ack_request.post_data_json.keys()),
+                        {"resourceId", "acknowledgedUntil"},
+                    )
+                    self.assertGreater(len(dashboard_requests), dashboard_count)
+                    self.assertGreater(len(resource_requests), resource_count)
+
+                    page.locator("[data-resource-edit]").click()
+                    self.assertEqual(page.locator("#resourceLinkedTarget").input_value(), "website-main")
+                    self.assertEqual(page.locator("#resourceWarningDays").input_value(), "45")
+                    self.assertEqual(page.locator("#resourceCriticalDays").input_value(), "10")
+
+                    dashboard_count = len(dashboard_requests)
+                    resource_count = len(resource_requests)
+                    with page.expect_request("**/api/settings/resource-upsert") as upsert_info:
+                        with page.expect_response("**/api/dashboard"):
+                            with page.expect_response("**/api/resources"):
+                                page.locator("#resourceSaveButton").click()
+                    upsert_request = upsert_info.value
+                    self.assertEqual(
+                        upsert_request.headers.get("x-action-token"),
+                        token,
+                    )
+                    self.assertEqual(set(upsert_request.post_data_json.keys()), {"resource"})
+                    submitted_resource = upsert_request.post_data_json["resource"]
+                    self.assertEqual(submitted_resource["linkedTarget"], "website-main")
+                    self.assertEqual(submitted_resource["warningDays"], 45)
+                    self.assertEqual(submitted_resource["criticalDays"], 10)
+                    self.assertNotIn("token", submitted_resource)
+                    self.assertNotIn("sessionToken", submitted_resource)
+                    self.assertGreater(len(dashboard_requests), dashboard_count)
+                    self.assertGreater(len(resource_requests), resource_count)
+
+                    page.once("dialog", lambda dialog: dialog.accept())
+                    dashboard_count = len(dashboard_requests)
+                    resource_count = len(resource_requests)
+                    with page.expect_request("**/api/settings/resource-delete") as delete_info:
+                        with page.expect_response("**/api/dashboard"):
+                            with page.expect_response("**/api/resources"):
+                                page.locator("[data-resource-delete]").click()
+                    delete_request = delete_info.value
+                    self.assertEqual(
+                        delete_request.headers.get("x-action-token"),
+                        token,
+                    )
+                    self.assertEqual(delete_request.post_data_json, {"resourceId": "domain-main"})
+                    self.assertGreater(len(dashboard_requests), dashboard_count)
+                    self.assertGreater(len(resource_requests), resource_count)
+
+                    page.evaluate("window.dispatchEvent(new Event('pagehide'))")
+                    self.assertEqual(page.evaluate("window.frontendState.resourceDetails.length"), 0)
+                    self.assertEqual(
+                        page.evaluate("Object.keys(window.resourceAccessTest.resourceAuthHeaders()).length"),
+                        0,
+                    )
+
+                    page.evaluate("window.resourceAccessTest.purgeResourceDetails('测试清理')")
+                    self.assertEqual(page.locator("#resourceExpiryList .expiry-card").count(), 0)
+                    self.assertIn(
+                        "hidden",
+                        page.locator("#resourceManagementPanel").get_attribute("class") or "",
+                    )
+                    self.assertEqual(page.locator("#resourceLinkedTarget").input_value(), "")
+                    self.assertEqual(page.evaluate("window.frontendState.resourceDetails.length"), 0)
+
+                    page.evaluate("""() => {
+                      window.originalResourceFetch = window.fetch;
+                      window.fetch = (url, options) => {
+                        if (String(url) !== '/api/resources') {
+                          return window.originalResourceFetch(url, options);
+                        }
+                        return new Promise((resolve) => {
+                          window.resolveStaleResourceRequest = resolve;
+                        });
+                      };
+                      window.resourceAccessTest.setResourceActionToken('stale-token');
+                      window.staleResourceLoad = window.resourceAccessTest.loadResourceDetails();
+                    }""")
+                    page.evaluate("window.resourceAccessTest.purgeResourceDetails('竞态清理')")
+                    page.evaluate("""payload => {
+                      window.resolveStaleResourceRequest({
+                        ok: true,
+                        status: 200,
+                        json: async () => payload,
+                      });
+                    }""", resource_response)
+                    page.evaluate("window.staleResourceLoad")
+                    self.assertEqual(page.evaluate("window.frontendState.resourceDetails.length"), 0)
+                    self.assertEqual(page.locator("#resourceExpiryList .expiry-card").count(), 0)
+
+                    page.evaluate("""async () => {
+                      window.fetch = async () => ({
+                        ok: false,
+                        status: 401,
+                        json: async () => ({ ok: false, message: '凭据无效' }),
+                      });
+                      window.resourceAccessTest.setResourceActionToken('rejected-token');
+                      await window.resourceAccessTest.loadResourceDetails();
+                    }""")
+                    self.assertEqual(
+                        page.evaluate("window.frontendState.resourceAccess.status"),
+                        "locked",
+                    )
+                    self.assertEqual(
+                        page.evaluate("Object.keys(window.resourceAccessTest.resourceAuthHeaders()).length"),
+                        0,
+                    )
+
+                    page.evaluate("""async () => {
+                      window.fetch = async () => ({
+                        ok: false,
+                        status: 403,
+                        json: async () => ({ ok: false, message: '权限不足' }),
+                      });
+                      window.resourceAccessTest.setResourceActionToken('forbidden-token');
+                      await window.resourceAccessTest.loadResourceDetails();
+                    }""")
+                    self.assertEqual(
+                        page.evaluate("window.frontendState.resourceAccess.status"),
+                        "denied",
+                    )
+                    self.assertEqual(
+                        page.evaluate("Object.keys(window.resourceAccessTest.resourceAuthHeaders()).length"),
+                        0,
+                    )
+
+                    page.evaluate("""() => {
+                      window.fetch = window.originalResourceFetch;
+                      window.frontendState.config.auth.mode = 'users';
+                      window.frontendState.config.actionsRequireToken = false;
+                      window.frontendState.currentUser = { username: 'viewer', role: 'viewer' };
+                      window.frontendState.sessionToken = 'viewer-session';
+                      window.resourceAccessTest.syncResourceAuthMode();
+                    }""")
+                    request_count = len(resource_requests)
+                    page.evaluate("window.resourceAccessTest.loadResourceDetails()")
+                    self.assertEqual(len(resource_requests), request_count)
+                    self.assertEqual(
+                        page.evaluate("window.frontendState.resourceAccess.status"),
+                        "denied",
+                    )
+
+                    page.evaluate("""() => {
+                      window.frontendState.currentUser = { username: 'operator', role: 'operator' };
+                      window.frontendState.sessionToken = 'operator-session';
+                    }""")
+                    page.evaluate("window.resourceAccessTest.loadResourceDetails()")
+                    self.assertEqual(
+                        resource_requests[-1]["headers"].get("authorization"),
+                        "Bearer operator-session",
+                    )
+                    self.assertEqual(page.evaluate("window.frontendState.resourceDetails.length"), 1)
+
+                    resource_response["capabilities"] = {
+                        "viewResourceDetails": True,
+                        "manageResources": False,
+                        "acknowledgeResourceExpiry": False,
+                    }
+                    page.locator("#refreshButton").click()
+                    page.wait_for_function(
+                        "window.frontendState.resourceAccess.status === 'ready' && "
+                        "window.frontendState.resourceAccess.capabilities.manageResources === false"
+                    )
+                    self.assertEqual(page.locator("[data-resource-edit]").count(), 0)
+                    self.assertEqual(page.locator("[data-resource-delete]").count(), 0)
+                    self.assertEqual(page.locator("[data-resource-ack]").count(), 0)
+                    self.assertTrue(page.locator("#resourceAccessButton").evaluate(
+                        "element => element.scrollWidth <= element.clientWidth"
+                    ))
+
+                    page.evaluate("window.dispatchEvent(new Event('pagehide'))")
+                    self.assertEqual(page.evaluate("window.frontendState.resourceDetails.length"), 0)
+                    self.assertEqual(
+                        page.evaluate("window.frontendState.resourceAccess.status"),
+                        "locked",
+                    )
+                    self.assertIn(
+                        "hidden",
+                        page.locator("#resourceManagementPanel").get_attribute("class") or "",
+                    )
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    self.assertTrue(page.locator("#resourceAccessButton").evaluate(
+                        "element => element.scrollWidth <= element.clientWidth"
+                    ))
+                    self.assertTrue(page.evaluate(
+                        "document.documentElement.scrollWidth <= "
+                        "document.documentElement.clientWidth"
+                    ))
+                    access_box = page.locator("#resourceAccessPanel").bounding_box()
+                    self.assertIsNotNone(access_box)
+                    self.assertLessEqual(access_box["x"] + access_box["width"], 390)
+                finally:
+                    browser.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=5)
 
     def test_logout_calls_backend_session_revocation_route(self) -> None:
         accounts_js = (PUBLIC / "js" / "accounts.js").read_text(encoding="utf-8")

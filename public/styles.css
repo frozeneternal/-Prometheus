@@ -1458,6 +1458,86 @@ select {
   margin-bottom: 12px;
 }
 
+.resource-access-panel {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.resource-access-panel.ready {
+  border-color: #9fd6b0;
+  background: var(--good-bg);
+}
+
+.resource-access-panel.denied,
+.resource-access-panel.error {
+  border-color: #f1c2bd;
+  background: var(--bad-bg);
+}
+
+.resource-access-summary,
+.resource-access-form {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.resource-access-summary > div {
+  min-width: 0;
+}
+
+.resource-access-summary h3 {
+  font-size: 14px;
+}
+
+.resource-access-summary p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.resource-access-status {
+  flex: 0 0 auto;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.resource-access-status.ready {
+  color: var(--good);
+  background: #dff5e5;
+}
+
+.resource-access-status.denied,
+.resource-access-status.error {
+  color: var(--bad);
+  background: #fde2df;
+}
+
+.resource-access-form input {
+  min-width: 0;
+  width: 100%;
+}
+
+.resource-access-form button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .resource-expiry-form {
   display: grid;
   grid-template-columns: minmax(110px, 0.9fr) minmax(140px, 1.2fr) minmax(90px, 0.7fr) minmax(130px, 0.9fr);
@@ -1477,6 +1557,7 @@ select {
 
 .resource-expiry-form .login-error {
   min-width: 120px;
+  overflow-wrap: anywhere;
 }
 
 .expiry-card {
@@ -2136,6 +2217,10 @@ button.secondary:hover,
   .sidebar {
     position: static;
   }
+
+  .resource-access-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 .platform-readiness-panel {
@@ -2302,6 +2387,20 @@ button.secondary:hover,
 
   .resource-expiry-form {
     grid-template-columns: 1fr;
+  }
+
+  .resource-access-summary,
+  .resource-access-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .resource-access-status {
+    align-self: flex-start;
+  }
+
+  .resource-access-form button {
+    width: 100%;
   }
 
   .resource-expiry-form #resourceRenewUrl,

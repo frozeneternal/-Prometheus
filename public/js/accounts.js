@@ -13,6 +13,7 @@ import {
 } from "./client.js";
 import { $, escapeHtml } from "./dom.js";
 import { formatElapsed, formatTime } from "./format.js";
+import { purgeResourceDetails } from "./resource-access.js";
 import { state } from "./state.js";
 
 export async function refreshSession() {
@@ -23,6 +24,9 @@ export async function refreshSession() {
   }
   if (!state.sessionToken) {
     state.currentUser = null;
+    if (state.config?.auth?.mode === "users") {
+      purgeResourceDetails("请登录后重新授权资源详情。");
+    }
     return;
   }
   try {
@@ -32,6 +36,7 @@ export async function refreshSession() {
     state.sessionToken = "";
     state.currentUser = null;
     window.localStorage.removeItem("monitorSessionToken");
+    purgeResourceDetails("会话已失效，请重新登录。");
   }
 }
 
@@ -430,6 +435,7 @@ export async function saveAccountUser(event) {
       state.currentUser = null;
       window.localStorage.removeItem("monitorSessionToken");
       $("#tokenInput").value = "";
+      purgeResourceDetails("认证模式已变化，请使用新账号登录。");
       try {
         state.dashboard = await fetchDashboard();
       } catch (error) {
@@ -504,6 +510,7 @@ export async function loginCurrentUser(event, options = {}) {
 }
 
 export async function logoutCurrentUser() {
+  purgeResourceDetails("已退出登录，资源详情已锁定。");
   const token = state.sessionToken;
   try {
     if (token) {
